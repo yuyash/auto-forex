@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.7.0](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.6.0...backend-v2.7.0) (2026-05-22)
+
+
+### Features
+
+* **trading:** add tick granularity for live tasks ([#794](https://github.com/yuyash/auto-forex-web-service/issues/794)) ([1625104](https://github.com/yuyash/auto-forex-web-service/commit/1625104392db1c78ff815156a885718cf5b7a617))
+
+
+### Bug Fixes
+
+* task ticks per second window ([#796](https://github.com/yuyash/auto-forex-web-service/issues/796)) ([edb9915](https://github.com/yuyash/auto-forex-web-service/commit/edb991580c2e9f93f462743c3a08efdd75b7b7ab))
+
 ## [2.6.0](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.5.0...backend-v2.6.0) (2026-05-21)
 
 

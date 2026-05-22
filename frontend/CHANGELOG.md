@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.0](https://github.com/yuyash/auto-forex-web-service/compare/frontend-v2.6.0...frontend-v2.7.0) (2026-05-22)
+
+
+### Features
+
+* **trading:** add tick granularity for live tasks ([#794](https://github.com/yuyash/auto-forex-web-service/issues/794)) ([1625104](https://github.com/yuyash/auto-forex-web-service/commit/1625104392db1c78ff815156a885718cf5b7a617))
+
 ## [2.6.0](https://github.com/yuyash/auto-forex-web-service/compare/frontend-v2.5.0...frontend-v2.6.0) (2026-05-21)
 
 
