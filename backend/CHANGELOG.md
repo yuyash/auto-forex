@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.1](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.7.0...backend-v2.7.1) (2026-05-22)
+
+
+### Bug Fixes
+
+* **metrics:** use wall-clock interval for tick rate ([#797](https://github.com/yuyash/auto-forex-web-service/issues/797)) ([67a824b](https://github.com/yuyash/auto-forex-web-service/commit/67a824bf7aee4007665bfc020aa43a8593940064))
+
 ## [2.7.0](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.6.0...backend-v2.7.0) (2026-05-22)
 
 
