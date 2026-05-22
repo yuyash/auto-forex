@@ -296,6 +296,65 @@ class TestFlushMetrics:
         second_timestamp = datetime(2024, 6, 1, 12, 1, 0, tzinfo=timezone.utc)
         executor._metrics_aggregator.record(
             first_timestamp,
+            {
+                "ticks_processed": "120",
+                "ticks_per_second": "999.000000",
+                "execution_elapsed_seconds": "2.000000",
+            },
+        )
+        executor._metrics_aggregator.record(
+            second_timestamp,
+            {
+                "ticks_processed": "180",
+                "ticks_per_second": "999.000000",
+                "execution_elapsed_seconds": "3.000000",
+            },
+        )
+
+        executor._metrics_aggregator.flush(final=True)
+
+        first = Metrics.objects.get(task_id=executor.task.pk, timestamp=first_timestamp)
+        second = Metrics.objects.get(task_id=executor.task.pk, timestamp=second_timestamp)
+        assert Decimal(first.metrics["ticks_per_second"]) == Decimal("60.000000")
+        assert Decimal(second.metrics["ticks_per_second"]) == Decimal("60.000000")
+
+    def test_tick_rate_uses_previous_persisted_metric_as_anchor(self):
+        executor = _make_executor()
+
+        previous_timestamp = datetime(2024, 6, 1, 11, 58, 0, tzinfo=timezone.utc)
+        current_timestamp = datetime(2024, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+        Metrics.objects.create(
+            task_type=executor.task_type.value,
+            task_id=executor.task.pk,
+            execution_id=executor.task.execution_id,
+            timestamp=previous_timestamp,
+            metrics={
+                "ticks_processed": "120",
+                "ticks_per_second": "2.000000",
+                "execution_elapsed_seconds": "10.000000",
+            },
+        )
+        executor._metrics_aggregator.record(
+            current_timestamp,
+            {
+                "ticks_processed": "180",
+                "ticks_per_second": "999.000000",
+                "execution_elapsed_seconds": "12.000000",
+            },
+        )
+
+        executor._metrics_aggregator.flush(final=True)
+
+        current = Metrics.objects.get(task_id=executor.task.pk, timestamp=current_timestamp)
+        assert Decimal(current.metrics["ticks_per_second"]) == Decimal("30.000000")
+
+    def test_tick_rate_falls_back_to_bucket_interval_without_elapsed_metrics(self):
+        executor = _make_executor()
+
+        first_timestamp = datetime(2024, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+        second_timestamp = datetime(2024, 6, 1, 12, 1, 0, tzinfo=timezone.utc)
+        executor._metrics_aggregator.record(
+            first_timestamp,
             {"ticks_processed": "120", "ticks_per_second": "999.000000"},
         )
         executor._metrics_aggregator.record(
@@ -309,28 +368,6 @@ class TestFlushMetrics:
         second = Metrics.objects.get(task_id=executor.task.pk, timestamp=second_timestamp)
         assert Decimal(first.metrics["ticks_per_second"]) == Decimal("2.000000")
         assert Decimal(second.metrics["ticks_per_second"]) == Decimal("1.000000")
-
-    def test_tick_rate_uses_previous_persisted_metric_as_anchor(self):
-        executor = _make_executor()
-
-        previous_timestamp = datetime(2024, 6, 1, 11, 58, 0, tzinfo=timezone.utc)
-        current_timestamp = datetime(2024, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
-        Metrics.objects.create(
-            task_type=executor.task_type.value,
-            task_id=executor.task.pk,
-            execution_id=executor.task.execution_id,
-            timestamp=previous_timestamp,
-            metrics={"ticks_processed": "120", "ticks_per_second": "2.000000"},
-        )
-        executor._metrics_aggregator.record(
-            current_timestamp,
-            {"ticks_processed": "180", "ticks_per_second": "999.000000"},
-        )
-
-        executor._metrics_aggregator.flush(final=True)
-
-        current = Metrics.objects.get(task_id=executor.task.pk, timestamp=current_timestamp)
-        assert Decimal(current.metrics["ticks_per_second"]) == Decimal("0.500000")
 
     def test_empty_buffer(self):
         executor = _make_executor()

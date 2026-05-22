@@ -73,6 +73,7 @@ def _decimal_metric(snapshot: dict[str, Any], key: str) -> Decimal | None:
 class _TickRateAnchor:
     timestamp: datetime
     ticks_processed: Decimal
+    execution_elapsed_seconds: Decimal | None = None
 
 
 class MetricsAggregator:
@@ -275,25 +276,40 @@ class MetricsAggregator:
             ticks_processed = _decimal_metric(snapshot, "ticks_processed")
             if ticks_processed is None:
                 continue
+            execution_elapsed_seconds = _decimal_metric(snapshot, "execution_elapsed_seconds")
 
             if anchor is None:
                 tick_delta = ticks_processed
-                interval_seconds = Decimal(METRIC_RECORD_INTERVAL_SECONDS)
+                interval_seconds = (
+                    execution_elapsed_seconds
+                    if execution_elapsed_seconds is not None and execution_elapsed_seconds > 0
+                    else Decimal(METRIC_RECORD_INTERVAL_SECONDS)
+                )
             else:
                 tick_delta = ticks_processed - anchor.ticks_processed
-                seconds = _seconds_between(later=bucket_key, earlier=anchor.timestamp)
+                seconds = _tick_rate_interval_seconds(
+                    current_elapsed=execution_elapsed_seconds,
+                    anchor_elapsed=anchor.execution_elapsed_seconds,
+                    later=bucket_key,
+                    earlier=anchor.timestamp,
+                )
                 if seconds <= 0:
                     anchor = _TickRateAnchor(
                         timestamp=bucket_key,
                         ticks_processed=ticks_processed,
+                        execution_elapsed_seconds=execution_elapsed_seconds,
                     )
                     self._tick_rate_anchor = anchor
                     continue
-                interval_seconds = Decimal(str(seconds))
+                interval_seconds = seconds
 
             tick_rate = max(tick_delta, Decimal("0")) / interval_seconds
             snapshot["ticks_per_second"] = f"{tick_rate:.6f}"
-            anchor = _TickRateAnchor(timestamp=bucket_key, ticks_processed=ticks_processed)
+            anchor = _TickRateAnchor(
+                timestamp=bucket_key,
+                ticks_processed=ticks_processed,
+                execution_elapsed_seconds=execution_elapsed_seconds,
+            )
             self._tick_rate_anchor = anchor
 
     def _load_tick_rate_anchor(
@@ -322,6 +338,9 @@ class MetricsAggregator:
         return _TickRateAnchor(
             timestamp=previous.timestamp,
             ticks_processed=ticks_processed,
+            execution_elapsed_seconds=_decimal_metric(
+                previous.metrics, "execution_elapsed_seconds"
+            ),
         )
 
     def _build_rollup_rows(
@@ -363,3 +382,18 @@ def _seconds_between(*, later: datetime, earlier: datetime) -> float:
         timezone.make_aware(earlier, timezone=UTC) if timezone.is_naive(earlier) else earlier
     )
     return (later_aware.astimezone(UTC) - earlier_aware.astimezone(UTC)).total_seconds()
+
+
+def _tick_rate_interval_seconds(
+    *,
+    current_elapsed: Decimal | None,
+    anchor_elapsed: Decimal | None,
+    later: datetime,
+    earlier: datetime,
+) -> Decimal:
+    """Return wall-clock metric interval when available, else timestamp interval."""
+    if current_elapsed is not None and anchor_elapsed is not None:
+        elapsed_delta = current_elapsed - anchor_elapsed
+        if elapsed_delta > 0:
+            return elapsed_delta
+    return Decimal(str(_seconds_between(later=later, earlier=earlier)))
