@@ -221,6 +221,9 @@ class SnowballTickPhaseOutcome:
         return self.result is not None
 
 
+NOOP_PHASE_OUTCOME = SnowballTickPhaseOutcome()
+
+
 class SnowballTickStateSerializer:
     """Persist SnowballStrategyState back into the task state object."""
 
@@ -258,7 +261,7 @@ class SnowballInitialInvariantPhase:
         """Evaluate the pre-tick invariant decision."""
         decision = context.strategy.decision_engine.invariant_decision(context.snowball_state)
         if not decision.should_stop:
-            return SnowballTickPhaseOutcome()
+            return NOOP_PHASE_OUTCOME
         return SnowballTickPhaseOutcome(
             result=self.serializer.result(
                 context,
@@ -293,7 +296,7 @@ class SnowballAccountMetricsPhase:
         )
         context.snowball_state.metrics["current_base_units"] = str(current_base_units)
         context.snowball_state.metrics["snowball_current_base_units"] = str(current_base_units)
-        return SnowballTickPhaseOutcome()
+        return NOOP_PHASE_OUTCOME
 
 
 class SnowballWarmupPhase:
@@ -320,7 +323,7 @@ class SnowballWarmupPhase:
         )
         context.snowball_state.metrics["current_base_units"] = str(current_base_units)
         context.snowball_state.metrics["snowball_current_base_units"] = str(current_base_units)
-        return SnowballTickPhaseOutcome()
+        return NOOP_PHASE_OUTCOME
 
 
 class SnowballProtectionPhase:
@@ -355,7 +358,7 @@ class SnowballProtectionPhase:
 
         if context.snowball_state.protection_level != ProtectionLevel.NORMAL:
             context.snowball_state.protection_level = ProtectionLevel.NORMAL
-        return SnowballTickPhaseOutcome()
+        return NOOP_PHASE_OUTCOME
 
     def _handle_shrink(self, context: SnowballTickContext) -> SnowballTickPhaseOutcome:
         shrink_events = SNOWBALL_PROTECTION.handle_shrink(
@@ -367,7 +370,7 @@ class SnowballProtectionPhase:
             ratio=context.ratio,
         )
         if shrink_events is None:
-            return SnowballTickPhaseOutcome()
+            return NOOP_PHASE_OUTCOME
 
         context.events.extend(shrink_events.events)
         if shrink_events.close_order_violation:
@@ -392,7 +395,7 @@ class SnowballInitialisationPhase:
     def run(self, context: SnowballTickContext) -> SnowballTickPhaseOutcome:
         """Initialise the strategy once and complete the tick."""
         if context.snowball_state.initialised:
-            return SnowballTickPhaseOutcome()
+            return NOOP_PHASE_OUTCOME
 
         if not _can_open_new_position(context):
             return SnowballTickPhaseOutcome(result=self.serializer.result(context))
@@ -438,7 +441,7 @@ class SnowballActiveCyclePhase:
         )
         context.events.extend(cycle_result.events)
         if not cycle_result.stop_reason:
-            return SnowballTickPhaseOutcome()
+            return NOOP_PHASE_OUTCOME
         return SnowballTickPhaseOutcome(
             result=self.serializer.result(
                 context,
@@ -466,7 +469,7 @@ class SnowballReseedPhase:
                 new_position_limit=context.new_position_limit,
             )
         )
-        return SnowballTickPhaseOutcome()
+        return NOOP_PHASE_OUTCOME
 
 
 class SnowballWarmupEventAccountingPhase:
@@ -477,7 +480,7 @@ class SnowballWarmupEventAccountingPhase:
 
     def run(self, context: SnowballTickContext) -> SnowballTickPhaseOutcome:
         self.policy.record_events(context.snowball_state, context.events)
-        return SnowballTickPhaseOutcome()
+        return NOOP_PHASE_OUTCOME
 
 
 class SnowballFinalInvariantPhase:
@@ -491,7 +494,7 @@ class SnowballFinalInvariantPhase:
         self.serializer.persist(context)
         decision = context.strategy.decision_engine.invariant_decision(context.snowball_state)
         if not decision.should_stop:
-            return SnowballTickPhaseOutcome()
+            return NOOP_PHASE_OUTCOME
         return SnowballTickPhaseOutcome(
             result=StrategyResult(
                 state=context.state,
@@ -564,4 +567,4 @@ def _can_open_new_position(context: SnowballTickContext) -> bool:
         return False
     if context.new_position_limit is None:
         return True
-    return len(context.snowball_state.all_entries()) < context.new_position_limit
+    return context.snowball_state.entry_count() < context.new_position_limit

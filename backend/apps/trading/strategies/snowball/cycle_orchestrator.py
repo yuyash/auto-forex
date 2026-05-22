@@ -11,6 +11,7 @@ from apps.trading.enums import Direction
 from apps.trading.events import StrategyEvent
 from apps.trading.strategies.snowball.config import SnowballStrategyConfig
 from apps.trading.strategies.snowball.decision_trace import (
+    DisabledSnowballDecisionTrace,
     SnowballDecisionTrace,
     SnowballDecisionTraceRecorder,
 )
@@ -141,7 +142,7 @@ class SnowballActiveCycleProcessor:
         events: list[StrategyEvent] = []
         trace = self.decision_trace_recorder.start_tick(tick=tick)
         remaining_rebuild_limit = rebuild_limit_per_tick
-        for cycle in list(ss.active_cycles()):
+        for cycle in list(ss.iter_active_cycles()):
             result = self._process_cycle(
                 strategy=strategy,
                 ss=ss,
@@ -190,7 +191,7 @@ class SnowballActiveCycleProcessor:
         allow_new_positions: bool,
         new_position_limit: int | None,
         rebuild_limit_per_tick: int | None,
-        trace: SnowballDecisionTrace,
+        trace: SnowballDecisionTrace | DisabledSnowballDecisionTrace,
     ) -> CycleProcessingResult:
         events: list[StrategyEvent] = []
         remaining_rebuild_limit = rebuild_limit_per_tick
@@ -382,7 +383,7 @@ class SnowballActiveCycleProcessor:
         ss: SnowballStrategyState,
         new_position_limit: int | None,
     ) -> bool:
-        return new_position_limit is None or len(ss.all_entries()) < new_position_limit
+        return new_position_limit is None or ss.entry_count() < new_position_limit
 
     def _remaining_rebuild_capacity(
         self,
@@ -391,9 +392,7 @@ class SnowballActiveCycleProcessor:
         rebuild_limit_per_tick: int | None,
     ) -> int | None:
         position_capacity = (
-            None
-            if new_position_limit is None
-            else max(0, new_position_limit - len(ss.all_entries()))
+            None if new_position_limit is None else max(0, new_position_limit - ss.entry_count())
         )
         capacities = [
             value for value in (position_capacity, rebuild_limit_per_tick) if value is not None
@@ -429,11 +428,11 @@ class SnowballCycleReseeder:
     ) -> list[StrategyEvent]:
         """Create fresh cycles for missing, pending-only, or exhausted directions."""
         events: list[StrategyEvent] = []
-        active = ss.active_cycles()
+        active = list(ss.iter_active_cycles())
         for direction in (Direction.LONG, Direction.SHORT):
             if not allow_new_positions:
                 break
-            if new_position_limit is not None and len(ss.all_entries()) >= new_position_limit:
+            if new_position_limit is not None and ss.entry_count() >= new_position_limit:
                 break
             if not strategy._hedging_enabled and direction == Direction.SHORT:
                 continue

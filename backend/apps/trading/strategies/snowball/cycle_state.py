@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
@@ -116,6 +117,13 @@ class SnowballCycle:
         entries = self.grid.all_entries()
         entries.extend(self.hedge_entries)
         return entries
+
+    def iter_entries(self) -> Iterator[Entry]:
+        yield from self.grid.iter_entries()
+        yield from self.hedge_entries
+
+    def entry_count(self) -> int:
+        return self.grid.entry_count() + len(self.hedge_entries)
 
     def counter_non_hedge(self) -> list[Entry]:
         head = self.grid.head_entry()
@@ -263,6 +271,11 @@ class SnowballStrategyState:
     def active_cycles(self) -> list[SnowballCycle]:
         return [c for c in self.cycles if not c.completed]
 
+    def iter_active_cycles(self) -> Iterator[SnowballCycle]:
+        for cycle in self.cycles:
+            if not cycle.completed:
+                yield cycle
+
     def tradable_cycles(self) -> list[SnowballCycle]:
         """Return only cycles that are actively trading (not pending or completed)."""
         return [c for c in self.cycles if c.is_active]
@@ -272,6 +285,13 @@ class SnowballStrategyState:
         for c in self.active_cycles():
             entries.extend(c.all_entries())
         return entries
+
+    def iter_entries(self) -> Iterator[Entry]:
+        for cycle in self.iter_active_cycles():
+            yield from cycle.iter_entries()
+
+    def entry_count(self) -> int:
+        return sum(cycle.entry_count() for cycle in self.iter_active_cycles())
 
     def find_cycle(self, cycle_id: int) -> SnowballCycle | None:
         for c in self.cycles:

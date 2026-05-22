@@ -108,8 +108,18 @@ def materialize_execution_events(
         )
         record.pk = -(seq + 1)
         setattr(record, "_in_memory", True)
+        setattr(record, "_strategy_event", _execution_strategy_event(record, event))
         trading_records.append(record)
     return trading_records
+
+
+def _execution_strategy_event(record: "TradingEvent", event: StrategyEvent) -> StrategyEvent:
+    """Return the event shape consumed by EventHandler without reparsing when possible."""
+    if record.event_type == str(
+        getattr(getattr(event, "event_type", None), "value", event.event_type)
+    ):
+        return event
+    return StrategyEvent.from_dict(record.details)
 
 
 def _trading_record_for_execution_event(

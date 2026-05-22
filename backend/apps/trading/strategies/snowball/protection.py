@@ -38,6 +38,10 @@ class ShrinkResult:
 class SnowballProtectionService:
     """Own Snowball margin-protection decisions and state transitions."""
 
+    def __init__(self) -> None:
+        self._instrument_cache: dict[str, Instrument] = {}
+        self._account_currency_cache: dict[str, AccountCurrency] = {}
+
     def margin_ratio(
         self,
         *,
@@ -49,20 +53,41 @@ class SnowballProtectionService:
         nav = ss.account_nav
         if nav <= 0:
             return Decimal("0")
-        all_entries = ss.all_entries()
-        if not all_entries:
+        if ss.entry_count() == 0:
             return Decimal("0")
-        long_units = sum(abs(e.units) for e in all_entries if e.is_long)
-        short_units = sum(abs(e.units) for e in all_entries if e.is_short)
+        long_units = 0
+        short_units = 0
+        for entry in ss.iter_entries():
+            if entry.is_long:
+                long_units += abs(entry.units)
+            elif entry.is_short:
+                short_units += abs(entry.units)
         total_units = max(long_units, short_units)
         if total_units == 0:
             return Decimal("0")
         mid = ss.last_mid or Decimal("0")
         if mid <= 0:
             return Decimal("0")
-        conv = Instrument(instrument).quote_to_account_rate(mid, AccountCurrency(account_currency))
-        required = mid * Decimal(str(total_units)) * Decimal("0.04") * conv
+        conv = self._instrument(instrument).quote_to_account_rate(
+            mid,
+            self._account_currency(account_currency),
+        )
+        required = mid * Decimal(total_units) * Decimal("0.04") * conv
         return (required / nav) * Decimal("100")
+
+    def _instrument(self, instrument: str) -> Instrument:
+        cached = self._instrument_cache.get(instrument)
+        if cached is None:
+            cached = Instrument(instrument)
+            self._instrument_cache[instrument] = cached
+        return cached
+
+    def _account_currency(self, account_currency: str) -> AccountCurrency:
+        cached = self._account_currency_cache.get(account_currency)
+        if cached is None:
+            cached = AccountCurrency(account_currency)
+            self._account_currency_cache[account_currency] = cached
+        return cached
 
     def handle_emergency(
         self,
@@ -78,13 +103,13 @@ class SnowballProtectionService:
         if ratio < threshold:
             return None
         ss.protection_level = ProtectionLevel.EMERGENCY
-        all_entries = ss.all_entries()
+        entry_count = ss.entry_count()
         logger.critical(
             "EMERGENCY STOP: margin ratio %.1f%% >= %s%% | NAV=%s, entries=%d",
             ratio,
             threshold,
             format_money(ss.account_nav),
-            len(all_entries),
+            entry_count,
         )
         event = GenericStrategyEvent(
             event_type=EventType.STRATEGY_STOPPED,
@@ -166,7 +191,7 @@ class SnowballProtectionService:
                 closed_count,
                 ratio,
             )
-            for cycle in ss.active_cycles():
+            for cycle in ss.iter_active_cycles():
                 if cycle.grid.is_empty():
                     for layer in cycle.grid.layers:
                         for slot in layer.slots:
@@ -191,7 +216,7 @@ class SnowballProtectionService:
         pip_size: Decimal,
     ) -> tuple[Entry | None, SnowballCycle | None]:
         candidates: list[tuple[Entry, SnowballCycle, Decimal]] = []
-        for cycle in ss.active_cycles():
+        for cycle in ss.iter_active_cycles():
             entry = cycle.grid.front_entry()
             if entry is not None:
                 loss = entry.unrealised_loss_pips(tick.mid, pip_size)

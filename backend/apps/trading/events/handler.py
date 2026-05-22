@@ -380,7 +380,9 @@ class EventHandler:
     def _handle_event(
         self, trading_event: TradingEvent, *, replaying: bool
     ) -> EventExecutionResult:
-        strategy_event = StrategyEvent.from_dict(trading_event.details)
+        strategy_event = getattr(trading_event, "_strategy_event", None)
+        if not isinstance(strategy_event, StrategyEvent):
+            strategy_event = StrategyEvent.from_dict(trading_event.details)
         if isinstance(trading_event.details, dict) and trading_event.details.get("strategy_type"):
             strategy_event.strategy_type = str(trading_event.details["strategy_type"])
         self._current_sequence_number = getattr(trading_event, "sequence_number", 0) or 0

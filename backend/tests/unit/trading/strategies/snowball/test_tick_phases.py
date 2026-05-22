@@ -12,6 +12,10 @@ from apps.trading.dataclasses.tick import Tick
 from apps.trading.enums import Direction
 from apps.trading.strategies.snowball.cycle_state import SnowballCycle, SnowballStrategyState
 from apps.trading.strategies.snowball.config import SnowballStrategyConfig
+from apps.trading.strategies.snowball.decision_trace import (
+    DISABLED_SNOWBALL_DECISION_TRACE,
+    SnowballDecisionTraceRecorder,
+)
 from apps.trading.strategies.snowball.enums import CycleStatus
 from apps.trading.strategies.snowball.tick_phases import (
     ARCHIVED_COMPLETED_CYCLES_KEY,
@@ -168,6 +172,18 @@ class TestSnowballTickPipeline:
 
         assert strategy._grid_order_violation is None
         assert strategy._close_order_violation is None
+
+
+class TestSnowballDecisionTraceRecorder:
+    """Verify disabled tracing stays allocation-light."""
+
+    def test_disabled_trace_reuses_noop_trace(self) -> None:
+        fixture = PipelineFixture()
+        recorder = SnowballDecisionTraceRecorder(enabled=False)
+
+        trace = recorder.start_tick(tick=fixture.tick())
+
+        assert trace is DISABLED_SNOWBALL_DECISION_TRACE
 
 
 class TestSnowballExecutionStateBoundary:

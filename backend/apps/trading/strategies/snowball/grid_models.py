@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -263,6 +264,14 @@ class Layer:
     def all_entries(self) -> list[Entry]:
         return [s.entry for s in self.slots if s.entry is not None]
 
+    def iter_entries(self) -> Iterator[Entry]:
+        for slot in self.slots:
+            if slot.entry is not None:
+                yield slot.entry
+
+    def entry_count(self) -> int:
+        return sum(1 for slot in self.slots if slot.entry is not None)
+
     # -- Close operations --
 
     def close_slot(self, slot_index: int, *, refillable: bool | None = None) -> Entry | None:
@@ -394,6 +403,13 @@ class PositionGrid:
         for layer in self.layers:
             entries.extend(layer.all_entries())
         return entries
+
+    def iter_entries(self) -> Iterator[Entry]:
+        for layer in self.layers:
+            yield from layer.iter_entries()
+
+    def entry_count(self) -> int:
+        return sum(layer.entry_count() for layer in self.layers)
 
     def slot_for_entry(self, entry_id: int) -> tuple[Layer, Slot] | None:
         """Return the layer/slot containing an entry ID."""

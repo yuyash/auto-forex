@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from abc import ABC, abstractmethod
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from logging import Logger, getLogger
@@ -455,6 +456,7 @@ class DirectBacktestTickDataSource(TickDataSource):
         self.oanda_candle_filter_account_id = oanda_candle_filter_account_id
         self.oanda_candle_filter_granularity = str(oanda_candle_filter_granularity or "M1")
         self.oanda_candle_filter_tolerance_pips = oanda_candle_filter_tolerance_pips
+        self._pip_size_decimal = _optional_decimal(pip_size)
 
     @classmethod
     def from_task(
@@ -540,19 +542,20 @@ class DirectBacktestTickDataSource(TickDataSource):
         published = 0
         source_count = 0
         last_ts: datetime | None = None
+        filter_enabled = tick_filter.enabled
 
         for row in rows_iter:
-            ts = row.get("timestamp")
+            ts = self._row_timestamp(row)
             if not isinstance(ts, datetime):
                 continue
             source_count += 1
             last_ts = ts
 
-            if not tick_filter.should_publish(row):
+            if filter_enabled and not tick_filter.should_publish(self._row_dict(row)):
                 continue
 
             tick = self._build_tick_from_row(row)
-            if tick is None or not RedisTickDataSource._is_valid_backtest_tick(tick):
+            if tick is None or not self._is_valid_backtest_tick(tick):
                 continue
 
             batch.append(tick)
@@ -616,7 +619,7 @@ class DirectBacktestTickDataSource(TickDataSource):
                 timestamp__lte=end_dt,
             )
             .order_by("timestamp")
-            .values("timestamp", "bid", "ask", "mid")
+            .values_list("timestamp", "bid", "ask", "mid")
         )
         return qs.iterator(chunk_size=batch_size)
 
@@ -632,7 +635,7 @@ class DirectBacktestTickDataSource(TickDataSource):
         pip_size: str | Decimal | None = None,
         range_warning_pips: str | Decimal | None = None,
         request_id: str | None = None,
-    ) -> Iterator[dict[str, Any]]:
+    ) -> Iterator[tuple[datetime, Decimal | None, Decimal | None, Decimal | None]]:
         from apps.market.services.backtest_ticks import iter_aggregated_backtest_ticks
 
         pip_size_dec = _optional_decimal(pip_size)
@@ -648,20 +651,42 @@ class DirectBacktestTickDataSource(TickDataSource):
             pip_size=pip_size_dec,
             request_id=request_id,
         ):
-            yield {
-                "timestamp": row.timestamp,
-                "bid": row.bid,
-                "ask": row.ask,
-                "mid": row.mid,
-            }
+            yield (row.timestamp, row.bid, row.ask, row.mid)
 
-    def _build_tick_from_row(self, row: dict[str, Any]) -> Tick | None:
-        ts = row.get("timestamp")
+    @staticmethod
+    def _row_timestamp(row: Any) -> datetime | None:
+        if isinstance(row, Mapping):
+            ts = row.get("timestamp")
+        elif isinstance(row, Sequence) and not isinstance(row, str) and len(row) >= 1:
+            ts = row[0]
+        else:
+            return None
+        return ts if isinstance(ts, datetime) else None
+
+    @staticmethod
+    def _row_prices(row: Any) -> tuple[Any, Any, Any]:
+        if isinstance(row, Mapping):
+            return row.get("bid"), row.get("ask"), row.get("mid")
+        if isinstance(row, Sequence) and not isinstance(row, str) and len(row) >= 4:
+            return row[1], row[2], row[3]
+        return None, None, None
+
+    @classmethod
+    def _row_dict(cls, row: Any) -> dict[str, Any]:
+        if isinstance(row, dict):
+            return row
+        ts = cls._row_timestamp(row)
+        bid, ask, mid = cls._row_prices(row)
+        return {"timestamp": ts, "bid": bid, "ask": ask, "mid": mid}
+
+    def _build_tick_from_row(self, row: Any) -> Tick | None:
+        ts = self._row_timestamp(row)
         if not isinstance(ts, datetime):
             return None
-        bid = _optional_decimal(row.get("bid"))
-        ask = _optional_decimal(row.get("ask"))
-        mid = _optional_decimal(row.get("mid"))
+        raw_bid, raw_ask, raw_mid = self._row_prices(row)
+        bid = _optional_decimal(raw_bid)
+        ask = _optional_decimal(raw_ask)
+        mid = _optional_decimal(raw_mid)
         if bid is None or ask is None:
             return None
         return Tick.create(
@@ -671,6 +696,51 @@ class DirectBacktestTickDataSource(TickDataSource):
             ask=ask,
             mid=mid,
         )
+
+    def _is_valid_backtest_tick(self, tick: Tick) -> bool:
+        """Return True when a direct replay tick has sane executable prices."""
+        if tick.ask < tick.bid:
+            logger.warning(
+                "DirectBacktestTickDataSource: dropping invalid backtest tick with ask < bid "
+                "(instrument=%s, timestamp=%s, bid=%s, ask=%s)",
+                tick.instrument,
+                tick.timestamp,
+                tick.bid,
+                tick.ask,
+            )
+            return False
+
+        if tick.mid < tick.bid or tick.mid > tick.ask:
+            logger.warning(
+                "DirectBacktestTickDataSource: dropping invalid backtest tick with mid outside "
+                "bid/ask (instrument=%s, timestamp=%s, bid=%s, ask=%s, mid=%s)",
+                tick.instrument,
+                tick.timestamp,
+                tick.bid,
+                tick.ask,
+                tick.mid,
+            )
+            return False
+
+        pip_size = self._pip_size_decimal
+        if pip_size is None or pip_size <= 0:
+            return True
+
+        spread_pips = (tick.ask - tick.bid) / pip_size
+        if spread_pips > _MAX_BACKTEST_SPREAD_PIPS:
+            logger.warning(
+                "DirectBacktestTickDataSource: dropping anomalous backtest tick spread "
+                "(instrument=%s, timestamp=%s, bid=%s, ask=%s, spread_pips=%s, max=%s)",
+                tick.instrument,
+                tick.timestamp,
+                tick.bid,
+                tick.ask,
+                spread_pips,
+                _MAX_BACKTEST_SPREAD_PIPS,
+            )
+            return False
+
+        return True
 
     def _check_data_coverage(
         self,

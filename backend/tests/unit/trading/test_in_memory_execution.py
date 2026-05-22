@@ -15,10 +15,11 @@ from apps.trading.enums import Direction, EventType, TaskType
 from apps.trading.events import (
     ClosePositionEvent,
     GenericStrategyEvent,
+    InitialEntryEvent,
     OpenPositionEvent,
     RebuildPositionEvent,
 )
-from apps.trading.in_memory_execution import InMemoryEventHandler
+from apps.trading.in_memory_execution import InMemoryEventHandler, InMemoryOrderService
 from apps.trading.models import Position, TradingEvent
 from apps.trading.tasks.event_persistence import materialize_execution_events
 from tests.integration.factories import UserFactory
@@ -239,3 +240,62 @@ def test_materialize_execution_events_keeps_only_transient_execution_events() ->
     assert record.execution_id == execution_id
     assert record.entry_id == 10
     assert TradingEvent.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_materialize_execution_events_attaches_execution_event_fast_path() -> None:
+    task_id = uuid4()
+    execution_id = uuid4()
+    context = EventContext(
+        user=UserFactory(),
+        account=None,
+        instrument="USD_JPY",
+        task_id=task_id,
+        execution_id=execution_id,
+        task_type=TaskType.BACKTEST,
+    )
+    event = InitialEntryEvent(
+        event_type=EventType.INITIAL_ENTRY,
+        direction=Direction.LONG.value,
+        price=Decimal("150.00"),
+        units=1000,
+        entry_id=10,
+    )
+
+    records = materialize_execution_events(
+        events=[event],
+        context=context,
+        execution_id=execution_id,
+        strategy_type="snowball",
+    )
+
+    assert len(records) == 1
+    record = records[0]
+    attached = getattr(record, "_strategy_event")
+    assert isinstance(attached, OpenPositionEvent)
+    assert attached.event_type == EventType.OPEN_POSITION
+    assert attached.entry_id == 10
+
+
+def test_in_memory_order_service_uses_lightweight_broker_gateway() -> None:
+    class BacktestTaskDouble(SimpleNamespace):
+        pass
+
+    task = BacktestTaskDouble(
+        id=uuid4(),
+        execution_id=uuid4(),
+        account_currency="USD",
+    )
+    service = InMemoryOrderService(account=None, task=task, dry_run=True)
+
+    position, order = service.open_position(
+        instrument="USD_JPY",
+        units=1000,
+        direction=Direction.LONG,
+        override_price=Decimal("150.25"),
+        tick_timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    assert order.broker_order_id == "MEM-1"
+    assert order.fill_price == Decimal("150.25")
+    assert position.entry_price == Decimal("150.25")

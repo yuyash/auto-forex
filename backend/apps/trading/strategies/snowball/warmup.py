@@ -99,7 +99,7 @@ class SnowballWarmupPolicy:
             tick=tick,
             pip_size=pip_size,
         )
-        open_positions = len(state.all_entries())
+        open_positions = state.entry_count()
         new_position_limit = (
             max(1, config.warmup_max_positions) if config.warmup_position_limit_enabled else None
         )
@@ -238,7 +238,7 @@ class SnowballWarmupPolicy:
         tick: Tick,
         pip_size: Decimal,
     ) -> str:
-        if not config.warmup_start_gate_enabled or state.all_entries():
+        if not config.warmup_start_gate_enabled or state.entry_count() > 0:
             return ""
         if config.warmup_gate_spread_enabled:
             spread_pips = (tick.ask - tick.bid) / pip_size

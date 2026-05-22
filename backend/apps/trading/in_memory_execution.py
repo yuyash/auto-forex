@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from types import MethodType
 from typing import Any
 
 from django.utils import timezone
 
-from apps.market.services.oanda import MarketOrder as OandaMarketOrder
+from apps.market.services.oanda import (
+    MarketOrder as OandaMarketOrder,
+    MarketOrderRequest,
+    OpenTrade,
+    OrderDirection,
+    OrderState,
+    OrderType as OandaOrderType,
+    Position as OandaPosition,
+)
 from apps.trading.enums import Direction, TaskType
 from apps.trading.events import (
     ClosePositionEvent,
@@ -39,6 +47,80 @@ def _disable_persistence(instance: Any) -> Any:
     instance.refresh_from_db = MethodType(_noop_refresh_from_db, instance)
     instance._in_memory = True
     return instance
+
+
+class InMemoryBrokerGateway:
+    """Minimal broker gateway for in-memory backtests with strategy-provided prices."""
+
+    def __init__(self) -> None:
+        self.order_counter = 0
+
+    def create_market_order(
+        self,
+        request: MarketOrderRequest,
+        *,
+        override_price: Decimal | None = None,
+    ) -> OandaMarketOrder:
+        self.order_counter += 1
+        direction = OrderDirection.LONG if request.units >= 0 else OrderDirection.SHORT
+        now = datetime.now(UTC)
+        return OandaMarketOrder(
+            order_id=f"MEM-{self.order_counter}",
+            instrument=str(request.instrument),
+            order_type=OandaOrderType.MARKET,
+            direction=direction,
+            units=abs(request.units),
+            price=override_price if override_price is not None else Decimal("1.0000"),
+            state=OrderState.FILLED,
+            time_in_force="FOK",
+            create_time=now,
+            fill_time=now,
+            trade_id=f"MEM-TRADE-{self.order_counter}",
+        )
+
+    def close_trade(
+        self,
+        *,
+        trade: OpenTrade,
+        units: Decimal | None = None,
+    ) -> OandaMarketOrder:
+        self.order_counter += 1
+        now = datetime.now(UTC)
+        return OandaMarketOrder(
+            order_id=f"MEM-CLOSE-{self.order_counter}",
+            instrument=trade.instrument,
+            order_type=OandaOrderType.MARKET,
+            direction=trade.direction,
+            units=trade.units if units is None else min(units, trade.units),
+            price=trade.entry_price,
+            state=OrderState.FILLED,
+            time_in_force="FOK",
+            create_time=now,
+            fill_time=now,
+            trade_id=trade.trade_id,
+        )
+
+    def close_position(
+        self,
+        *,
+        position: OandaPosition,
+        units: Decimal | None = None,
+        override_price: Decimal | None = None,
+    ) -> OandaMarketOrder:
+        self.order_counter += 1
+        now = datetime.now(UTC)
+        return OandaMarketOrder(
+            order_id=f"MEM-CLOSE-{self.order_counter}",
+            instrument=position.instrument,
+            order_type=OandaOrderType.MARKET,
+            direction=position.direction,
+            units=position.units if units is None else min(units, position.units),
+            price=override_price if override_price is not None else position.average_price,
+            state=OrderState.FILLED,
+            time_in_force="FOK",
+            create_time=now,
+            fill_time=now,
+        )
 
 
 class InMemoryOrderRepository:
@@ -271,6 +353,8 @@ class InMemoryOrderService(OrderService):
 
     def __init__(self, *, account: Any | None, task, dry_run: bool = True) -> None:
         super().__init__(account=account, task=task, dry_run=dry_run)
+        self.broker_gateway = InMemoryBrokerGateway()
+        self.oanda_service = self.broker_gateway
         self.order_repository = InMemoryOrderRepository(
             task_type=self.task_type,
             task_id=task.id,

@@ -545,7 +545,7 @@ class SnowballStrategy(Strategy):
 
         has_other_active = any(
             c.is_active and c.cycle_id != cycle.cycle_id and c.direction == direction
-            for c in ss.active_cycles()
+            for c in ss.iter_active_cycles()
         )
         if not has_other_active:
             new_events, _new_cycle = self._create_cycle(ss, tick, direction)
