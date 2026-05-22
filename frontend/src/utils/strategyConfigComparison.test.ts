@@ -106,6 +106,14 @@ describe('strategyConfigComparison', () => {
       base_units_balance_ratio: '2000',
       rebuild_entry_price_mode: 'ロスカット決済価格',
     });
+    expect(data.labels.base_units_auto_adjust_enabled).toEqual({
+      primary: '基本ユニット数の自動調整',
+      secondary: 'Auto Adjust Base Units',
+    });
+    expect(data.labels.base_units_balance_ratio).toEqual({
+      primary: '1ユニットあたりの残高比率',
+      secondary: 'Balance Per Unit',
+    });
   });
 
   it('falls back to English enum labels outside Japanese locales', () => {
@@ -126,5 +134,35 @@ describe('strategyConfigComparison', () => {
         labels
       )
     ).toBe('Stop Loss Exit');
+  });
+
+  it('uses English labels without secondary text in English locales', () => {
+    const data = buildStrategyComparisonData({
+      configs: [
+        {
+          id: 'config-1',
+          name: 'Config A',
+          strategy_type: 'snowball',
+          parameters: { base_units: 1000 },
+        },
+      ],
+      schemaPropertiesByType: new Map([
+        [
+          'snowball',
+          {
+            base_units: {
+              type: 'number',
+              title: 'Base Units',
+              title_ja: '基本ユニット数',
+              default: 1000,
+            },
+          },
+        ],
+      ]),
+      language: 'en_US',
+      labels,
+    });
+
+    expect(data.labels.base_units).toEqual({ primary: 'Base Units' });
   });
 });

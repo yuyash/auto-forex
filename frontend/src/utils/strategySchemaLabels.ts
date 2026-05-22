@@ -41,7 +41,7 @@ export function buildParameterLabelMap(
 function languageCandidates(language: string): string[] {
   const normalized = language.trim().toLowerCase();
   if (!normalized) return [];
-  const base = normalized.split('-')[0];
+  const base = normalized.split(/[-_]/)[0];
   return [...new Set([normalized, base])];
 }
 

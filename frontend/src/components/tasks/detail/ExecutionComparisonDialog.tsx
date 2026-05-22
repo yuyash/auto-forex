@@ -52,6 +52,7 @@ import {
 import {
   buildStrategyComparisonData,
   resolveStrategyComparisonSnapshot,
+  type StrategyComparisonLabel,
 } from '../../../utils/strategyConfigComparison';
 import { computeAutoInterval } from '../../../utils/autoGranularity';
 import {
@@ -202,6 +203,16 @@ function titleCaseConfigKey(key: string): string {
     .replace(/\./g, ' ')
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function resolveStrategyComparisonLabel(
+  label: StrategyComparisonLabel | undefined,
+  fallbackMap: Map<string, string> | undefined,
+  key: string
+): StrategyComparisonLabel {
+  if (label) return label;
+  if (fallbackMap) return { primary: resolveParameterLabel(fallbackMap, key) };
+  return { primary: titleCaseConfigKey(key) };
 }
 
 /** Result metric keys to display in the results comparison. */
@@ -664,7 +675,7 @@ function ConfigComparisonPanel({
     [t]
   );
 
-  const { configs, allKeys } = useMemo(() => {
+  const { configs, allKeys, keyLabels } = useMemo(() => {
     if (type === 'strategy') {
       const strategyData = buildStrategyComparisonData({
         configs: executions.map((exec) => exec.strategy_config),
@@ -672,7 +683,11 @@ function ConfigComparisonPanel({
         language: i18n.language,
         labels: booleanLabels,
       });
-      return { configs: strategyData.configs, allKeys: strategyData.keys };
+      return {
+        configs: strategyData.configs,
+        allKeys: strategyData.keys,
+        keyLabels: strategyData.labels,
+      };
     }
 
     const taskConfigs = executions.map((exec) => {
@@ -689,7 +704,7 @@ function ConfigComparisonPanel({
         keys.add(k);
       }
     }
-    return { configs: taskConfigs, allKeys: [...keys].sort() };
+    return { configs: taskConfigs, allKeys: [...keys].sort(), keyLabels: {} };
   }, [booleanLabels, executions, i18n.language, schemaPropertiesByType, type]);
 
   // Determine which keys differ
@@ -786,6 +801,14 @@ function ConfigComparisonPanel({
           <tbody>
             {displayKeys.map((key) => {
               const isDiff = diffKeys.has(key);
+              const label =
+                type === 'strategy'
+                  ? resolveStrategyComparisonLabel(
+                      keyLabels[key],
+                      paramLabelMap,
+                      key
+                    )
+                  : { primary: titleCaseConfigKey(key) };
               return (
                 <tr key={key}>
                   <td>
@@ -794,10 +817,21 @@ function ConfigComparisonPanel({
                       fontWeight={isDiff ? 600 : 400}
                       sx={{ fontSize: '0.75rem' }}
                     >
-                      {type === 'strategy' && paramLabelMap
-                        ? resolveParameterLabel(paramLabelMap, key)
-                        : titleCaseConfigKey(key)}
+                      {label.primary}
                     </Typography>
+                    {label.secondary ? (
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{
+                          display: 'block',
+                          fontSize: '0.6875rem',
+                          lineHeight: 1.3,
+                        }}
+                      >
+                        {label.secondary}
+                      </Typography>
+                    ) : null}
                   </td>
                   {configs.map((cfg, i) => (
                     <td
