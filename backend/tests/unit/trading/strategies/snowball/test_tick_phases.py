@@ -223,6 +223,33 @@ class TestSnowballExecutionStateBoundary:
         assert state.strategy_state["metrics"]["margin_ratio"] == "0.25"
         assert state.strategy_state["metrics"]["current_balance"] == "10000"
 
+    def test_materialize_keeps_fresh_deferred_base_units_over_runtime_view(self) -> None:
+        initial_state = SnowballStrategyState()
+        initial_state.metrics.update(
+            {
+                "current_base_units": "2000",
+                "snowball_current_base_units": "2000",
+                "current_balance": "1183656.600000",
+            }
+        )
+        state = ExecutionStateDouble(strategy_state=initial_state.to_dict())
+        state._defer_snowball_state_serialization = True  # type: ignore[attr-defined]
+        state._defer_snowball_runtime_view_updates = True  # type: ignore[attr-defined]
+        boundary = SnowballExecutionStateBoundary(state=state)
+
+        snowball_state = boundary.load()
+        snowball_state.set_metric("current_base_units", "2300", defer=True)
+        snowball_state.set_metric("snowball_current_base_units", "2300", defer=True)
+        boundary.persist(snowball_state)
+
+        assert state.strategy_state["metrics"]["current_base_units"] == "2000"
+
+        state._strategy_state_materializer()  # type: ignore[attr-defined]
+
+        assert state.strategy_state["metrics"]["current_base_units"] == "2300"
+        assert state.strategy_state["metrics"]["snowball_current_base_units"] == "2300"
+        assert state.strategy_state["metrics"]["current_balance"] == "1183656.600000"
+
     def test_persist_archives_completed_trade_backed_cycles(self) -> None:
         state = ExecutionStateDouble(strategy_state={ARCHIVED_COMPLETED_CYCLES_KEY: 2})
         boundary = SnowballExecutionStateBoundary(state=state)
