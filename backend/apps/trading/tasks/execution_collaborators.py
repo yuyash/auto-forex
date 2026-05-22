@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from apps.trading.events import StrategyEvent
-from apps.trading.models import BacktestTask, TradingEvent
+from apps.trading.models import BacktestTask
 from apps.trading.models.state import ExecutionState
 from apps.trading.tasks.event_persistence import (
     materialize_execution_events,
@@ -26,14 +26,14 @@ class ExecutionEventDispatcher:
     def process(
         self,
         state: ExecutionState,
-        events: list[TradingEvent],
+        events: list[Any],
         *,
         replaying: bool = False,
     ) -> None:
         """Dispatch persisted events through the executor's event processor."""
         self.executor.event_processor.process(state, events, replaying=replaying)
 
-    def persist(self, events: list[StrategyEvent]) -> list[TradingEvent]:
+    def persist(self, events: list[StrategyEvent]) -> list[Any]:
         """Persist strategy events to database rows."""
         executor = self.executor
         strategy_type = str(getattr(executor.task.config, "strategy_type", "") or "")

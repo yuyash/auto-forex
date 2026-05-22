@@ -7,11 +7,10 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from time import monotonic
 from logging import Logger, getLogger
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from apps.trading.dataclasses import StrategyResult
 from apps.trading.enums import TaskStatus, TaskType
-from apps.trading.models import TradingEvent
 from apps.trading.tasks.execution_dtos import LiveTickDeliveryState
 
 if TYPE_CHECKING:
@@ -76,7 +75,7 @@ class ExecutionTickProcessor:
         loop.state = result.state
         if live_tick_delivery is not None:
             executor._merge_live_tick_delivery_state(loop.state, live_tick_delivery)
-        events: list[TradingEvent] = executor.save_events(result.events)
+        events: list[Any] = executor.save_events(result.events)
 
         if executor.task_type == TaskType.TRADING and events:
             executor.save_state(loop.state)

@@ -8,6 +8,7 @@ from dataclasses import replace
 from datetime import datetime
 from decimal import Decimal
 from logging import Logger, getLogger
+from typing import Any
 
 from django.utils import timezone as dj_timezone
 
@@ -357,7 +358,7 @@ class EventHandler:
             return filled_at
         return fallback_timestamp or dj_timezone.now()
 
-    def handle_event(self, trading_event: TradingEvent) -> EventExecutionResult:
+    def handle_event(self, trading_event: TradingEvent | Any) -> EventExecutionResult:
         """Handle a single trading event by executing appropriate order.
 
         Args:
@@ -372,13 +373,13 @@ class EventHandler:
         return self._handle_event(trading_event, replaying=False)
 
     def handle_event_with_replay(
-        self, trading_event: TradingEvent, *, replaying: bool
+        self, trading_event: TradingEvent | Any, *, replaying: bool
     ) -> EventExecutionResult:
         """Handle a single trading event with optional replay context."""
         return self._handle_event(trading_event, replaying=replaying)
 
     def _handle_event(
-        self, trading_event: TradingEvent, *, replaying: bool
+        self, trading_event: TradingEvent | Any, *, replaying: bool
     ) -> EventExecutionResult:
         strategy_event = getattr(trading_event, "_strategy_event", None)
         if not isinstance(strategy_event, StrategyEvent):

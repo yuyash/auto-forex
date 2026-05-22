@@ -70,12 +70,13 @@ class SnowballExecutionStateBoundary:
 
     def persist(self, snowball_state: SnowballStrategyState) -> None:
         """Write the Snowball domain model back to the execution state."""
-        strategy_state = self._hot_strategy_state(snowball_state)
         if self._defer_serialization:
             self._set_cached_state(snowball_state)
             if not self._defer_runtime_view_updates:
+                strategy_state = self._hot_strategy_state(snowball_state)
                 self._merge_runtime_view(strategy_state)
             return
+        strategy_state = self._hot_strategy_state(snowball_state)
         self.state.strategy_state = strategy_state
 
     def raw_strategy_state(self) -> dict[str, Any]:
@@ -137,6 +138,7 @@ class SnowballExecutionStateBoundary:
         cached = getattr(self.state, "_snowball_strategy_state_cache", None)
         if not isinstance(cached, SnowballStrategyState):
             return
+        cached.flush_deferred_metrics()
         runtime_state = self.raw_strategy_state()
         runtime_metrics = runtime_state.get("metrics", {})
         if isinstance(runtime_metrics, dict):
@@ -162,6 +164,7 @@ class SnowballExecutionStateBoundary:
         if archived_delta:
             snowball_state.cycles = retained
 
+        snowball_state.flush_deferred_metrics()
         strategy_state = snowball_state.to_dict()
         archived_total = _archived_completed_cycles(self.raw_strategy_state()) + archived_delta
         if archived_total:
@@ -207,6 +210,10 @@ class SnowballTickContext:
     new_position_limit: int | None = None
     rebuild_limit_per_tick: int | None = None
     warmup_decision: SnowballWarmupDecision | None = None
+    defer_metric_strings: bool = False
+
+    def set_metric(self, key: str, value: str | int | float | Decimal) -> None:
+        self.snowball_state.set_metric(key, value, defer=self.defer_metric_strings)
 
 
 @dataclass(frozen=True, slots=True)
@@ -294,8 +301,8 @@ class SnowballAccountMetricsPhase:
         current_base_units = context.strategy.config.effective_base_units(
             context.snowball_state.account_balance
         )
-        context.snowball_state.metrics["current_base_units"] = str(current_base_units)
-        context.snowball_state.metrics["snowball_current_base_units"] = str(current_base_units)
+        context.set_metric("current_base_units", current_base_units)
+        context.set_metric("snowball_current_base_units", current_base_units)
         return NOOP_PHASE_OUTCOME
 
 
@@ -321,8 +328,8 @@ class SnowballWarmupPhase:
             context.snowball_state.account_balance,
             ratio_pct=decision.unit_ratio_pct,
         )
-        context.snowball_state.metrics["current_base_units"] = str(current_base_units)
-        context.snowball_state.metrics["snowball_current_base_units"] = str(current_base_units)
+        context.set_metric("current_base_units", current_base_units)
+        context.set_metric("snowball_current_base_units", current_base_units)
         return NOOP_PHASE_OUTCOME
 
 
@@ -553,12 +560,20 @@ class SnowballTickPipeline:
         snowball_state.last_bid = tick.bid
         snowball_state.last_ask = tick.ask
         snowball_state.last_mid = tick.mid
+        setattr(
+            snowball_state,
+            "_defer_metric_strings",
+            bool(getattr(state, "_defer_snowball_runtime_view_updates", False)),
+        )
         return SnowballTickContext(
             strategy=strategy,
             state=state,
             tick=tick,
             state_boundary=state_boundary,
             snowball_state=snowball_state,
+            defer_metric_strings=bool(
+                getattr(state, "_defer_snowball_runtime_view_updates", False)
+            ),
         )
 
 

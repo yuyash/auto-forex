@@ -19,9 +19,21 @@ class ProgressFlushPolicy:
     _last_flush_at: float = 0
 
     @classmethod
-    def for_task_type(cls, task_type: TaskType) -> "ProgressFlushPolicy":
+    def for_task_type(
+        cls,
+        task_type: TaskType,
+        *,
+        in_memory_mode: bool = False,
+    ) -> "ProgressFlushPolicy":
         """Build a policy using task-type-specific settings."""
-        if task_type == TaskType.TRADING:
+        if in_memory_mode and task_type == TaskType.BACKTEST:
+            batch_interval = int(
+                getattr(settings, "TRADING_IN_MEMORY_BACKTEST_PROGRESS_FLUSH_BATCHES", 250)
+            )
+            max_interval_seconds = float(
+                getattr(settings, "TRADING_IN_MEMORY_BACKTEST_PROGRESS_FLUSH_SECONDS", 10.0)
+            )
+        elif task_type == TaskType.TRADING:
             batch_interval = int(getattr(settings, "TRADING_LIVE_PROGRESS_FLUSH_BATCHES", 10))
             max_interval_seconds = float(
                 getattr(settings, "TRADING_LIVE_PROGRESS_FLUSH_SECONDS", 1.0)

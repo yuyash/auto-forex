@@ -610,18 +610,24 @@ class DirectBacktestTickDataSource(TickDataSource):
         end_dt: datetime,
         batch_size: int,
     ) -> Any:
+        from django.db import connection
+
         from apps.market.models import TickData
 
-        qs = (
-            TickData.objects.filter(
-                instrument=str(instrument),
-                timestamp__gte=start_dt,
-                timestamp__lte=end_dt,
-            )
-            .order_by("timestamp")
-            .values_list("timestamp", "bid", "ask", "mid")
+        quote = connection.ops.quote_name
+        quoted_table = quote(TickData._meta.db_table)
+        query = (
+            f"SELECT {quote('timestamp')}, {quote('bid')}, {quote('ask')}, {quote('mid')} "  # nosec B608
+            f"FROM {quoted_table} "  # nosec B608
+            f"WHERE {quote('instrument')} = %s "  # nosec B608
+            f"AND {quote('timestamp')} >= %s "  # nosec B608
+            f"AND {quote('timestamp')} <= %s "  # nosec B608
+            f"ORDER BY {quote('timestamp')} ASC"  # nosec B608
         )
-        return qs.iterator(chunk_size=batch_size)
+        with connection.cursor() as cursor:
+            cursor.execute(query, [str(instrument), start_dt, end_dt])
+            while rows := cursor.fetchmany(batch_size):
+                yield from rows
 
     @staticmethod
     def _iter_aggregated_ticks(

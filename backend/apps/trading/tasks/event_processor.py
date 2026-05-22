@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import TYPE_CHECKING, List
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
 
 from apps.trading.dataclasses import EventExecutionResult
 from apps.trading.enums import TaskType
 from apps.trading.events.handler import CycleResolutionError
-from apps.trading.models import TradingEvent
 from apps.trading.order import OrderServiceError
 
 if TYPE_CHECKING:
@@ -25,7 +25,7 @@ class TaskEventProcessor:
     def process(
         self,
         state: ExecutionState,
-        events: List[TradingEvent],
+        events: Sequence[Any],
         *,
         replaying: bool = False,
     ) -> None:
@@ -34,7 +34,9 @@ class TaskEventProcessor:
             if getattr(trading_event, "is_processed", False):
                 continue
 
-            replay_classification = executor._classify_replay_event(trading_event)
+            replay_classification = (
+                executor._classify_replay_event(trading_event) if replaying else ""
+            )
             if replaying:
                 executor.logger.warning(
                     "Replaying event - task_id=%s, event_id=%s, event_type=%s, "

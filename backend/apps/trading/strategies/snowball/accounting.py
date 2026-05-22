@@ -46,6 +46,7 @@ class SnowballAccountMetricsUpdater:
             tick=tick,
             conversion_rate=conversion_rate,
         )
+        ss.set_entry_units_cache(long_units=long_units, short_units=short_units)
         ss.account_nav = ss.account_balance + unrealized
         if ss.account_nav <= 0:
             ss.account_nav = ss.account_balance
@@ -66,7 +67,7 @@ class SnowballAccountMetricsUpdater:
                 short_units=short_units,
             )
         )
-        ss.metrics["margin_ratio"] = str(ratio / Decimal("100"))
+        ss.set_metric("margin_ratio", ratio / Decimal("100"), defer=self._defer_metric_strings(ss))
         return ratio
 
     def _margin_ratio_func(self) -> Callable[..., Decimal]:
@@ -74,6 +75,10 @@ class SnowballAccountMetricsUpdater:
 
     def _uses_external_margin_ratio(self) -> bool:
         return self.margin_ratio_func is not None or "margin_ratio" in SNOWBALL_PROTECTION.__dict__
+
+    @staticmethod
+    def _defer_metric_strings(ss: SnowballStrategyState) -> bool:
+        return bool(getattr(ss, "_defer_metric_strings", False))
 
     def _instrument(self, instrument: str) -> Instrument:
         cached = self._instrument_cache.get(instrument)

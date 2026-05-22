@@ -55,13 +55,7 @@ class SnowballProtectionService:
             return Decimal("0")
         if ss.entry_count() == 0:
             return Decimal("0")
-        long_units = 0
-        short_units = 0
-        for entry in ss.iter_entries():
-            if entry.is_long:
-                long_units += abs(entry.units)
-            elif entry.is_short:
-                short_units += abs(entry.units)
+        long_units, short_units = ss.entry_units_by_direction()
         total_units = max(long_units, short_units)
         if total_units == 0:
             return Decimal("0")
@@ -177,6 +171,7 @@ class SnowballProtectionService:
                 )
             )
             cycle.remove_entry(entry.entry_id)
+            ss.invalidate_entry_cache()
             closed_count += 1
             ratio = self.margin_ratio(
                 state=state,
