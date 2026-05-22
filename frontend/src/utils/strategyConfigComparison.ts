@@ -24,9 +24,15 @@ interface BuildStrategyComparisonDataParams {
   labels: BooleanLabels;
 }
 
+export interface StrategyComparisonLabel {
+  primary: string;
+  secondary?: string;
+}
+
 export interface StrategyComparisonData {
   configs: Record<string, string>[];
   keys: string[];
+  labels: Record<string, StrategyComparisonLabel>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -50,8 +56,63 @@ function stableValue(value: unknown): unknown {
 function languageCandidates(language: string): string[] {
   const normalized = language.trim().toLowerCase();
   if (!normalized) return [];
-  const base = normalized.split('-')[0];
+  const base = normalized.split(/[-_]/)[0];
   return [...new Set([normalized, base])];
+}
+
+function isEnglishLanguage(language: string): boolean {
+  return languageCandidates(language).includes('en');
+}
+
+function titleCaseParameterKey(key: string): string {
+  return key
+    .replace(/^parameters\./, '')
+    .replace(/\./g, ' ')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function localizedPropertyString(
+  prop: ConfigProperty | undefined,
+  field: 'title',
+  language: string
+): string | undefined {
+  if (!prop) return undefined;
+  for (const candidate of languageCandidates(language)) {
+    const value = prop[`${field}_${candidate}` as keyof ConfigProperty] as
+      | string
+      | undefined;
+    if (value) return value;
+  }
+  return prop[field];
+}
+
+function englishPropertyString(
+  prop: ConfigProperty | undefined,
+  field: 'title'
+): string | undefined {
+  if (!prop) return undefined;
+  return (
+    (prop[`${field}_en` as keyof ConfigProperty] as string | undefined) ??
+    prop[field]
+  );
+}
+
+function buildStrategyComparisonLabel(
+  key: string,
+  prop: ConfigProperty | undefined,
+  language: string
+): StrategyComparisonLabel {
+  const primary =
+    localizedPropertyString(prop, 'title', language) ??
+    titleCaseParameterKey(key);
+  const english = englishPropertyString(prop, 'title');
+
+  if (!isEnglishLanguage(language) && english && english !== primary) {
+    return { primary, secondary: english };
+  }
+
+  return { primary };
 }
 
 function localizedEnumLabels(
@@ -137,6 +198,7 @@ export function buildStrategyComparisonData({
 }: BuildStrategyComparisonDataParams): StrategyComparisonData {
   const snapshots = configs.map(resolveStrategyComparisonSnapshot);
   const keySet = new Set<string>();
+  const labelMap = new Map<string, StrategyComparisonLabel>();
   const strategyTypes = [
     ...new Set(snapshots.map((snapshot) => snapshot.strategyType)),
   ];
@@ -155,6 +217,12 @@ export function buildStrategyComparisonData({
         )
       ) {
         keySet.add(key);
+        if (!labelMap.has(key)) {
+          labelMap.set(
+            key,
+            buildStrategyComparisonLabel(key, schemaProperties[key], language)
+          );
+        }
       }
     }
   }
@@ -170,11 +238,28 @@ export function buildStrategyComparisonData({
         }
         if (!(key in schemaProperties)) {
           keySet.add(key);
+          if (!labelMap.has(key)) {
+            labelMap.set(
+              key,
+              buildStrategyComparisonLabel(key, undefined, language)
+            );
+          }
+        } else if (!labelMap.has(key)) {
+          labelMap.set(
+            key,
+            buildStrategyComparisonLabel(key, schemaProperties[key], language)
+          );
         }
         continue;
       }
 
       keySet.add(key);
+      if (!labelMap.has(key)) {
+        labelMap.set(
+          key,
+          buildStrategyComparisonLabel(key, undefined, language)
+        );
+      }
     }
   }
 
@@ -214,5 +299,6 @@ export function buildStrategyComparisonData({
     keys: orderedKeys.filter((key) =>
       formattedConfigs.some((config) => hasOwnKey(config, key))
     ),
+    labels: Object.fromEntries(labelMap),
   };
 }

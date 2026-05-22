@@ -32,4 +32,10 @@ describe('strategySchemaLabels', () => {
     expect(labels.get('stop_loss_enabled')).toBe('ロスカットを有効化');
     expect(labels.get('unknown_locale')).toBe('English Fallback');
   });
+
+  it('resolves underscore language tags to base localized labels', () => {
+    const labels = buildParameterLabelMap(strategies, 'snowball', 'ja_JP');
+
+    expect(labels.get('stop_loss_enabled')).toBe('ロスカットを有効化');
+  });
 });
