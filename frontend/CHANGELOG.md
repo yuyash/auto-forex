@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.1](https://github.com/yuyash/auto-forex-web-service/compare/frontend-v2.8.0...frontend-v2.8.1) (2026-05-22)
+
+
+### Bug Fixes
+
+* **comparison:** show bilingual strategy config labels ([#801](https://github.com/yuyash/auto-forex-web-service/issues/801)) ([ee91dd7](https://github.com/yuyash/auto-forex-web-service/commit/ee91dd7aba6afa9a9768e1426f0a6eca60d1fa11))
+
 ## [2.8.0](https://github.com/yuyash/auto-forex-web-service/compare/frontend-v2.7.0...frontend-v2.8.0) (2026-05-22)
 
 
