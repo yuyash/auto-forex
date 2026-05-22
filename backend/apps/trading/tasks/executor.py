@@ -165,7 +165,11 @@ class TaskExecutor:
         self._event_dispatcher = ExecutionEventDispatcher(self)
         self._state_repository = ExecutionStateRepository(self)
         self._tick_loop = ExecutionTickLoop(self)
-        self._progress_flush_policy = ProgressFlushPolicy.for_task_type(self.task_type)
+        self._progress_flush_policy = ProgressFlushPolicy.for_task_type(
+            self.task_type,
+            in_memory_mode=self.uses_in_memory_mode,
+        )
+        self._batch_control_check_interval = self._control_check_tick_interval()
 
         from apps.trading.services.metrics_aggregator import MetricsAggregator
 
@@ -385,7 +389,7 @@ class TaskExecutor:
     def handle_events(
         self,
         state: ExecutionState,
-        events: List[TradingEvent],
+        events: List[Any],
         *,
         replaying: bool = False,
     ) -> None:
@@ -420,7 +424,7 @@ class TaskExecutor:
         """Flush completed minute-level metric buckets to the database."""
         self._metrics_aggregator.flush()
 
-    def save_events(self, events: List[StrategyEvent]) -> List[TradingEvent]:
+    def save_events(self, events: List[StrategyEvent]) -> List[Any]:
         """Save strategy events to database.
 
         Args:
@@ -574,6 +578,16 @@ class TaskExecutor:
         loop.paused_early = True
         return True
 
+    def _control_check_tick_interval(self) -> int:
+        if self.uses_in_memory_mode:
+            from django.conf import settings as _settings
+
+            return max(
+                1,
+                int(getattr(_settings, "TRADING_IN_MEMORY_CONTROL_CHECK_TICKS", 1000)),
+            )
+        return 100
+
     def _after_batch_processed(self, loop: ExecutionLoopState) -> None:
         """Hook for executor-specific checks after each processed batch."""
         _ = loop
@@ -633,8 +647,11 @@ class TaskExecutor:
         # the loop as soon as the drain is complete.
         if self._handle_drain_pre_batch(loop):
             return
+        control_check_interval = self._batch_control_check_interval
         for tick_idx, tick in enumerate(tick_batch):
-            if tick_idx % 100 == 0 and self._should_stop_during_batch(loop, tick_idx):
+            if tick_idx % control_check_interval == 0 and self._should_stop_during_batch(
+                loop, tick_idx
+            ):
                 break
             if self._process_single_tick(loop, tick):
                 break

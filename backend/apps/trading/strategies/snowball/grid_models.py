@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -196,22 +197,30 @@ class Layer:
         return [s for s in self.slots if s.is_present]
 
     def highest_occupied_slot(self) -> Slot | None:
-        occupied = self.occupied_slots()
-        return max(occupied, key=lambda s: s.index) if occupied else None
+        for slot in reversed(self.slots):
+            if slot.is_occupied:
+                return slot
+        return None
 
     def highest_present_slot(self) -> Slot | None:
         """Highest slot that is occupied or pending rebuild."""
-        present = self.present_slots()
-        return max(present, key=lambda s: s.index) if present else None
+        for slot in reversed(self.slots):
+            if slot.is_present:
+                return slot
+        return None
 
     def previous_present_slot(self, index: int) -> Slot | None:
         """Highest present slot with index lower than ``index``."""
-        present = [s for s in self.present_slots() if s.index < index]
-        return max(present, key=lambda s: s.index) if present else None
+        for slot in reversed(self.slots):
+            if slot.index < index and slot.is_present:
+                return slot
+        return None
 
     def lowest_occupied_slot(self) -> Slot | None:
-        occupied = self.occupied_slots()
-        return min(occupied, key=lambda s: s.index) if occupied else None
+        for slot in self.slots:
+            if slot.is_occupied:
+                return slot
+        return None
 
     def slot_at(self, index: int) -> Slot | None:
         """Return the slot at *index* (0-based), or None."""
@@ -262,6 +271,14 @@ class Layer:
 
     def all_entries(self) -> list[Entry]:
         return [s.entry for s in self.slots if s.entry is not None]
+
+    def iter_entries(self) -> Iterator[Entry]:
+        for slot in self.slots:
+            if slot.entry is not None:
+                yield slot.entry
+
+    def entry_count(self) -> int:
+        return sum(1 for slot in self.slots if slot.entry is not None)
 
     # -- Close operations --
 
@@ -395,6 +412,13 @@ class PositionGrid:
             entries.extend(layer.all_entries())
         return entries
 
+    def iter_entries(self) -> Iterator[Entry]:
+        for layer in self.layers:
+            yield from layer.iter_entries()
+
+    def entry_count(self) -> int:
+        return sum(layer.entry_count() for layer in self.layers)
+
     def slot_for_entry(self, entry_id: int) -> tuple[Layer, Slot] | None:
         """Return the layer/slot containing an entry ID."""
         for layer in self.layers:
@@ -482,25 +506,28 @@ class PositionGrid:
         layers = self.layers
 
         for i, layer in enumerate(layers):
-            occupied = layer.occupied_slots()
-            if not occupied:
+            occupied_count = layer.entry_count()
+            if occupied_count == 0:
                 continue
 
-            if len(occupied) >= 2:
+            if occupied_count >= 2:
                 # Multiple positions → close the lowest R
-                lowest = min(occupied, key=lambda s: s.index)
+                lowest = layer.lowest_occupied_slot()
+                if lowest is None:
+                    return None
                 return lowest.entry
 
             # Exactly 1 position in this layer.
             # Check if any higher layer has 2+ occupied slots.
-            has_multi_above = any(len(upper.occupied_slots()) >= 2 for upper in layers[i + 1 :])
+            has_multi_above = any(upper.entry_count() >= 2 for upper in layers[i + 1 :])
 
             if has_multi_above:
                 # Skip — upper layers still have trimmable positions
                 continue
 
             # All layers above also have ≤1 position. Close this one.
-            return occupied[0].entry
+            lowest = layer.lowest_occupied_slot()
+            return lowest.entry if lowest is not None else None
 
         return None
 

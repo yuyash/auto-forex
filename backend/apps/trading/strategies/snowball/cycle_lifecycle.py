@@ -84,6 +84,7 @@ class SnowballCycleFactory:
         slot.fill(entry)
         cycle.add_layer(layer)
         state.cycles.append(cycle)
+        state.invalidate_entry_cache()
         return [event], cycle
 
 

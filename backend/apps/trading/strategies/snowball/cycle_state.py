@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
@@ -117,10 +118,17 @@ class SnowballCycle:
         entries.extend(self.hedge_entries)
         return entries
 
+    def iter_entries(self) -> Iterator[Entry]:
+        yield from self.grid.iter_entries()
+        yield from self.hedge_entries
+
+    def entry_count(self) -> int:
+        return self.grid.entry_count() + len(self.hedge_entries)
+
     def counter_non_hedge(self) -> list[Entry]:
         head = self.grid.head_entry()
         entries: list[Entry] = []
-        for e in self.grid.all_entries():
+        for e in self.grid.iter_entries():
             if head is not None and e.entry_id == head.entry_id:
                 continue
             if not e.is_hedge:
@@ -155,7 +163,7 @@ class SnowballCycle:
     @property
     def layer_retracement_count(self) -> int:
         layer = self.grid.current_layer
-        return len(layer.occupied_slots()) if layer else 0
+        return layer.entry_count() if layer else 0
 
     @property
     def layer_initial_entries(self) -> dict[int, Entry]:
@@ -243,6 +251,12 @@ class SnowballStrategyState:
     account_nav: Decimal = Decimal("0")
 
     metrics: dict[str, str | int | float] = field(default_factory=dict)
+    _deferred_metric_updates: dict[str, str | int | float] = field(
+        default_factory=dict,
+        repr=False,
+    )
+    _entry_count_cache: int | None = field(default=None, init=False, repr=False)
+    _entry_units_cache: tuple[int, int] | None = field(default=None, init=False, repr=False)
 
     # Warmup / cold-start runtime state.  These fields are intentionally
     # persisted with the strategy state so backtests, live trading, and resume
@@ -256,12 +270,18 @@ class SnowballStrategyState:
     warmup_mid_history: list[str] = field(default_factory=list)
 
     def allocate_id(self) -> int:
+        self.invalidate_entry_cache()
         eid = self.next_entry_id
         self.next_entry_id += 1
         return eid
 
     def active_cycles(self) -> list[SnowballCycle]:
         return [c for c in self.cycles if not c.completed]
+
+    def iter_active_cycles(self) -> Iterator[SnowballCycle]:
+        for cycle in self.cycles:
+            if not cycle.completed:
+                yield cycle
 
     def tradable_cycles(self) -> list[SnowballCycle]:
         """Return only cycles that are actively trading (not pending or completed)."""
@@ -272,6 +292,64 @@ class SnowballStrategyState:
         for c in self.active_cycles():
             entries.extend(c.all_entries())
         return entries
+
+    def iter_entries(self) -> Iterator[Entry]:
+        for cycle in self.iter_active_cycles():
+            yield from cycle.iter_entries()
+
+    def entry_count(self) -> int:
+        if self._entry_count_cache is None:
+            self._entry_count_cache = sum(
+                cycle.entry_count() for cycle in self.iter_active_cycles()
+            )
+        return self._entry_count_cache
+
+    def invalidate_entry_cache(self) -> None:
+        self._entry_count_cache = None
+        self._entry_units_cache = None
+
+    def entry_units_by_direction(self) -> tuple[int, int]:
+        if self._entry_units_cache is not None:
+            return self._entry_units_cache
+        long_units = 0
+        short_units = 0
+        for entry in self.iter_entries():
+            if entry.is_long:
+                long_units += abs(entry.units)
+            elif entry.is_short:
+                short_units += abs(entry.units)
+        self._entry_units_cache = (long_units, short_units)
+        return self._entry_units_cache
+
+    def set_entry_units_cache(self, *, long_units: int, short_units: int) -> None:
+        self._entry_units_cache = (long_units, short_units)
+
+    def set_metric(
+        self,
+        key: str,
+        value: str | int | float | Decimal,
+        *,
+        defer: bool = False,
+    ) -> None:
+        metric_value = str(value)
+        if defer:
+            self._deferred_metric_updates[key] = metric_value
+            return
+        self.metrics[key] = metric_value
+        self._deferred_metric_updates.pop(key, None)
+
+    def flush_deferred_metrics(self) -> None:
+        if not self._deferred_metric_updates:
+            return
+        self.metrics.update(self._deferred_metric_updates)
+        self._deferred_metric_updates.clear()
+
+    def materialized_metrics(self) -> dict[str, str | int | float]:
+        if not self._deferred_metric_updates:
+            return dict(self.metrics)
+        metrics = dict(self.metrics)
+        metrics.update(self._deferred_metric_updates)
+        return metrics
 
     def find_cycle(self, cycle_id: int) -> SnowballCycle | None:
         for c in self.cycles:
@@ -290,7 +368,7 @@ class SnowballStrategyState:
             "last_mid": str(self.last_mid) if self.last_mid is not None else None,
             "account_balance": str(self.account_balance),
             "account_nav": str(self.account_nav),
-            "metrics": dict(self.metrics),
+            "metrics": self.materialized_metrics(),
             "warmup_started_at": self.warmup_started_at,
             "warmup_completed_at": self.warmup_completed_at,
             "warmup_tick_count": self.warmup_tick_count,

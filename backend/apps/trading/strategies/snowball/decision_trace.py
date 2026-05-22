@@ -105,6 +105,36 @@ class SnowballDecisionTrace:
         }
 
 
+class DisabledSnowballDecisionTrace:
+    """Shared no-op trace used when decision tracing is disabled."""
+
+    enabled = False
+
+    def record(
+        self,
+        *,
+        phase: str,
+        outcome: str,
+        reason: str,
+        cycle: SnowballCycle | None = None,
+        event_count: int = 0,
+    ) -> None:
+        _ = phase, outcome, reason, cycle, event_count
+
+    def record_events(
+        self,
+        *,
+        phase: str,
+        cycle: SnowballCycle,
+        events: list[StrategyEvent],
+        no_event_reason: str,
+    ) -> None:
+        _ = phase, cycle, events, no_event_reason
+
+
+DISABLED_SNOWBALL_DECISION_TRACE = DisabledSnowballDecisionTrace()
+
+
 class SnowballDecisionTraceRecorder:
     """Persist the latest Snowball decision trace into strategy metrics."""
 
@@ -122,19 +152,30 @@ class SnowballDecisionTraceRecorder:
             if enabled is None
             else enabled
         )
+        self._disabled_metric_removed = False
 
-    def start_tick(self, *, tick: Tick) -> SnowballDecisionTrace:
+    def start_tick(self, *, tick: Tick) -> SnowballDecisionTrace | DisabledSnowballDecisionTrace:
         """Create an empty trace for the tick being processed."""
+        if not self.enabled or self.max_records <= 0:
+            return DISABLED_SNOWBALL_DECISION_TRACE
         return SnowballDecisionTrace(
             tick_timestamp=tick.timestamp,
-            enabled=self.enabled and self.max_records > 0,
+            enabled=True,
         )
 
-    def persist(self, *, ss: SnowballStrategyState, trace: SnowballDecisionTrace) -> None:
+    def persist(
+        self,
+        *,
+        ss: SnowballStrategyState,
+        trace: SnowballDecisionTrace | DisabledSnowballDecisionTrace,
+    ) -> None:
         """Store the latest trace as compact JSON in Snowball metrics."""
         if not trace.enabled:
-            ss.metrics.pop(self.metrics_key, None)
+            if not self._disabled_metric_removed:
+                ss.metrics.pop(self.metrics_key, None)
+                self._disabled_metric_removed = True
             return
+        self._disabled_metric_removed = False
         ss.metrics[self.metrics_key] = json.dumps(
             trace.to_dict(max_records=self.max_records),
             separators=(",", ":"),

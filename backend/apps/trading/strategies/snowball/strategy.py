@@ -475,7 +475,7 @@ class SnowballStrategy(Strategy):
             return []
         layer, slot = slot_ref
         remaining_entries = [
-            other for other in cycle.grid.all_entries() if other.entry_id != entry.entry_id
+            other for other in cycle.grid.iter_entries() if other.entry_id != entry.entry_id
         ]
         if remaining_entries:
             logger.warning(
@@ -522,6 +522,7 @@ class SnowballStrategy(Strategy):
         # R0/layer-initial heads still seal, but counter heads must follow the
         # layer refill policy so pending-rebuild cycles can reuse allowed slots.
         layer.close_slot(slot.index)
+        ss.invalidate_entry_cache()
 
         # Do NOT clear pending rebuilds here.  If other slots have
         # pending rebuilds, the cycle status update in on_tick will
@@ -545,7 +546,7 @@ class SnowballStrategy(Strategy):
 
         has_other_active = any(
             c.is_active and c.cycle_id != cycle.cycle_id and c.direction == direction
-            for c in ss.active_cycles()
+            for c in ss.iter_active_cycles()
         )
         if not has_other_active:
             new_events, _new_cycle = self._create_cycle(ss, tick, direction)
@@ -572,7 +573,7 @@ class SnowballStrategy(Strategy):
     ) -> list[StrategyEvent]:
         """Build a stop event when a close-order violation is detected."""
         open_entries = []
-        for e in cycle.grid.all_entries():
+        for e in cycle.grid.iter_entries():
             open_entries.append(
                 f"L{e.layer_number}/R{e.retracement_count} "
                 f"entry={e.entry_price:.3f} tp={e.close_price:.3f}"
@@ -690,7 +691,7 @@ class SnowballStrategy(Strategy):
         # Check whether every remaining counter's TP is also reached
         # on this tick.  If so, flush them all and proceed normally.
         all_counters_tp_hit = True
-        for e in cycle.grid.all_entries():
+        for e in cycle.grid.iter_entries():
             if e.entry_id == head_entry.entry_id:
                 continue
             if e.close_price <= 0:
@@ -718,8 +719,8 @@ class SnowballStrategy(Strategy):
         # accounting boundary; otherwise a recovered R0 could close a cycle
         # while counter slots are still short of their planned exits.
         events: list[StrategyEvent] = []
-        for layer_iter in reversed(list(cycle.grid.layers)):
-            for slot in reversed(layer_iter.occupied_slots()):
+        for layer_iter in reversed(cycle.grid.layers):
+            for slot in reversed(layer_iter.slots):
                 counter = slot.entry
                 if counter is None or counter.entry_id == head_entry.entry_id:
                     continue
@@ -735,6 +736,7 @@ class SnowballStrategy(Strategy):
                     pips_gained,
                 )
                 layer_iter.close_slot(slot.index)
+                ss.invalidate_entry_cache()
                 cycle.counter_close_count += 1
                 events.append(
                     self._close_entry(
@@ -869,6 +871,7 @@ class SnowballStrategy(Strategy):
             cfg.effective_refill_up_to,
         )
         cycle.add_layer(layer)
+        ss.invalidate_entry_cache()
 
         # The new layer's R0 is placed at the position where the previous
         # layer's *next* retracement slot would have been: anchor = highest
@@ -998,6 +1001,7 @@ class SnowballStrategy(Strategy):
         slot0 = layer.slot_at(0)
         assert slot0 is not None  # noqa: S101
         slot0.fill(layer_entry)
+        ss.invalidate_entry_cache()
 
         return [evt]
 

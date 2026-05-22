@@ -7,6 +7,7 @@ observed value for every key is kept (snapshot semantics).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -24,6 +25,7 @@ ROLLUP_GRANULARITIES_SECONDS = {
     "H4": 4 * 60 * 60,
     "D": 24 * 60 * 60,
 }
+METRIC_RECORD_INTERVAL_SECONDS = 60
 
 NON_TIMESERIES_METRIC_KEYS = frozenset(
     {
@@ -67,6 +69,12 @@ def _decimal_metric(snapshot: dict[str, Any], key: str) -> Decimal | None:
         return None
 
 
+@dataclass(frozen=True, slots=True)
+class _TickRateAnchor:
+    timestamp: datetime
+    ticks_processed: Decimal
+
+
 class MetricsAggregator:
     """Collect per-tick metrics and flush minute-level snapshots to the DB.
 
@@ -93,6 +101,8 @@ class MetricsAggregator:
         self.execution_id = execution_id
         # bucket_key (datetime truncated to minute) → latest metrics dict
         self._buckets: dict[datetime, dict[str, Any]] = {}
+        self._tick_rate_anchor: _TickRateAnchor | None = None
+        self._tick_rate_anchor_loaded = False
 
     # ------------------------------------------------------------------
     # Public API
@@ -143,6 +153,8 @@ class MetricsAggregator:
 
         if not keys_to_flush:
             return 0
+
+        self._apply_tick_rates(metrics_model=Metrics, keys=keys_to_flush)
 
         objs = [
             Metrics(
@@ -247,6 +259,71 @@ class MetricsAggregator:
 
         return count
 
+    def _apply_tick_rates(self, *, metrics_model: type[Any], keys: list[datetime]) -> None:
+        """Derive ticks/sec from cumulative tick counts between metric rows."""
+        if not keys:
+            return
+
+        anchor = self._tick_rate_anchor
+        if anchor is None and not self._tick_rate_anchor_loaded:
+            anchor = self._load_tick_rate_anchor(metrics_model=metrics_model, before=keys[0])
+            self._tick_rate_anchor = anchor
+            self._tick_rate_anchor_loaded = True
+
+        for bucket_key in keys:
+            snapshot = self._buckets[bucket_key]
+            ticks_processed = _decimal_metric(snapshot, "ticks_processed")
+            if ticks_processed is None:
+                continue
+
+            if anchor is None:
+                tick_delta = ticks_processed
+                interval_seconds = Decimal(METRIC_RECORD_INTERVAL_SECONDS)
+            else:
+                tick_delta = ticks_processed - anchor.ticks_processed
+                seconds = _seconds_between(later=bucket_key, earlier=anchor.timestamp)
+                if seconds <= 0:
+                    anchor = _TickRateAnchor(
+                        timestamp=bucket_key,
+                        ticks_processed=ticks_processed,
+                    )
+                    self._tick_rate_anchor = anchor
+                    continue
+                interval_seconds = Decimal(str(seconds))
+
+            tick_rate = max(tick_delta, Decimal("0")) / interval_seconds
+            snapshot["ticks_per_second"] = f"{tick_rate:.6f}"
+            anchor = _TickRateAnchor(timestamp=bucket_key, ticks_processed=ticks_processed)
+            self._tick_rate_anchor = anchor
+
+    def _load_tick_rate_anchor(
+        self,
+        *,
+        metrics_model: type[Any],
+        before: datetime,
+    ) -> _TickRateAnchor | None:
+        """Return the latest persisted tick-count snapshot before this flush."""
+        previous = (
+            metrics_model.objects.filter(
+                task_type=self.task_type,
+                task_id=self.task_id,
+                execution_id=self.execution_id,
+                timestamp__lt=before,
+            )
+            .order_by("-timestamp")
+            .only("timestamp", "metrics")
+            .first()
+        )
+        if previous is None or not isinstance(previous.metrics, dict):
+            return None
+        ticks_processed = _decimal_metric(previous.metrics, "ticks_processed")
+        if ticks_processed is None:
+            return None
+        return _TickRateAnchor(
+            timestamp=previous.timestamp,
+            ticks_processed=ticks_processed,
+        )
+
     def _build_rollup_rows(
         self, metrics_rollup_model: type[Any], keys: list[datetime]
     ) -> list[Any]:
@@ -277,3 +354,12 @@ class MetricsAggregator:
             )
             for (granularity, bucket), (source_timestamp, snapshot) in latest_by_bucket.items()
         ]
+
+
+def _seconds_between(*, later: datetime, earlier: datetime) -> float:
+    """Return elapsed seconds, treating naive metric timestamps as UTC."""
+    later_aware = timezone.make_aware(later, timezone=UTC) if timezone.is_naive(later) else later
+    earlier_aware = (
+        timezone.make_aware(earlier, timezone=UTC) if timezone.is_naive(earlier) else earlier
+    )
+    return (later_aware.astimezone(UTC) - earlier_aware.astimezone(UTC)).total_seconds()

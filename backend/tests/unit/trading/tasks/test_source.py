@@ -52,6 +52,42 @@ class TestDirectBacktestTickDataSource:
         assert [tick.mid for tick in batches[0]] == [Decimal("157.245"), Decimal("157.265")]
         mark_failed.assert_not_called()
 
+    def test_iter_accepts_tuple_rows_and_skips_disabled_filter(self):
+        from apps.trading.tasks.source import DirectBacktestTickDataSource
+
+        start = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+        rows = iter(
+            [
+                (
+                    start,
+                    Decimal("157.240"),
+                    Decimal("157.250"),
+                    Decimal("157.245"),
+                )
+            ]
+        )
+        source = DirectBacktestTickDataSource(
+            request_id="task-1",
+            instrument="USD_JPY",
+            start_dt=start,
+            end_dt=start,
+            batch_size=10,
+            pip_size="0.01",
+        )
+        tick_filter = MagicMock(enabled=False)
+
+        with (
+            patch.object(DirectBacktestTickDataSource, "_iter_raw_ticks", return_value=rows),
+            patch.object(source, "_tick_filter", return_value=tick_filter),
+            patch.object(source, "_mark_backtest_task_failed") as mark_failed,
+        ):
+            batches = list(source)
+
+        assert len(batches) == 1
+        assert batches[0][0].mid == Decimal("157.245")
+        tick_filter.should_publish.assert_not_called()
+        mark_failed.assert_not_called()
+
     def test_close_is_noop(self):
         from apps.trading.tasks.source import DirectBacktestTickDataSource
 

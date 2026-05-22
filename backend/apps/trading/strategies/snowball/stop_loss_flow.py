@@ -255,7 +255,7 @@ class StopLossCloseProcessor:
     def process(
         self,
         strategy: StopLossFlowStrategy,
-        _ss: SnowballStrategyState,
+        ss: SnowballStrategyState,
         tick: Tick,
         cycle: SnowballCycle,
         *,
@@ -276,6 +276,7 @@ class StopLossCloseProcessor:
                     close_entry=close_entry,
                 )
             )
+            ss.invalidate_entry_cache()
         return events
 
     def _candidates(
@@ -742,6 +743,7 @@ class StopLossRebuildProcessor:
                     plan=plan,
                 )
                 slot.complete_rebuild(entry)
+                ss.invalidate_entry_cache()
                 self.entry_factory.log_rebuild(pending, plan)
                 events.append(
                     self.entry_factory.rebuild_event(

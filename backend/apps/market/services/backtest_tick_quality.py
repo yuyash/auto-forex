@@ -110,6 +110,9 @@ class BacktestTickQualityFilter:
 
     def should_publish(self, row: dict[str, Any]) -> bool:
         """Return False when the row should be skipped."""
+        if not self.enabled:
+            return True
+
         self.stats.seen += 1
         ts = row.get("timestamp")
         if not isinstance(ts, datetime):
@@ -391,6 +394,8 @@ class BacktestTickQualityFilter:
     def _to_decimal(value: Any) -> Decimal | None:
         if value is None or value == "":
             return None
+        if isinstance(value, Decimal):
+            return value
         try:
             return Decimal(str(value))
         except (InvalidOperation, ValueError):

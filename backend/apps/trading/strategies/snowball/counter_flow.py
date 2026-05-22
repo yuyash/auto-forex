@@ -150,7 +150,7 @@ class CounterCloseCandidateFinder:
         head_entry_id = head.entry_id if head is not None else None
         blocked_newer: list[str] = []
 
-        for layer in reversed(list(cycle.grid.layers)):
+        for layer in reversed(cycle.grid.layers):
             candidate = self._candidate_in_layer(
                 cycle=cycle,
                 tick=tick,
@@ -171,8 +171,8 @@ class CounterCloseCandidateFinder:
         head_entry_id: int | None,
         blocked_newer: list[str],
     ) -> tuple[Layer, Slot, list[str]] | None:
-        occupied = sorted(layer.occupied_slots(), key=lambda slot: slot.index, reverse=True)
-        for slot in occupied:
+        occupied_count = layer.entry_count()
+        for slot in reversed(layer.slots):
             entry = slot.entry
             if entry is None or entry.entry_id == head_entry_id:
                 continue
@@ -182,7 +182,7 @@ class CounterCloseCandidateFinder:
                 layer=layer,
                 slot=slot,
                 entry=entry,
-                occupied=occupied,
+                occupied_count=occupied_count,
             ):
                 blocked_newer.append(self.entry_formatter.format(entry))
                 continue
@@ -199,11 +199,11 @@ class CounterCloseCandidateFinder:
         layer: Layer,
         slot: Slot,
         entry: Entry,
-        occupied: list[Slot],
+        occupied_count: int,
     ) -> bool:
         if not self.slot_classifier.is_layer_initial_slot(layer, slot, entry):
             return False
-        if len(occupied) == 1:
+        if occupied_count == 1:
             return False
         if self.take_profit_policy.hit(entry, tick):
             self.logger.warning(
@@ -240,7 +240,7 @@ class SnowballCounterCloseProcessor:
     def process(
         self,
         strategy: CounterFlowStrategy,
-        _ss: SnowballStrategyState,
+        ss: SnowballStrategyState,
         tick: Tick,
         cycle: SnowballCycle,
         *,
@@ -271,8 +271,10 @@ class SnowballCounterCloseProcessor:
                     events=events,
                     close_entry=close_entry,
                 )
+                ss.invalidate_entry_cache()
                 if layer.layer_number > 1 and not layer.has_present_entries():
                     cycle.grid.layers.remove(layer)
+                    ss.invalidate_entry_cache()
                 continue
 
             self._close_counter_slot(
@@ -284,6 +286,7 @@ class SnowballCounterCloseProcessor:
                 events=events,
                 close_entry=close_entry,
             )
+            ss.invalidate_entry_cache()
             if layer.layer_number > 1:
                 self._close_layer_initial_if_ready(
                     strategy=strategy,
@@ -293,8 +296,10 @@ class SnowballCounterCloseProcessor:
                     events=events,
                     close_entry=close_entry,
                 )
+                ss.invalidate_entry_cache()
                 if not layer.has_present_entries():
                     cycle.grid.layers.remove(layer)
+                    ss.invalidate_entry_cache()
 
     def _log_blocked_newer(
         self,
@@ -367,10 +372,12 @@ class SnowballCounterCloseProcessor:
         events: list[StrategyEvent],
         close_entry: Callable[..., StrategyEvent],
     ) -> None:
-        remaining = layer.occupied_slots()
-        if len(remaining) != 1 or remaining[0].index != 0:
+        if layer.entry_count() != 1:
             return
-        r0_entry = remaining[0].entry
+        r0_slot = layer.lowest_occupied_slot()
+        if r0_slot is None or r0_slot.index != 0:
+            return
+        r0_entry = r0_slot.entry
         if r0_entry is None or not self.take_profit_policy.hit(r0_entry, tick):
             return
 
@@ -379,7 +386,7 @@ class SnowballCounterCloseProcessor:
             tick=tick,
             cycle=cycle,
             layer=layer,
-            slot=remaining[0],
+            slot=r0_slot,
             events=events,
             close_entry=close_entry,
         )
@@ -812,6 +819,7 @@ class CounterEntryFactory:
             ),
         )
         slot.fill(entry)
+        ss.invalidate_entry_cache()
         layer.unseal_slots_above(slot.index)
 
         if cfg.counter_tp_mode != "weighted_avg":

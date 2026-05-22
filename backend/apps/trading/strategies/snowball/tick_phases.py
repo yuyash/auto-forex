@@ -70,12 +70,13 @@ class SnowballExecutionStateBoundary:
 
     def persist(self, snowball_state: SnowballStrategyState) -> None:
         """Write the Snowball domain model back to the execution state."""
-        strategy_state = self._hot_strategy_state(snowball_state)
         if self._defer_serialization:
             self._set_cached_state(snowball_state)
             if not self._defer_runtime_view_updates:
+                strategy_state = self._hot_strategy_state(snowball_state)
                 self._merge_runtime_view(strategy_state)
             return
+        strategy_state = self._hot_strategy_state(snowball_state)
         self.state.strategy_state = strategy_state
 
     def raw_strategy_state(self) -> dict[str, Any]:
@@ -137,6 +138,7 @@ class SnowballExecutionStateBoundary:
         cached = getattr(self.state, "_snowball_strategy_state_cache", None)
         if not isinstance(cached, SnowballStrategyState):
             return
+        cached.flush_deferred_metrics()
         runtime_state = self.raw_strategy_state()
         runtime_metrics = runtime_state.get("metrics", {})
         if isinstance(runtime_metrics, dict):
@@ -162,6 +164,7 @@ class SnowballExecutionStateBoundary:
         if archived_delta:
             snowball_state.cycles = retained
 
+        snowball_state.flush_deferred_metrics()
         strategy_state = snowball_state.to_dict()
         archived_total = _archived_completed_cycles(self.raw_strategy_state()) + archived_delta
         if archived_total:
@@ -207,6 +210,10 @@ class SnowballTickContext:
     new_position_limit: int | None = None
     rebuild_limit_per_tick: int | None = None
     warmup_decision: SnowballWarmupDecision | None = None
+    defer_metric_strings: bool = False
+
+    def set_metric(self, key: str, value: str | int | float | Decimal) -> None:
+        self.snowball_state.set_metric(key, value, defer=self.defer_metric_strings)
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,6 +226,9 @@ class SnowballTickPhaseOutcome:
     def completed(self) -> bool:
         """Return True when the pipeline should stop."""
         return self.result is not None
+
+
+NOOP_PHASE_OUTCOME = SnowballTickPhaseOutcome()
 
 
 class SnowballTickStateSerializer:
@@ -258,7 +268,7 @@ class SnowballInitialInvariantPhase:
         """Evaluate the pre-tick invariant decision."""
         decision = context.strategy.decision_engine.invariant_decision(context.snowball_state)
         if not decision.should_stop:
-            return SnowballTickPhaseOutcome()
+            return NOOP_PHASE_OUTCOME
         return SnowballTickPhaseOutcome(
             result=self.serializer.result(
                 context,
@@ -291,9 +301,9 @@ class SnowballAccountMetricsPhase:
         current_base_units = context.strategy.config.effective_base_units(
             context.snowball_state.account_balance
         )
-        context.snowball_state.metrics["current_base_units"] = str(current_base_units)
-        context.snowball_state.metrics["snowball_current_base_units"] = str(current_base_units)
-        return SnowballTickPhaseOutcome()
+        context.set_metric("current_base_units", current_base_units)
+        context.set_metric("snowball_current_base_units", current_base_units)
+        return NOOP_PHASE_OUTCOME
 
 
 class SnowballWarmupPhase:
@@ -318,9 +328,9 @@ class SnowballWarmupPhase:
             context.snowball_state.account_balance,
             ratio_pct=decision.unit_ratio_pct,
         )
-        context.snowball_state.metrics["current_base_units"] = str(current_base_units)
-        context.snowball_state.metrics["snowball_current_base_units"] = str(current_base_units)
-        return SnowballTickPhaseOutcome()
+        context.set_metric("current_base_units", current_base_units)
+        context.set_metric("snowball_current_base_units", current_base_units)
+        return NOOP_PHASE_OUTCOME
 
 
 class SnowballProtectionPhase:
@@ -355,7 +365,7 @@ class SnowballProtectionPhase:
 
         if context.snowball_state.protection_level != ProtectionLevel.NORMAL:
             context.snowball_state.protection_level = ProtectionLevel.NORMAL
-        return SnowballTickPhaseOutcome()
+        return NOOP_PHASE_OUTCOME
 
     def _handle_shrink(self, context: SnowballTickContext) -> SnowballTickPhaseOutcome:
         shrink_events = SNOWBALL_PROTECTION.handle_shrink(
@@ -367,7 +377,7 @@ class SnowballProtectionPhase:
             ratio=context.ratio,
         )
         if shrink_events is None:
-            return SnowballTickPhaseOutcome()
+            return NOOP_PHASE_OUTCOME
 
         context.events.extend(shrink_events.events)
         if shrink_events.close_order_violation:
@@ -392,7 +402,7 @@ class SnowballInitialisationPhase:
     def run(self, context: SnowballTickContext) -> SnowballTickPhaseOutcome:
         """Initialise the strategy once and complete the tick."""
         if context.snowball_state.initialised:
-            return SnowballTickPhaseOutcome()
+            return NOOP_PHASE_OUTCOME
 
         if not _can_open_new_position(context):
             return SnowballTickPhaseOutcome(result=self.serializer.result(context))
@@ -438,7 +448,7 @@ class SnowballActiveCyclePhase:
         )
         context.events.extend(cycle_result.events)
         if not cycle_result.stop_reason:
-            return SnowballTickPhaseOutcome()
+            return NOOP_PHASE_OUTCOME
         return SnowballTickPhaseOutcome(
             result=self.serializer.result(
                 context,
@@ -466,7 +476,7 @@ class SnowballReseedPhase:
                 new_position_limit=context.new_position_limit,
             )
         )
-        return SnowballTickPhaseOutcome()
+        return NOOP_PHASE_OUTCOME
 
 
 class SnowballWarmupEventAccountingPhase:
@@ -477,7 +487,7 @@ class SnowballWarmupEventAccountingPhase:
 
     def run(self, context: SnowballTickContext) -> SnowballTickPhaseOutcome:
         self.policy.record_events(context.snowball_state, context.events)
-        return SnowballTickPhaseOutcome()
+        return NOOP_PHASE_OUTCOME
 
 
 class SnowballFinalInvariantPhase:
@@ -491,7 +501,7 @@ class SnowballFinalInvariantPhase:
         self.serializer.persist(context)
         decision = context.strategy.decision_engine.invariant_decision(context.snowball_state)
         if not decision.should_stop:
-            return SnowballTickPhaseOutcome()
+            return NOOP_PHASE_OUTCOME
         return SnowballTickPhaseOutcome(
             result=StrategyResult(
                 state=context.state,
@@ -550,12 +560,20 @@ class SnowballTickPipeline:
         snowball_state.last_bid = tick.bid
         snowball_state.last_ask = tick.ask
         snowball_state.last_mid = tick.mid
+        setattr(
+            snowball_state,
+            "_defer_metric_strings",
+            bool(getattr(state, "_defer_snowball_runtime_view_updates", False)),
+        )
         return SnowballTickContext(
             strategy=strategy,
             state=state,
             tick=tick,
             state_boundary=state_boundary,
             snowball_state=snowball_state,
+            defer_metric_strings=bool(
+                getattr(state, "_defer_snowball_runtime_view_updates", False)
+            ),
         )
 
 
@@ -564,4 +582,4 @@ def _can_open_new_position(context: SnowballTickContext) -> bool:
         return False
     if context.new_position_limit is None:
         return True
-    return len(context.snowball_state.all_entries()) < context.new_position_limit
+    return context.snowball_state.entry_count() < context.new_position_limit
