@@ -4,6 +4,9 @@
   "configuration": "Configuration",
   "performance": "Performance",
   "noParameters": "This strategy has no configurable parameters.",
+  "autoBaseUnits": {
+    "referencePreview": "At reference balance {{balance}}, base units are {{units}}. Runtime uses the actual task/account balance."
+  },
   "control": {
     "start": "Start Strategy",
     "stop": "Stop Strategy",
