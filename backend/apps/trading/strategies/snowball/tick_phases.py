@@ -26,6 +26,12 @@ from apps.trading.strategies.snowball.warmup import (
 )
 
 ARCHIVED_COMPLETED_CYCLES_KEY = "archived_completed_cycles"
+SNOWBALL_DEFERRED_RUNTIME_METRIC_KEYS = frozenset(
+    {
+        "current_base_units",
+        "snowball_current_base_units",
+    }
+)
 
 
 class SnowballTickStrategy(CycleOrchestratorStrategy, ProtectionStrategy, Protocol):
@@ -144,6 +150,9 @@ class SnowballExecutionStateBoundary:
         if isinstance(runtime_metrics, dict):
             merged_metrics = dict(cached.metrics)
             merged_metrics.update(runtime_metrics)
+            for key in SNOWBALL_DEFERRED_RUNTIME_METRIC_KEYS:
+                if key in cached.metrics:
+                    merged_metrics[key] = cached.metrics[key]
             cached.metrics = merged_metrics
         strategy_state = self._hot_strategy_state(cached)
         for key, value in runtime_state.items():
