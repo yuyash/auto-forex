@@ -2,7 +2,7 @@
     "openapi": "3.0.3",
     "info": {
         "title": "Auto Forex Trader API",
-        "version": "2.5.0",
+        "version": "2.6.0",
         "description": "Auto Forex Trader Backend API.\n\n## Authentication\nMost endpoints require JWT authentication. Include the token in the `Authorization: Bearer <token>` header.\n\n## Rate Limiting\nAuthentication endpoints are rate-limited to prevent abuse."
     },
     "paths": {
@@ -11343,6 +11343,14 @@
                         "type": "boolean",
                         "description": "Allow simultaneous long and short positions (hedging). Requires a hedging-enabled OANDA account."
                     },
+                    "tick_granularity": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/TickGranularityEnum"
+                            }
+                        ],
+                        "description": "Live tick sampling granularity. Use 'tick' for every tick, or a time bucket such as '1s' or '1m' to use the first tick in each bucket.\n\n* `tick` - All Ticks\n* `1s` - 1 Second\n* `10s` - 10 Seconds\n* `15s` - 15 Seconds\n* `30s` - 30 Seconds\n* `1m` - 1 Minute\n* `5m` - 5 Minutes\n* `15m` - 15 Minutes\n* `30m` - 30 Minutes\n* `1h` - 1 Hour"
+                    },
                     "initial_positions_enabled": {
                         "type": "boolean",
                         "description": "Create Snowball initial cycles/positions before starting the trading task."
@@ -14262,6 +14270,14 @@
                         "type": "boolean",
                         "description": "Allow simultaneous long and short positions (hedging). Requires a hedging-enabled OANDA account."
                     },
+                    "tick_granularity": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/TickGranularityEnum"
+                            }
+                        ],
+                        "description": "Live tick sampling granularity. Use 'tick' for every tick, or a time bucket such as '1s' or '1m' to use the first tick in each bucket.\n\n* `tick` - All Ticks\n* `1s` - 1 Second\n* `10s` - 10 Seconds\n* `15s` - 15 Seconds\n* `30s` - 30 Seconds\n* `1m` - 1 Minute\n* `5m` - 5 Minutes\n* `15m` - 15 Minutes\n* `30m` - 30 Minutes\n* `1h` - 1 Hour"
+                    },
                     "initial_positions_enabled": {
                         "type": "boolean",
                         "description": "Create Snowball initial cycles/positions before starting the trading task."
@@ -14495,6 +14511,14 @@
                         "type": "boolean",
                         "description": "Allow simultaneous long and short positions (hedging). Requires a hedging-enabled OANDA account."
                     },
+                    "tick_granularity": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/TickGranularityEnum"
+                            }
+                        ],
+                        "description": "Live tick sampling granularity. Use 'tick' for every tick, or a time bucket such as '1s' or '1m' to use the first tick in each bucket.\n\n* `tick` - All Ticks\n* `1s` - 1 Second\n* `10s` - 10 Seconds\n* `15s` - 15 Seconds\n* `30s` - 30 Seconds\n* `1m` - 1 Minute\n* `5m` - 5 Minutes\n* `15m` - 15 Minutes\n* `30m` - 30 Minutes\n* `1h` - 1 Hour"
+                    },
                     "initial_positions_enabled": {
                         "type": "boolean",
                         "description": "Create Snowball initial cycles/positions before starting the trading task."
@@ -14657,6 +14681,15 @@
                         "type": "boolean",
                         "readOnly": true,
                         "description": "Allow simultaneous long and short positions (hedging). Requires a hedging-enabled OANDA account."
+                    },
+                    "tick_granularity": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/TickGranularityEnum"
+                            }
+                        ],
+                        "readOnly": true,
+                        "description": "Live tick sampling granularity. Use 'tick' for every tick, or a time bucket such as '1s' or '1m' to use the first tick in each bucket.\n\n* `tick` - All Ticks\n* `1s` - 1 Second\n* `10s` - 10 Seconds\n* `15s` - 15 Seconds\n* `30s` - 30 Seconds\n* `1m` - 1 Minute\n* `5m` - 5 Minutes\n* `15m` - 15 Minutes\n* `30m` - 30 Minutes\n* `1h` - 1 Hour"
                     },
                     "initial_positions_enabled": {
                         "type": "boolean",
@@ -14841,6 +14874,7 @@
                     "started_at",
                     "status",
                     "strategy_type",
+                    "tick_granularity",
                     "updated_at",
                     "user_id"
                 ]
@@ -14870,6 +14904,14 @@
                     "hedging_enabled": {
                         "type": "boolean",
                         "description": "Allow simultaneous long and short positions (hedging). Requires a hedging-enabled OANDA account."
+                    },
+                    "tick_granularity": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/TickGranularityEnum"
+                            }
+                        ],
+                        "description": "Live tick sampling granularity. Use 'tick' for every tick, or a time bucket such as '1s' or '1m' to use the first tick in each bucket.\n\n* `tick` - All Ticks\n* `1s` - 1 Second\n* `10s` - 10 Seconds\n* `15s` - 15 Seconds\n* `30s` - 30 Seconds\n* `1m` - 1 Minute\n* `5m` - 5 Minutes\n* `15m` - 15 Minutes\n* `30m` - 30 Minutes\n* `1h` - 1 Hour"
                     },
                     "initial_positions_enabled": {
                         "type": "boolean",

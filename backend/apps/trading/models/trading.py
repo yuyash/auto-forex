@@ -48,6 +48,20 @@ class TradingTask(ExecutableTaskModel):
     Inherits UUID primary key and timestamps from UUIDModel.
     """
 
+    class TickGranularity(models.TextChoices):
+        """Live tick sampling granularity."""
+
+        TICK = "tick", "All Ticks"
+        SECOND_1 = "1s", "1 Second"
+        SECOND_10 = "10s", "10 Seconds"
+        SECOND_15 = "15s", "15 Seconds"
+        SECOND_30 = "30s", "30 Seconds"
+        MINUTE_1 = "1m", "1 Minute"
+        MINUTE_5 = "5m", "5 Minutes"
+        MINUTE_15 = "15m", "15 Minutes"
+        MINUTE_30 = "30m", "30 Minutes"
+        HOUR_1 = "1h", "1 Hour"
+
     objects = TradingTaskManager()
 
     user = models.ForeignKey(
@@ -100,6 +114,15 @@ class TradingTask(ExecutableTaskModel):
     hedging_enabled = models.BooleanField(
         default=True,
         help_text="Allow simultaneous long and short positions (hedging). Requires a hedging-enabled OANDA account.",
+    )
+    tick_granularity = models.CharField(
+        max_length=8,
+        choices=TickGranularity.choices,
+        default=TickGranularity.TICK,
+        help_text=(
+            "Live tick sampling granularity. Use 'tick' for every tick, "
+            "or a time bucket such as '1s' or '1m' to use the first tick in each bucket."
+        ),
     )
     initial_positions_enabled = models.BooleanField(
         default=False,

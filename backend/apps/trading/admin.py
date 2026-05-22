@@ -61,10 +61,11 @@ class TradingTaskAdmin(admin.ModelAdmin):
         "name",
         "status",
         "oanda_account",
+        "tick_granularity",
         "sell_on_stop",
         "created_at",
     )
-    list_filter = ("status", "sell_on_stop", "created_at")
+    list_filter = ("status", "tick_granularity", "sell_on_stop", "created_at")
     search_fields = ("name", "user__email", "user__username", "oanda_account__account_id")
     ordering = ("-created_at",)
 

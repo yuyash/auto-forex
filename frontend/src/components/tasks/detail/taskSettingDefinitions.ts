@@ -487,6 +487,15 @@ export function buildTradingTaskSettingDefinitions(
       format: formatBoolean,
     },
     {
+      key: 'tick_granularity',
+      label: t('trading:form.tickGranularity', 'Tick granularity'),
+      format: (value) =>
+        t(
+          `backtest:form.tickGranularityOptions.${String(value)}`,
+          String(value)
+        ),
+    },
+    {
       key: 'initial_positions_enabled',
       label: t(
         'backtest:form.initialPositionsEnabled',

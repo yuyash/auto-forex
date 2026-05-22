@@ -63,6 +63,24 @@ const steps = [
   'trading:form.steps.configuration',
   'trading:form.steps.review',
 ];
+const TICK_GRANULARITY_OPTIONS = [
+  'tick',
+  '1s',
+  '10s',
+  '15s',
+  '30s',
+  '1m',
+  '5m',
+  '15m',
+  '30m',
+  '1h',
+] as const;
+const tickGranularitySchema = z
+  .string()
+  .refine(
+    (value) => (TICK_GRANULARITY_OPTIONS as readonly string[]).includes(value),
+    'Invalid tick granularity'
+  );
 
 const requiredPositiveIntegerInputSchema = z
   .union([z.number(), z.string()])
@@ -178,6 +196,7 @@ const tradingTaskSchema = z
     sell_on_stop: z.boolean().optional().default(false),
     dry_run: z.boolean().optional(),
     hedging_enabled: z.boolean().optional(),
+    tick_granularity: tickGranularitySchema,
     initial_positions_enabled: z.boolean().optional().default(false),
     initial_position_cycles: z
       .array(initialPositionCycleSchema)
@@ -304,6 +323,7 @@ export default function TradingTaskForm({
       sell_on_stop: initialData?.sell_on_stop ?? false,
       dry_run: false,
       hedging_enabled: true,
+      tick_granularity: initialData?.tick_granularity ?? 'tick',
       initial_positions_enabled:
         initialData?.initial_positions_enabled ?? false,
       initial_position_cycles: initialData?.initial_position_cycles ?? [],
@@ -497,6 +517,7 @@ export default function TradingTaskForm({
           'name',
           'instrument',
           'display_currency',
+          'tick_granularity',
           'initial_positions_enabled',
           'initial_position_cycles',
         ];
@@ -551,6 +572,7 @@ export default function TradingTaskForm({
         display_currency: completeData.display_currency,
         sell_on_stop: completeData.sell_on_stop ?? false,
         dry_run: completeData.dry_run,
+        tick_granularity: completeData.tick_granularity,
         hedging_enabled:
           selectedAccount?.hedging_enabled === false || !strategySupportsHedging
             ? false
@@ -606,6 +628,7 @@ export default function TradingTaskForm({
             defaultValue: 'Display currency',
           }),
           sell_on_stop: t('common:labels.sellOnStop'),
+          tick_granularity: t('trading:form.tickGranularity'),
           hedging_enabled: t('trading:form.hedgingEnabled'),
           live_tick_stale_guard_enabled: t(
             'trading:form.liveTickStaleGuardEnabled'
@@ -1036,6 +1059,41 @@ export default function TradingTaskForm({
                     'Fine-tune broker retry behaviour, drain-on-stop, and market-close idling. Defaults work well for most tasks.'
                   )}
                 </Typography>
+              </Grid>
+
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Controller
+                  name="tick_granularity"
+                  control={control}
+                  render={({ field }) => (
+                    <FormControl fullWidth error={!!errors.tick_granularity}>
+                      <InputLabel id="trading-tick-granularity-label">
+                        {t('trading:form.tickGranularity', 'Tick granularity')}
+                      </InputLabel>
+                      <Select
+                        {...field}
+                        labelId="trading-tick-granularity-label"
+                        label={t(
+                          'trading:form.tickGranularity',
+                          'Tick granularity'
+                        )}
+                      >
+                        {TICK_GRANULARITY_OPTIONS.map((value) => (
+                          <MenuItem key={value} value={value}>
+                            {t(`backtest:form.tickGranularityOptions.${value}`)}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                      <FormHelperText>
+                        {errors.tick_granularity?.message ||
+                          t(
+                            'trading:form.tickGranularityHelp',
+                            'Use the first live tick in each selected interval.'
+                          )}
+                      </FormHelperText>
+                    </FormControl>
+                  )}
+                />
               </Grid>
 
               <Grid size={{ xs: 12, sm: 4 }}>
@@ -1474,6 +1532,17 @@ export default function TradingTaskForm({
                     </Typography>
                     <Typography variant="body1" gutterBottom>
                       {formData.display_currency || defaultDisplayCurrency}
+                    </Typography>
+                  </Box>
+
+                  <Box sx={{ mt: 2 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      {t('trading:form.tickGranularity', 'Tick granularity')}
+                    </Typography>
+                    <Typography variant="body1" gutterBottom>
+                      {t(
+                        `backtest:form.tickGranularityOptions.${formData.tick_granularity ?? 'tick'}`
+                      )}
                     </Typography>
                   </Box>
 

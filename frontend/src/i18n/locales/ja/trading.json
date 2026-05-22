@@ -109,6 +109,8 @@
     "hedgingDescription": "有効にすると、ロングとショートのポジションを同時に保有できます。両建て対応のOANDAアカウントが必要です。",
     "advancedSettings": "詳細設定",
     "advancedSettingsDescription": "ブローカーのリトライ、停止時のドレイン、マーケットクローズ時のアイドルなどを調整できます。通常はデフォルトのままで問題ありません。",
+    "tickGranularity": "Tick粒度",
+    "tickGranularityHelp": "選択した間隔ごとに最初のLive Tickを使用します。",
     "apiRetryMaxAttempts": "OANDA API リトライ回数",
     "apiRetryMaxAttemptsHelp": "ブローカー API 呼び出しを諦めるまでの最大リトライ回数。デフォルト: 50。",
     "apiRetryBaseSeconds": "リトライ初期待機 (秒)",

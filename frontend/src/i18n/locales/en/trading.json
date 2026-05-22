@@ -109,6 +109,8 @@
     "hedgingDescription": "When enabled, the strategy can hold both long and short positions simultaneously. Requires a hedging-enabled OANDA account.",
     "advancedSettings": "Advanced settings",
     "advancedSettingsDescription": "Fine-tune broker retry behaviour, drain-on-stop, and market-close idling. Defaults work well for most tasks.",
+    "tickGranularity": "Tick granularity",
+    "tickGranularityHelp": "Use the first live tick in each selected interval.",
     "apiRetryMaxAttempts": "OANDA retry attempts",
     "apiRetryMaxAttemptsHelp": "Max retries for broker API calls before failing the task. Default: 50.",
     "apiRetryBaseSeconds": "Retry backoff base (s)",

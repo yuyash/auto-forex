@@ -25,6 +25,7 @@ class TestTradingTaskSerializer:
         assert "account_currency" in fields
         assert "display_currency" in fields
         assert "money_context" in fields
+        assert "tick_granularity" in fields
         assert "has_strategy_state" in fields
         assert "can_resume" in fields
         assert "instrument_context" in fields
@@ -56,6 +57,7 @@ class TestTradingTaskListSerializer:
         assert "account_currency" in fields
         assert "display_currency" in fields
         assert "money_context" in fields
+        assert "tick_granularity" in fields
         assert "instrument_context" in fields
         # List view should not have has_strategy_state
         assert "has_strategy_state" not in fields
@@ -73,6 +75,7 @@ class TestTradingTaskCreateSerializer:
         assert "config_id" in fields
         assert "account_id" in fields
         assert "name" in fields
+        assert "tick_granularity" in fields
 
     @patch("apps.trading.serializers.trading.TradingTask.objects.create")
     def test_create_sets_trading_mode_from_hedging_flag(self, mock_create):

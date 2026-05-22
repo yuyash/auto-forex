@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from logging import Logger, getLogger
 from typing import Any, Callable, Iterator
@@ -25,6 +25,17 @@ logger: Logger = getLogger(name=__name__)
 _MAX_BACKTEST_SPREAD_PIPS = Decimal(
     str(getattr(settings, "TRADING_MAX_BACKTEST_SPREAD_PIPS", "50"))
 )
+_TICK_GRANULARITY_SECONDS = {
+    "1s": 1,
+    "10s": 10,
+    "15s": 15,
+    "30s": 30,
+    "1m": 60,
+    "5m": 5 * 60,
+    "15m": 15 * 60,
+    "30m": 30 * 60,
+    "1h": 60 * 60,
+}
 
 
 def _optional_decimal(value: Any) -> Decimal | None:
@@ -36,6 +47,23 @@ def _optional_decimal(value: Any) -> Decimal | None:
         return Decimal(str(value))
     except (ValueError, InvalidOperation):
         return None
+
+
+def _granularity_seconds(granularity: str) -> int | None:
+    value = str(granularity or "tick")
+    if value == "tick":
+        return None
+    try:
+        return _TICK_GRANULARITY_SECONDS[value]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported tick granularity: {value}") from exc
+
+
+def _tick_bucket_start(timestamp: datetime, granularity_seconds: int) -> datetime:
+    timestamp_utc = timestamp.astimezone(UTC) if timestamp.tzinfo else timestamp.replace(tzinfo=UTC)
+    epoch_seconds = int(timestamp_utc.timestamp())
+    bucket_epoch = epoch_seconds - (epoch_seconds % granularity_seconds)
+    return datetime.fromtimestamp(bucket_epoch, UTC)
 
 
 def _backtest_bar_range_warning_pips() -> str | None:
@@ -1276,6 +1304,7 @@ class LiveTickDataSource(TickDataSource):
         channel: str,
         instrument: str,
         *,
+        tick_granularity: str = "tick",
         batch_size: int | None = None,
         batch_max_latency_seconds: float | None = None,
     ) -> None:
@@ -1287,6 +1316,9 @@ class LiveTickDataSource(TickDataSource):
         """
         self.channel = channel
         self.instrument = instrument
+        self.tick_granularity = str(tick_granularity or "tick")
+        self._granularity_seconds = _granularity_seconds(self.tick_granularity)
+        self._last_emitted_bucket_start: datetime | None = None
         self.batch_size = max(
             int(batch_size or getattr(settings, "LIVE_TICK_BATCH_SIZE", 10)),
             1,
@@ -1316,7 +1348,11 @@ class LiveTickDataSource(TickDataSource):
         self.client = redis.Redis.from_url(settings.MARKET_REDIS_URL, decode_responses=True)
         self.pubsub = self.client.pubsub(ignore_subscribe_messages=True)
         self.pubsub.subscribe(self.channel)
-        logger.info("LiveTickDataSource subscribed to channel: %s", self.channel)
+        logger.info(
+            "LiveTickDataSource subscribed to channel: %s tick_granularity=%s",
+            self.channel,
+            self.tick_granularity,
+        )
 
         # Give Redis a brief moment to establish the subscription before we
         # start relying on the stream. This mirrors the backtest source and
@@ -1332,6 +1368,7 @@ class LiveTickDataSource(TickDataSource):
             ticks_received = 0
             pending_ticks: list[Tick] = []
             batch_started_at: float | None = None
+            last_yielded_at = time.monotonic()
             while True:
                 try:
                     timeout = 1.0
@@ -1380,12 +1417,14 @@ class LiveTickDataSource(TickDataSource):
                             yield pending_ticks
                             pending_ticks = []
                             batch_started_at = None
+                            last_yielded_at = time.monotonic()
                         continue
                     idle_seconds += 1
                     # Yield empty batch every 5 seconds so the executor can
                     # check stop signals and send heartbeats during market close
                     if idle_seconds >= 5:
                         idle_seconds = 0
+                        last_yielded_at = time.monotonic()
                         yield []
                     continue
 
@@ -1465,6 +1504,12 @@ class LiveTickDataSource(TickDataSource):
                 except (ValueError, InvalidOperation):
                     continue  # Skip ticks with invalid prices
 
+                if not self._should_emit_tick(tick):
+                    if not pending_ticks and time.monotonic() - last_yielded_at >= 5:
+                        last_yielded_at = time.monotonic()
+                        yield []
+                    continue
+
                 if not pending_ticks:
                     batch_started_at = time.monotonic()
                 pending_ticks.append(tick)
@@ -1478,9 +1523,25 @@ class LiveTickDataSource(TickDataSource):
                     yield pending_ticks
                     pending_ticks = []
                     batch_started_at = None
+                    last_yielded_at = time.monotonic()
 
         finally:
             self.close()
+
+    def _should_emit_tick(self, tick: Tick) -> bool:
+        """Return True when a live tick should be delivered to the executor."""
+        if self._granularity_seconds is None:
+            return True
+
+        bucket_start = _tick_bucket_start(tick.timestamp, self._granularity_seconds)
+        if (
+            self._last_emitted_bucket_start is not None
+            and bucket_start <= self._last_emitted_bucket_start
+        ):
+            return False
+
+        self._last_emitted_bucket_start = bucket_start
+        return True
 
     def close(self) -> None:
         """Close Redis connections."""

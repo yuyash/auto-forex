@@ -166,6 +166,7 @@ export interface BackendTradingTask {
   sell_on_stop: boolean;
   dry_run: boolean;
   hedging_enabled: boolean;
+  tick_granularity: string;
   initial_positions_enabled?: boolean;
   initial_position_cycles?: BacktestInitialPositionCycle[];
   pip_size?: string | null;

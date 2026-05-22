@@ -22,6 +22,7 @@ interface TradingTaskCreateRequest {
   sell_on_stop?: boolean;
   dry_run?: boolean;
   hedging_enabled?: boolean;
+  tick_granularity?: string;
   initial_positions_enabled?: boolean;
   initial_position_cycles?: BacktestInitialPositionCycle[];
   api_retry_max_attempts?: number;
@@ -46,6 +47,7 @@ interface TradingTaskUpdateRequest {
   sell_on_stop?: boolean;
   dry_run?: boolean;
   hedging_enabled?: boolean;
+  tick_granularity?: string;
   initial_positions_enabled?: boolean;
   initial_position_cycles?: BacktestInitialPositionCycle[];
   api_retry_max_attempts?: number;

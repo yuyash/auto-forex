@@ -128,7 +128,13 @@ class TestExecuteTrading:
     def test_normal_flow(self, mock_pip, mock_engine, mock_source, mock_executor):
         from apps.trading.tasks.trading import execute_trading
 
-        task = MagicMock(pk=uuid4(), instrument="EUR_USD", pip_size=None, config={})
+        task = MagicMock(
+            pk=uuid4(),
+            instrument="EUR_USD",
+            pip_size=None,
+            config={},
+            tick_granularity="1m",
+        )
         task.oanda_account.account_id = "001-001-123"
         task.oanda_account.currency = "USD"
         mock_pip.return_value = 0.0001
@@ -136,6 +142,11 @@ class TestExecuteTrading:
         execute_trading(task)
 
         mock_engine.assert_called_once()
+        mock_source.assert_called_once_with(
+            channel="live:001-001-123:EUR_USD",
+            instrument="EUR_USD",
+            tick_granularity="1m",
+        )
         mock_executor.return_value.execute.assert_called_once()
 
     @patch("apps.trading.tasks.trading.TradingExecutor")

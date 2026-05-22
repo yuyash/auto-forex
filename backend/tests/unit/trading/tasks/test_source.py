@@ -187,8 +187,64 @@ class TestLiveTickDataSourceInit:
 
         assert source.channel == "live:001-001-123:EUR_USD"
         assert source.instrument == "EUR_USD"
+        assert source.tick_granularity == "tick"
         assert source.client is None
         assert source.pubsub is None
+
+    def test_granularity_keeps_first_tick_in_each_bucket(self):
+        from apps.trading.tasks.source import LiveTickDataSource
+
+        source = LiveTickDataSource(
+            channel="live:001-001-123:EUR_USD",
+            instrument="EUR_USD",
+            tick_granularity="1m",
+        )
+        first = Tick.create(
+            instrument="EUR_USD",
+            timestamp=datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC),
+            bid=Decimal("1.1000"),
+            ask=Decimal("1.1002"),
+        )
+        same_bucket = Tick.create(
+            instrument="EUR_USD",
+            timestamp=datetime(2026, 1, 1, 0, 0, 30, tzinfo=UTC),
+            bid=Decimal("1.1001"),
+            ask=Decimal("1.1003"),
+        )
+        next_bucket = Tick.create(
+            instrument="EUR_USD",
+            timestamp=datetime(2026, 1, 1, 0, 1, 0, tzinfo=UTC),
+            bid=Decimal("1.1004"),
+            ask=Decimal("1.1006"),
+        )
+
+        assert source._should_emit_tick(first) is True
+        assert source._should_emit_tick(same_bucket) is False
+        assert source._should_emit_tick(next_bucket) is True
+
+    def test_tick_granularity_keeps_every_tick(self):
+        from apps.trading.tasks.source import LiveTickDataSource
+
+        source = LiveTickDataSource(
+            channel="live:001-001-123:EUR_USD",
+            instrument="EUR_USD",
+            tick_granularity="tick",
+        )
+        first = Tick.create(
+            instrument="EUR_USD",
+            timestamp=datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC),
+            bid=Decimal("1.1000"),
+            ask=Decimal("1.1002"),
+        )
+        second = Tick.create(
+            instrument="EUR_USD",
+            timestamp=datetime(2026, 1, 1, 0, 0, 2, tzinfo=UTC),
+            bid=Decimal("1.1001"),
+            ask=Decimal("1.1003"),
+        )
+
+        assert source._should_emit_tick(first) is True
+        assert source._should_emit_tick(second) is True
 
 
 class TestLiveTickDataSourceClose:

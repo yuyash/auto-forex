@@ -112,6 +112,7 @@ export interface TradingTaskRequest {
   oanda_account: number | string;
   description?: string;
   sell_on_stop?: boolean;
+  tick_granularity?: string;
 }
 
 export interface PatchedTradingTaskCreateRequest {
@@ -120,6 +121,7 @@ export interface PatchedTradingTaskCreateRequest {
   oanda_account?: number | string;
   description?: string;
   sell_on_stop?: boolean;
+  tick_granularity?: string;
 }
 
 // --- Backtest Task types ---

@@ -153,6 +153,7 @@ def execute_trading(task: TradingTask) -> None:
     data_source = LiveTickDataSource(
         channel=channel,
         instrument=task.instrument,
+        tick_granularity=task.tick_granularity,
     )
 
     executor = TradingExecutor(
