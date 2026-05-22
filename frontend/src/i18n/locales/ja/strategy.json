@@ -4,6 +4,9 @@
   "configuration": "設定",
   "performance": "パフォーマンス",
   "noParameters": "この戦略には設定可能なパラメータがありません。",
+  "autoBaseUnits": {
+    "referencePreview": "基準残高 {{balance}} では基本ユニット数は {{units}} です。実行時は実際のタスク/口座残高で再計算されます。"
+  },
   "control": {
     "start": "戦略を開始",
     "stop": "戦略を停止",

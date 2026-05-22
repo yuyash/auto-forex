@@ -33,6 +33,11 @@ import {
   matchesDependsOn,
   normalizeComparableValue,
 } from '../../utils/strategySchemaDependsOn';
+import {
+  calculateSnowballReferenceBaseUnits,
+  SNOWBALL_AUTO_BASE_UNITS_REFERENCE_BALANCE,
+  syncSnowballReferenceBaseUnits,
+} from '../../utils/snowballBaseUnits';
 
 interface StrategyConfigFormProps {
   configSchema: ConfigSchema;
@@ -388,7 +393,7 @@ const StrategyConfigForm = ({
 
   // Handle field change
   const handleFieldChange = (fieldName: string, value: unknown) => {
-    const updatedConfig = {
+    let updatedConfig = {
       ...config,
       [fieldName]: value,
     };
@@ -439,6 +444,12 @@ const StrategyConfigForm = ({
       }
     );
 
+    updatedConfig = syncSnowballReferenceBaseUnits(
+      updatedConfig,
+      configSchema.properties,
+      fieldName
+    );
+
     onChange(updatedConfig);
   };
 
@@ -475,6 +486,50 @@ const StrategyConfigForm = ({
           </IconButton>
         </Tooltip>
       </Box>
+    );
+  };
+
+  const formatNumber = (value: number): string => {
+    return new Intl.NumberFormat(i18n.language).format(value);
+  };
+
+  const renderAutoBaseUnitsHelper = (
+    fieldName: string,
+    baseHelperText: string | undefined
+  ) => {
+    const autoAdjustEnabled =
+      normalizeComparableValue(config.base_units_auto_adjust_enabled) === true;
+    if (
+      !autoAdjustEnabled ||
+      !['base_units', 'base_units_balance_ratio', 'base_units_step'].includes(
+        fieldName
+      )
+    ) {
+      return baseHelperText;
+    }
+
+    const referenceBaseUnits = calculateSnowballReferenceBaseUnits(
+      config.base_units_balance_ratio,
+      config.base_units_step
+    );
+    if (referenceBaseUnits === null) {
+      return baseHelperText;
+    }
+
+    const previewText = t('autoBaseUnits.referencePreview', {
+      defaultValue:
+        'At reference balance {{balance}}, base units are {{units}}. Runtime uses the actual task/account balance.',
+      balance: formatNumber(SNOWBALL_AUTO_BASE_UNITS_REFERENCE_BALANCE),
+      units: formatNumber(referenceBaseUnits),
+    });
+
+    if (!baseHelperText) return previewText;
+    return (
+      <>
+        {baseHelperText}
+        <br />
+        {previewText}
+      </>
     );
   };
 
@@ -658,7 +713,10 @@ const StrategyConfigForm = ({
                 : parseFloat(e.target.value);
             handleFieldChange(fieldName, isNaN(numValue) ? '' : numValue);
           }}
-          helperText={error || localized(fieldSchema, 'description')}
+          helperText={renderAutoBaseUnitsHelper(
+            fieldName,
+            error || localized(fieldSchema, 'description')
+          )}
           error={!!error}
           required={isRequired}
           disabled={fieldDisabled}
