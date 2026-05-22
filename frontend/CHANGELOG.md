@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.0](https://github.com/yuyash/auto-forex-web-service/compare/frontend-v2.7.0...frontend-v2.8.0) (2026-05-22)
+
+
+### Features
+
+* **snowball:** sync auto-adjusted base units ([#799](https://github.com/yuyash/auto-forex-web-service/issues/799)) ([4c68c66](https://github.com/yuyash/auto-forex-web-service/commit/4c68c660b544222ad8c577f5d1553d73f2cfd90f))
+
 ## [2.7.0](https://github.com/yuyash/auto-forex-web-service/compare/frontend-v2.6.0...frontend-v2.7.0) (2026-05-22)
 
 
