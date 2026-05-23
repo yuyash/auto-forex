@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.0](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.7.2...backend-v2.8.0) (2026-05-23)
+
+
+### Features
+
+* task stop reasons watermarks ([#804](https://github.com/yuyash/auto-forex-web-service/issues/804)) ([4b9eebb](https://github.com/yuyash/auto-forex-web-service/commit/4b9eebb6305b03391610ae314caaf0dc611534d6))
+
 ## [2.7.2](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.7.1...backend-v2.7.2) (2026-05-22)
 
 
