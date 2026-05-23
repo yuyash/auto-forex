@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from redis.exceptions import ConnectionError as RedisConnectionError
 from rest_framework import status as http_status
 from rest_framework.request import Request
 from rest_framework.test import APIRequestFactory
@@ -89,6 +90,33 @@ class TestGetSerializerClass:
         vs = _build_viewset(action="retrieve")
         cls = vs.get_serializer_class()
         assert cls.__name__ == "BacktestTaskSerializer"
+
+
+class TestTaskDataRateThrottle:
+    """Tests for resilient task data throttling."""
+
+    def test_allows_request_when_cache_get_hits_redis_limit(self, monkeypatch):
+        class UnavailableCache:
+            def get(self, *_args, **_kwargs):
+                raise RedisConnectionError("max number of clients reached")
+
+        throttle = TaskDataRateThrottle()
+        monkeypatch.setattr(throttle, "cache", UnavailableCache())
+
+        assert throttle.allow_request(_drf_get(), MagicMock()) is True
+
+    def test_allows_request_when_cache_set_hits_redis_limit(self, monkeypatch):
+        class SetUnavailableCache:
+            def get(self, *_args, **_kwargs):
+                return []
+
+            def set(self, *_args, **_kwargs):
+                raise RedisConnectionError("max number of clients reached")
+
+        throttle = TaskDataRateThrottle()
+        monkeypatch.setattr(throttle, "cache", SetUnavailableCache())
+
+        assert throttle.allow_request(_drf_get(), MagicMock()) is True
 
 
 class TestResumeValidationPayload:

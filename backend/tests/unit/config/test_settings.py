@@ -2,6 +2,7 @@
 
 from django.conf import settings
 
+from config.settings_parts.rest import build_rest_settings
 from config.settings_parts.security import build_security_settings
 
 
@@ -101,3 +102,12 @@ class TestSettings:
         """Test REST framework is configured."""
         assert hasattr(settings, "REST_FRAMEWORK")
         assert isinstance(settings.REST_FRAMEWORK, dict)
+
+    def test_default_throttles_are_redis_resilient(self):
+        """Default DRF throttles should not 500 when Redis throttle cache is saturated."""
+        rest_settings, _schema_settings = build_rest_settings(debug=False, version="test")
+
+        assert rest_settings["DEFAULT_THROTTLE_CLASSES"] == [
+            "apps.common.throttling.ResilientUserRateThrottle",
+            "apps.common.throttling.ResilientAnonRateThrottle",
+        ]

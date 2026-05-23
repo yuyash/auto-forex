@@ -170,7 +170,7 @@ class SnowballDecisionTraceRecorder:
         trace: SnowballDecisionTrace | DisabledSnowballDecisionTrace,
     ) -> None:
         """Store the latest trace as compact JSON in Snowball metrics."""
-        if not trace.enabled:
+        if isinstance(trace, DisabledSnowballDecisionTrace) or not trace.enabled:
             if not self._disabled_metric_removed:
                 ss.metrics.pop(self.metrics_key, None)
                 self._disabled_metric_removed = True

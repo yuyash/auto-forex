@@ -23,8 +23,8 @@ def build_rest_settings(
         "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
         "PAGE_SIZE": 50,
         "DEFAULT_THROTTLE_CLASSES": [
-            "rest_framework.throttling.UserRateThrottle",
-            "rest_framework.throttling.AnonRateThrottle",
+            "apps.common.throttling.ResilientUserRateThrottle",
+            "apps.common.throttling.ResilientAnonRateThrottle",
         ],
         "DEFAULT_THROTTLE_RATES": {
             "user": "120/minute",
