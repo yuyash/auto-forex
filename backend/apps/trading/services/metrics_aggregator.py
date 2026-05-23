@@ -16,6 +16,8 @@ from typing import Any
 from django.db import connection
 from django.utils import timezone
 
+from apps.trading.services.metric_watermarks import update_watermarks
+
 logger = logging.getLogger(__name__)
 
 ROLLUP_GRANULARITIES_SECONDS = {
@@ -215,6 +217,16 @@ class MetricsAggregator:
                     if aggregate.margin_ratio_max is None
                     else max(aggregate.margin_ratio_max, margin_ratio)
                 )
+            watermarks = (
+                dict(aggregate.watermarks) if isinstance(aggregate.watermarks, dict) else {}
+            )
+            for bucket_key in keys_to_flush:
+                watermarks = update_watermarks(
+                    watermarks,
+                    timestamp=bucket_key,
+                    metrics=self._buckets[bucket_key],
+                )
+            aggregate.watermarks = watermarks
             aggregate.save(
                 update_fields=[
                     "latest_timestamp",
@@ -224,6 +236,7 @@ class MetricsAggregator:
                     "balance_max",
                     "margin_ratio_min",
                     "margin_ratio_max",
+                    "watermarks",
                     "updated_at",
                 ]
             )

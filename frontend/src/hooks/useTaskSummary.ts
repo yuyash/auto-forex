@@ -88,8 +88,27 @@ export interface TaskInfo {
   completedAt: string | null;
   errorMessage: string | null;
   errorCode: string | null;
+  statusReasonCode: string | null;
+  statusReasonMessage: string | null;
   stopReason: string | null;
   progress: number;
+}
+
+export interface WatermarkInfo {
+  value: number | null;
+  timestamp: string | null;
+  sourceMetric?: string | null;
+}
+
+export interface ExecutionWatermarks {
+  marginRatioMax: WatermarkInfo;
+  baseUnitsMax: WatermarkInfo;
+  openLongUnitsMax: WatermarkInfo;
+  openShortUnitsMax: WatermarkInfo;
+  realizedPnlMax: WatermarkInfo;
+  unrealizedPnlMin: WatermarkInfo;
+  openPositionsMax: WatermarkInfo;
+  activeCyclesMax: WatermarkInfo;
 }
 
 export interface TaskSummary {
@@ -99,6 +118,7 @@ export interface TaskSummary {
   execution: ExecutionInfo;
   tick: TickInfo;
   task: TaskInfo;
+  watermarks?: ExecutionWatermarks;
 }
 
 export interface UseTaskSummaryOptions {
@@ -163,8 +183,20 @@ const INITIAL_SUMMARY: TaskSummary = {
     completedAt: null,
     errorMessage: null,
     errorCode: null,
+    statusReasonCode: null,
+    statusReasonMessage: null,
     stopReason: null,
     progress: 0,
+  },
+  watermarks: {
+    marginRatioMax: { value: null, timestamp: null },
+    baseUnitsMax: { value: null, timestamp: null },
+    openLongUnitsMax: { value: null, timestamp: null },
+    openShortUnitsMax: { value: null, timestamp: null },
+    realizedPnlMax: { value: null, timestamp: null },
+    unrealizedPnlMin: { value: null, timestamp: null },
+    openPositionsMax: { value: null, timestamp: null },
+    activeCyclesMax: { value: null, timestamp: null },
   },
 };
 

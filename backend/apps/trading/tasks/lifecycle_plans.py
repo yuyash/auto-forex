@@ -109,7 +109,13 @@ def build_resume_command_plan(
     next_status = TaskStatus.STARTING
     update_fields = ["status", "updated_at"]
     if previous_status in (TaskStatus.STOPPED, TaskStatus.FAILED):
-        update_fields += ["error_message", "error_traceback", "completed_at"]
+        update_fields += [
+            "error_message",
+            "error_traceback",
+            "completed_at",
+            "status_reason_code",
+            "status_reason_message",
+        ]
     update_fields.append("celery_task_id")
 
     transition = LifecycleCommandResult(

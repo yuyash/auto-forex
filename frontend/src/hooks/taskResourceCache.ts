@@ -189,7 +189,11 @@ export function patchTaskStrategyEventsLifecycle(
 export function patchTaskSummaryStatus(
   taskId: string,
   taskType: TaskType,
-  status: string
+  status: string,
+  reason?: {
+    statusReasonCode?: string | null;
+    statusReasonMessage?: string | null;
+  }
 ): void {
   queryClient.setQueriesData<TaskSummary | undefined>(
     { queryKey: queryKeys.taskResources.summary(taskType, taskId) },
@@ -200,6 +204,18 @@ export function patchTaskSummaryStatus(
             task: {
               ...cached.task,
               status,
+              ...(reason && 'statusReasonCode' in reason
+                ? { statusReasonCode: reason.statusReasonCode ?? null }
+                : {}),
+              ...(reason && 'statusReasonMessage' in reason
+                ? { statusReasonMessage: reason.statusReasonMessage ?? null }
+                : {}),
+              ...(reason && 'statusReasonMessage' in reason
+                ? {
+                    stopReason:
+                      reason.statusReasonMessage ?? cached.task.stopReason,
+                  }
+                : {}),
             },
           }
         : cached

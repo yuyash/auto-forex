@@ -26,6 +26,10 @@ from django.utils import timezone as dj_timezone
 from apps.trading.enums import TaskStatus, TaskType
 from apps.trading.models import BacktestTask, RecoveryAttempt, TaskLog, TradingTask
 from apps.trading.models.celery import CeleryTaskStatus
+from apps.trading.services.public_errors import (
+    TASK_FAILED_ERROR_CODE,
+    TASK_FAILED_PUBLIC_MESSAGE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -482,6 +486,8 @@ def _recover_trading_task(*, task: BacktestTask | TradingTask, service: Any, sou
         TradingTask.objects.filter(pk=task.pk).update(
             status=TaskStatus.FAILED,
             error_message=f"Recovery failed after crash (source={source})",
+            status_reason_code=TASK_FAILED_ERROR_CODE,
+            status_reason_message=TASK_FAILED_PUBLIC_MESSAGE,
         )
         _record_recovery_attempt(
             task=task,

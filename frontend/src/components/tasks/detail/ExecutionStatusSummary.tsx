@@ -395,6 +395,7 @@ function buildResultItems({
     { language, separators, t, timezone }
   );
   const items: ExecutionStatusItem[] = [
+    ...buildStatusReasonItems(summary, detailLabel),
     {
       id: 'realized_pnl',
       label: detailLabel('realizedPnl'),
@@ -481,6 +482,37 @@ function buildResultItems({
 
   items.push(...buildMetricItems(latestMetrics, summary, t, separators));
   return items.filter((item) => !hiddenIds?.has(item.id));
+}
+
+function buildStatusReasonItems(
+  summary: TaskSummary,
+  detailLabel: (key: string) => string
+): ExecutionStatusItem[] {
+  const statusReason =
+    summary.task.statusReasonMessage || summary.task.stopReason;
+  if (!statusReason) return [];
+
+  const status = String(summary.task.status || '').toLowerCase();
+  const shouldDisplay =
+    Boolean(summary.task.statusReasonMessage) ||
+    [
+      'failed',
+      'stopped',
+      'completed',
+      'paused',
+      'stopping',
+      'draining',
+    ].includes(status);
+  if (!shouldDisplay) return [];
+
+  return [
+    {
+      id: 'status_reason',
+      label: detailLabel('stopReason'),
+      value: statusReason,
+      color: status === 'failed' ? 'error.main' : undefined,
+    },
+  ];
 }
 
 function buildCurrentBalanceItems(

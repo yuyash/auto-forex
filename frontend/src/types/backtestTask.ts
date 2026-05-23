@@ -99,6 +99,8 @@ export interface BacktestTask {
   completed_at?: string;
   error_message?: string;
   error_code?: string;
+  status_reason_code?: string;
+  status_reason_message?: string;
   created_at: string;
   updated_at: string;
   debug_options?: Record<string, unknown>;

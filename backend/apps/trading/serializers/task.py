@@ -39,6 +39,8 @@ class TaskSerializer(serializers.ModelSerializer):
             "duration",
             "error_message",
             "error_code",
+            "status_reason_code",
+            "status_reason_message",
         ]
         read_only_fields = [
             "id",
@@ -50,6 +52,8 @@ class TaskSerializer(serializers.ModelSerializer):
             "completed_at",
             "error_message",
             "error_code",
+            "status_reason_code",
+            "status_reason_message",
         ]
 
     def get_duration(self, obj: BacktestTask | TradingTask) -> float | None:

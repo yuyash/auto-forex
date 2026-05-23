@@ -14,6 +14,7 @@ from apps.trading.tasks.lifecycle_commands import (
     TaskLifecycleCommands,
 )
 from apps.trading.tasks.lifecycle_events import TaskLifecycleKind
+from apps.trading.services.status_reasons import stop_request_reason
 
 
 def _make_commands(service: MagicMock) -> tuple[TaskLifecycleCommands, MagicMock]:
@@ -195,12 +196,16 @@ def test_stop_transition_contract(
 
     assert result is True
     assert task.status == expected_status
+    expected_updates = {
+        **expected_extra_updates,
+        **stop_request_reason(expected_mode).as_update(),
+    }
     service.writer.persist_state_if_current.assert_called_once_with(
         command="stop",
         task=task,
         from_status=previous_status,
         to_status=expected_status,
-        extra_updates=expected_extra_updates,
+        extra_updates=expected_updates,
     )
     expected_task_name = (
         "trading.tasks.run_backtest_task"

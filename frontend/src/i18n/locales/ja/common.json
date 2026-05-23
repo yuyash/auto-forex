@@ -774,6 +774,20 @@
     "title": "実行状態タイルの順序",
     "description": "ドラッグまたは矢印ボタンでタイルの表示順序を変更できます。"
   },
+  "watermarks": {
+    "title": "ウォーターマーク",
+    "marginRatioMax": "証拠金精算割合の最大値",
+    "baseUnitsMax": "ベースユニットの最大値",
+    "openLongUnitsMax": "オープンロングサイズの最大値",
+    "openShortUnitsMax": "オープンショートサイズの最大値",
+    "realizedPnlMax": "実現損益の最大値",
+    "unrealizedPnlMin": "未実現損益の最小値",
+    "openPositionsMax": "オープンポジション数の最大値",
+    "activeCyclesMax": "アクティブサイクル数の最大値",
+    "timestamp": "{{time}}",
+    "noTimestamp": "時刻なし",
+    "noData": "この実行のウォーターマークデータはありません。"
+  },
   "footer": {
     "oandaApiReachable": "OANDA APIに接続可能",
     "oandaApiUnavailable": "OANDA APIが利用不可",

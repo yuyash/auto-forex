@@ -5,6 +5,7 @@ import { queryKeys } from '../config/reactQuery';
 import type { PaginatedResponse } from '../types';
 import { TaskType, type TaskStatus } from '../types/common';
 import { logger } from '../utils/logger';
+import { patchTaskSummaryStatus } from './taskResourceCache';
 import { applyTaskStatusTransition } from './taskStatusTransitions';
 
 interface TaskSnapshot {
@@ -17,6 +18,8 @@ interface TaskSnapshot {
   completed_at?: string | null;
   error_message?: string | null;
   error_code?: string | null;
+  status_reason_code?: string | null;
+  status_reason_message?: string | null;
   updated_at?: string | null;
 }
 
@@ -29,6 +32,8 @@ type StreamTask = {
   completed_at?: string | null;
   error_message?: string | null;
   error_code?: string | null;
+  status_reason_code?: string | null;
+  status_reason_message?: string | null;
   updated_at?: string | null;
 };
 
@@ -78,6 +83,10 @@ function applySnapshot<TTask extends StreamTask>(
     completed_at: snapshot.completed_at ?? current.completed_at,
     error_message: snapshot.error_message ?? current.error_message,
     error_code: snapshot.error_code ?? current.error_code,
+    status_reason_code:
+      snapshot.status_reason_code ?? current.status_reason_code,
+    status_reason_message:
+      snapshot.status_reason_message ?? current.status_reason_message,
     updated_at: snapshot.updated_at ?? current.updated_at,
   } satisfies TTask;
   return applyTaskStatusTransition(taskType, merged);
@@ -105,6 +114,10 @@ function applySnapshotToList<TTask extends StreamTask>(
       completed_at: snapshot.completed_at ?? task.completed_at,
       error_message: snapshot.error_message ?? task.error_message,
       error_code: snapshot.error_code ?? task.error_code,
+      status_reason_code:
+        snapshot.status_reason_code ?? task.status_reason_code,
+      status_reason_message:
+        snapshot.status_reason_message ?? task.status_reason_message,
       updated_at: snapshot.updated_at ?? task.updated_at,
     });
   });
@@ -181,6 +194,25 @@ export function useTaskEventStream<TTask extends StreamTask>({
               { queryKey: taskListKey(taskType) },
               (current) => applySnapshotToList(taskType, current, snapshot)
             );
+            if (snapshot.status) {
+              patchTaskSummaryStatus(taskId, taskType, snapshot.status, {
+                ...(Object.prototype.hasOwnProperty.call(
+                  snapshot,
+                  'status_reason_code'
+                )
+                  ? { statusReasonCode: snapshot.status_reason_code ?? null }
+                  : {}),
+                ...(Object.prototype.hasOwnProperty.call(
+                  snapshot,
+                  'status_reason_message'
+                )
+                  ? {
+                      statusReasonMessage:
+                        snapshot.status_reason_message ?? null,
+                    }
+                  : {}),
+              });
+            }
             void queryClient.invalidateQueries({
               queryKey: taskListKey(taskType),
             });

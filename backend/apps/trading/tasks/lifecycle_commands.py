@@ -31,6 +31,10 @@ from apps.trading.tasks.lifecycle_plans import (
 )
 from apps.trading.tasks.lifecycle_state_machine import allowed_statuses_for_command
 from apps.trading.tasks.lifecycle_validators import ResumeCommandValidator
+from apps.trading.services.status_reasons import (
+    empty_status_reason_update,
+    stop_request_reason,
+)
 
 if TYPE_CHECKING:
     from apps.trading.tasks.service import TaskService
@@ -194,12 +198,16 @@ class TaskLifecycleCommands:
                 task_id,
             )
 
+        stop_reason = stop_request_reason(stop_plan.effective_mode)
         self.service.writer.persist_state_if_current(
             command="stop",
             task=task,
             from_status=previous_status,
             to_status=stop_plan.next_status,
-            extra_updates=stop_plan.extra_updates,
+            extra_updates={
+                **stop_plan.extra_updates,
+                **stop_reason.as_update(),
+            },
         )
         transition = LifecycleCommandResult(
             command="stop",
@@ -380,6 +388,7 @@ class TaskLifecycleCommands:
                 "completed_at": None,
                 "error_message": None,
                 "error_traceback": None,
+                **empty_status_reason_update(),
             },
         )
         task.refresh_from_db()
@@ -462,6 +471,8 @@ class TaskLifecycleCommands:
                 locked_task.error_message = None
                 locked_task.error_traceback = None
                 locked_task.completed_at = None
+                locked_task.status_reason_code = ""
+                locked_task.status_reason_message = ""
 
             # Always rotate the Celery task id on resume so the next
             # worker invocation is guaranteed to be accepted.
@@ -505,6 +516,7 @@ class TaskLifecycleCommands:
                 status=TaskStatus.CREATED,
                 execution_id=None,
                 celery_task_id=None,
+                **empty_status_reason_update(),
             )
             task.refresh_from_db()
             return
@@ -512,8 +524,18 @@ class TaskLifecycleCommands:
         task.status = TaskStatus.CREATED
         task.execution_id = None
         task.celery_task_id = None
+        task.status_reason_code = ""
+        task.status_reason_message = ""
         try:
-            task.save(update_fields=["status", "execution_id", "celery_task_id"])
+            task.save(
+                update_fields=[
+                    "status",
+                    "execution_id",
+                    "celery_task_id",
+                    "status_reason_code",
+                    "status_reason_message",
+                ]
+            )
         except TypeError:
             task.save()
 

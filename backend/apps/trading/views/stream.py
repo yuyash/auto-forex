@@ -167,6 +167,8 @@ class TaskEventStreamView(APIView):
                 "started_at",
                 "completed_at",
                 "updated_at",
+                "status_reason_code",
+                "status_reason_message",
             ]
             if task_type == TaskType.BACKTEST:
                 only_fields.extend(["start_time", "end_time"])
@@ -196,6 +198,8 @@ class TaskEventStreamView(APIView):
             "completed_at": task.completed_at.isoformat() if task.completed_at else None,
             "error_message": task_public_error_message(task.status),
             "error_code": task_public_error_code(task.status),
+            "status_reason_code": getattr(task, "status_reason_code", "") or None,
+            "status_reason_message": getattr(task, "status_reason_message", "") or None,
             "updated_at": task.updated_at.isoformat() if task.updated_at else None,
         }
 

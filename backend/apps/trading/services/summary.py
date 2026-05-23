@@ -11,7 +11,7 @@ Computes a comprehensive summary for a given task including:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, cast
@@ -25,10 +25,12 @@ from apps.trading.models.trades import Trade
 from apps.trading.services.conversion_context import CurrencyConversionContext
 from apps.trading.services.display_money import DISPLAY_MONEY
 from apps.trading.services.fx_rates import FX_CONVERSION, FxConversionService
+from apps.trading.services.metric_watermarks import WATERMARK_SPECS, update_watermarks
 from apps.trading.services.public_errors import (
     task_public_error_code,
     task_public_error_message,
 )
+from apps.trading.services.status_reasons import status_reason_from_task
 from apps.trading.utils import Instrument
 
 
@@ -194,6 +196,8 @@ class TaskInfo:
     error_code: str | None
     stop_reason: str | None
     progress: int
+    status_reason_code: str | None = None
+    status_reason_message: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Return serializer-ready task data."""
@@ -203,9 +207,69 @@ class TaskInfo:
             "completed_at": self.completed_at,
             "error_message": self.error_message,
             "error_code": self.error_code,
+            "status_reason_code": self.status_reason_code,
+            "status_reason_message": self.status_reason_message,
             "stop_reason": self.stop_reason,
             "progress": self.progress,
         }
+
+
+@dataclass(frozen=True)
+class WatermarkInfo:
+    """Single execution watermark value and timestamp."""
+
+    value: Decimal | None
+    timestamp: str | None
+    source_metric: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        """Return serializer-ready watermark data."""
+        return {
+            "value": self.value,
+            "timestamp": self.timestamp,
+            "source_metric": self.source_metric,
+        }
+
+
+@dataclass(frozen=True)
+class ExecutionWatermarks:
+    """Execution-level extrema derived from persisted metric snapshots."""
+
+    margin_ratio_max: WatermarkInfo
+    base_units_max: WatermarkInfo
+    open_long_units_max: WatermarkInfo
+    open_short_units_max: WatermarkInfo
+    realized_pnl_max: WatermarkInfo
+    unrealized_pnl_min: WatermarkInfo
+    open_positions_max: WatermarkInfo
+    active_cycles_max: WatermarkInfo
+
+    def to_dict(self) -> dict[str, object]:
+        """Return serializer-ready watermark data."""
+        return {
+            "margin_ratio_max": self.margin_ratio_max.to_dict(),
+            "base_units_max": self.base_units_max.to_dict(),
+            "open_long_units_max": self.open_long_units_max.to_dict(),
+            "open_short_units_max": self.open_short_units_max.to_dict(),
+            "realized_pnl_max": self.realized_pnl_max.to_dict(),
+            "unrealized_pnl_min": self.unrealized_pnl_min.to_dict(),
+            "open_positions_max": self.open_positions_max.to_dict(),
+            "active_cycles_max": self.active_cycles_max.to_dict(),
+        }
+
+
+def _empty_execution_watermarks() -> ExecutionWatermarks:
+    empty = WatermarkInfo(value=None, timestamp=None)
+    return ExecutionWatermarks(
+        margin_ratio_max=empty,
+        base_units_max=empty,
+        open_long_units_max=empty,
+        open_short_units_max=empty,
+        realized_pnl_max=empty,
+        unrealized_pnl_min=empty,
+        open_positions_max=empty,
+        active_cycles_max=empty,
+    )
 
 
 @dataclass(frozen=True)
@@ -218,6 +282,7 @@ class TaskSummary:
     execution: ExecutionInfo
     tick: TickInfo
     task: TaskInfo
+    watermarks: ExecutionWatermarks = field(default_factory=_empty_execution_watermarks)
 
     def to_dict(self) -> dict[str, object]:
         """Return a serializer-ready task summary payload."""
@@ -228,6 +293,7 @@ class TaskSummary:
             "execution": self.execution.to_dict(),
             "tick": self.tick.to_dict(),
             "task": self.task.to_dict(),
+            "watermarks": self.watermarks.to_dict(),
         }
 
 
@@ -526,6 +592,8 @@ def compute_task_summary(
     started_at = None
     completed_at = None
     error_message = None
+    status_reason_code = None
+    status_reason_message = None
 
     task_obj = _get_task(task_type, task_id)
     quote_ccy: str | None = None
@@ -534,6 +602,10 @@ def compute_task_summary(
         started_at = task_obj.started_at.isoformat() if task_obj.started_at else None
         completed_at = task_obj.completed_at.isoformat() if task_obj.completed_at else None
         error_message = task_public_error_message(task_obj.status)
+        public_reason = status_reason_from_task(task_obj)
+        if public_reason is not None:
+            status_reason_code = public_reason.code
+            status_reason_message = public_reason.message
         quote_ccy = Instrument(getattr(task_obj, "instrument", "")).quote_currency or None
     error_code = task_public_error_code(status)
 
@@ -625,6 +697,14 @@ def compute_task_summary(
             current_balance_display = Decimal(current_balance_display_money["amount"])
         current_balance_display_conversion_context = converted_balance.conversion_context
 
+    watermarks = _compute_watermarks(
+        task_type=task_type,
+        task_id=task_id,
+        execution_id=execution_id or getattr(task_obj, "execution_id", None),
+        latest_metrics=metrics_dict,
+        latest_timestamp=tick_as_of,
+    )
+
     pnl_currency = quote_ccy or current_balance_currency or account_currency
     display_currency = display_currency or preferred_display_currency or account_currency
     pnl_display_money = _pnl_display_money(
@@ -689,9 +769,12 @@ def compute_task_summary(
             completed_at=completed_at,
             error_message=error_message,
             error_code=error_code,
+            status_reason_code=status_reason_code,
+            status_reason_message=status_reason_message,
             stop_reason=stop_reason,
             progress=_compute_progress(task_type, task_obj, state),
         ),
+        watermarks=watermarks,
     )
 
 
@@ -705,6 +788,67 @@ def compute_cached_task_summary(
         task_type=task_type,
         task_id=task_id,
         execution_id=execution_id,
+    )
+
+
+def _compute_watermarks(
+    *,
+    task_type: str,
+    task_id: str,
+    execution_id,
+    latest_metrics: dict[str, object],
+    latest_timestamp: datetime | None,
+) -> ExecutionWatermarks:
+    """Load aggregate watermarks and fold in the current unflushed metrics."""
+
+    watermarks: dict[str, object] = {}
+    if execution_id is not None:
+        from apps.trading.models.metrics import ExecutionMetricAggregate
+
+        row = (
+            ExecutionMetricAggregate.objects.filter(
+                task_type=task_type,
+                task_id=task_id,
+                execution_id=execution_id,
+            )
+            .values("watermarks")
+            .first()
+        )
+        if row and isinstance(row.get("watermarks"), dict):
+            watermarks = dict(row["watermarks"])
+
+    if latest_metrics and latest_timestamp is not None:
+        watermarks = update_watermarks(
+            watermarks,
+            timestamp=latest_timestamp,
+            metrics=latest_metrics,
+        )
+
+    return _watermarks_from_map(watermarks)
+
+
+def _watermarks_from_map(raw: dict[str, object]) -> ExecutionWatermarks:
+    values = {spec.key: _watermark_info(raw.get(spec.key)) for spec in WATERMARK_SPECS}
+    return ExecutionWatermarks(
+        margin_ratio_max=values["margin_ratio_max"],
+        base_units_max=values["base_units_max"],
+        open_long_units_max=values["open_long_units_max"],
+        open_short_units_max=values["open_short_units_max"],
+        realized_pnl_max=values["realized_pnl_max"],
+        unrealized_pnl_min=values["unrealized_pnl_min"],
+        open_positions_max=values["open_positions_max"],
+        active_cycles_max=values["active_cycles_max"],
+    )
+
+
+def _watermark_info(raw: object) -> WatermarkInfo:
+    if not isinstance(raw, dict):
+        return WatermarkInfo(value=None, timestamp=None)
+    data = cast(dict[str, object], raw)
+    return WatermarkInfo(
+        value=_optional_decimal_from_value(data.get("value")),
+        timestamp=_str_or_none(data.get("timestamp")),
+        source_metric=_str_or_none(data.get("source_metric")),
     )
 
 
@@ -751,6 +895,10 @@ def _uses_in_memory_mode(task_obj) -> bool:
 
 def _metric_decimal(metrics: dict[str, object], key: str) -> Decimal | None:
     value = metrics.get(key)
+    return _optional_decimal_from_value(value)
+
+
+def _optional_decimal_from_value(value: object) -> Decimal | None:
     if value in (None, ""):
         return None
     try:
@@ -971,6 +1119,10 @@ def _compute_stop_reason(
     terminal_states = {"failed", "stopped", "completed", "paused"}
     if status not in terminal_states:
         return None
+
+    public_reason = status_reason_from_task(task)
+    if public_reason is not None:
+        return public_reason.message
 
     status_message = _fetch_celery_status_message(
         task_type=task_type,
