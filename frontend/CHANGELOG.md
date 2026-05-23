@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.9.0](https://github.com/yuyash/auto-forex-web-service/compare/frontend-v2.8.1...frontend-v2.9.0) (2026-05-23)
+
+
+### Features
+
+* task stop reasons watermarks ([#804](https://github.com/yuyash/auto-forex-web-service/issues/804)) ([4b9eebb](https://github.com/yuyash/auto-forex-web-service/commit/4b9eebb6305b03391610ae314caaf0dc611534d6))
+
+
+### Bug Fixes
+
+* **frontend:** localize task comparison labels ([#806](https://github.com/yuyash/auto-forex-web-service/issues/806)) ([309d1eb](https://github.com/yuyash/auto-forex-web-service/commit/309d1eb334167f4672925cb9e8880974896e3957))
+
 ## [2.8.1](https://github.com/yuyash/auto-forex-web-service/compare/frontend-v2.8.0...frontend-v2.8.1) (2026-05-22)
 
 
