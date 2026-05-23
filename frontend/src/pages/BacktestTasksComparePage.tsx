@@ -18,6 +18,7 @@ import {
   SettingsComparisonTable,
   type SettingsComparisonItem,
 } from '../components/comparison/SettingsComparisonTable';
+import { buildTaskComparisonLabelMap } from '../components/tasks/detail/taskSettingDefinitions';
 import { parseCompareIds } from '../utils/compareParams';
 import { getStrategyDisplayName, useStrategies } from '../hooks/useStrategies';
 
@@ -139,157 +140,9 @@ export default function BacktestTasksComparePage() {
 
   const labelMap = useMemo(
     () =>
-      new Map<string, string>([
-        ['name', t('labels.name')],
-        ['description', t('labels.description')],
-        ['strategy_type', t('labels.strategyType')],
-        ['config_name', t('labels.strategyConfiguration')],
-        [
-          'config_revision',
-          t('comparison.configRevision', {
-            defaultValue: 'Config Revision',
-          }),
-        ],
-        [
-          'config_hash',
-          t('comparison.configHash', { defaultValue: 'Config Hash' }),
-        ],
-        ['data_source', t('backtest:detail.dataSource')],
-        ['start_time', t('backtest:detail.startTime')],
-        ['end_time', t('backtest:detail.endTime')],
-        ['instrument', t('labels.instrument')],
-        ['initial_balance', t('backtest:detail.initialBalance')],
-        ['account_currency', t('labels.accountCurrency')],
-        ['display_currency', t('labels.displayCurrency')],
-        ['commission_per_trade', t('backtest:detail.commissionPerTrade')],
-        ['pip_size', t('labels.pipSize')],
-        ['tick_granularity', t('backtest:detail.tickGranularity')],
-        ['tick_window_value_mode', t('backtest:detail.tickWindowValueMode')],
-        ['sell_at_completion', t('backtest:form.closePositionsAtCompletion')],
-        ['sell_on_stop', t('labels.sellOnStop')],
-        ['hedging_enabled', t('labels.hedgingEnabled')],
-        [
-          'in_memory_mode',
-          t('backtest:form.inMemoryMode', { defaultValue: 'In-memory mode' }),
-        ],
-        [
-          'drain_duration_hours',
-          t('backtest:form.drainDurationHours', {
-            defaultValue: 'Drain duration (h)',
-          }),
-        ],
-        [
-          'market_idle_pre_close_minutes',
-          t('backtest:form.marketIdlePreCloseMinutes', {
-            defaultValue: 'Market idle before close (min)',
-          }),
-        ],
-        [
-          'market_idle_resume_delay_minutes',
-          t('backtest:form.marketIdleResumeDelayMinutes', {
-            defaultValue: 'Market resume delay (min)',
-          }),
-        ],
-        [
-          'market_close_enabled',
-          t('backtest:form.marketCloseEnabled', {
-            defaultValue: 'Apply weekly market close',
-          }),
-        ],
-        [
-          'market_close_weekday',
-          t('backtest:form.marketCloseWeekday', {
-            defaultValue: 'Market close weekday',
-          }),
-        ],
-        [
-          'market_close_hour_utc',
-          t('backtest:form.marketCloseHourUtc', {
-            defaultValue: 'Market close hour UTC',
-          }),
-        ],
-        [
-          'market_open_weekday',
-          t('backtest:form.marketOpenWeekday', {
-            defaultValue: 'Market open weekday',
-          }),
-        ],
-        [
-          'market_open_hour_utc',
-          t('backtest:form.marketOpenHourUtc', {
-            defaultValue: 'Market open hour UTC',
-          }),
-        ],
-        [
-          'max_tick_gap_hours',
-          t('backtest:form.maxTickGapHours', {
-            defaultValue: 'Max tick gap (h)',
-          }),
-        ],
-        [
-          'backtest_tick_batch_size',
-          t('backtest:form.backtestTickBatchSize', {
-            defaultValue: 'Tick batch size',
-          }),
-        ],
-        [
-          'spread_filter_enabled',
-          t('backtest:form.spreadFilterEnabled', {
-            defaultValue: 'Skip wide-spread ticks',
-          }),
-        ],
-        [
-          'max_spread_pips',
-          t('backtest:form.maxSpreadPips', {
-            defaultValue: 'Max spread (pips)',
-          }),
-        ],
-        [
-          'oanda_candle_filter_enabled',
-          t('backtest:form.oandaCandleFilterEnabled', {
-            defaultValue: 'Validate ticks with OANDA candles',
-          }),
-        ],
-        [
-          'oanda_candle_filter_account_name',
-          t('backtest:form.oandaCandleFilterAccount', {
-            defaultValue: 'OANDA candle account',
-          }),
-        ],
-        [
-          'oanda_candle_filter_granularity',
-          t('backtest:form.oandaCandleGranularity', {
-            defaultValue: 'Candle granularity',
-          }),
-        ],
-        [
-          'oanda_candle_filter_tolerance_pips',
-          t('backtest:form.oandaCandleTolerancePips', {
-            defaultValue: 'Candle tolerance (pips)',
-          }),
-        ],
-        [
-          'holidays_enabled',
-          t('backtest:form.holidaysEnabled', {
-            defaultValue: 'Skip major FX holidays',
-          }),
-        ],
-        [
-          'excluded_dates',
-          t('backtest:form.excludedDates', {
-            defaultValue: 'Additional closed windows',
-          }),
-        ],
-        [
-          'initial_positions_enabled',
-          t('backtest:form.initialPositionsEnabled'),
-        ],
-        ['initial_position_cycles', t('backtest:form.initialPositionCycles')],
-        [
-          'debug_options',
-          t('comparison.debugOptions', { defaultValue: 'Debug Options' }),
-        ],
-      ]),
+      buildTaskComparisonLabelMap(t, 'backtest', {
+        includeDebugOptions: true,
+      }),
     [t]
   );
 

@@ -54,6 +54,7 @@ import {
   resolveStrategyComparisonSnapshot,
   type StrategyComparisonLabel,
 } from '../../../utils/strategyConfigComparison';
+import { buildTaskComparisonLabelMap } from './taskSettingDefinitions';
 import { computeAutoInterval } from '../../../utils/autoGranularity';
 import {
   formatAppNumber,
@@ -197,6 +198,32 @@ function formatGenericComparisonValue(
   return String(value);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function resolveTaskComparisonConfig(
+  config: Record<string, unknown>
+): Record<string, unknown> {
+  const current = config.current;
+  const baseConfig = isRecord(current)
+    ? current
+    : Object.fromEntries(
+        Object.entries(config).filter(
+          ([key]) => !['initial', 'current', 'revisions'].includes(key)
+        )
+      );
+
+  const result = { ...baseConfig };
+  if (config.config_hash !== undefined) {
+    result.config_hash = config.config_hash;
+  }
+  if (config.segment_index !== undefined) {
+    result.segment_index = config.segment_index;
+  }
+  return result;
+}
+
 function titleCaseConfigKey(key: string): string {
   return key
     .replace(/^parameters\./, '')
@@ -212,6 +239,29 @@ function resolveStrategyComparisonLabel(
 ): StrategyComparisonLabel {
   if (label) return label;
   if (fallbackMap) return { primary: resolveParameterLabel(fallbackMap, key) };
+  return { primary: titleCaseConfigKey(key) };
+}
+
+function resolveTaskComparisonLabel(
+  labelMap: Map<string, string> | undefined,
+  key: string
+): StrategyComparisonLabel {
+  const directLabel = labelMap?.get(key);
+  if (directLabel) return { primary: directLabel };
+
+  const parts = key.split('.');
+  for (let index = parts.length - 1; index > 0; index -= 1) {
+    const prefix = parts.slice(0, index).join('.');
+    const prefixLabel = labelMap?.get(prefix);
+    if (prefixLabel) {
+      return {
+        primary: `${prefixLabel} / ${titleCaseConfigKey(
+          parts.slice(index).join('.')
+        )}`,
+      };
+    }
+  }
+
   return { primary: titleCaseConfigKey(key) };
 }
 
@@ -622,12 +672,17 @@ export function ExecutionComparisonDialog({
 
       <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
         {tabIndex === 0 && (
-          <ConfigComparisonPanel executions={sorted} type="task" />
+          <ConfigComparisonPanel
+            executions={sorted}
+            type="task"
+            taskType={taskType}
+          />
         )}
         {tabIndex === 1 && (
           <ConfigComparisonPanel
             executions={sorted}
             type="strategy"
+            taskType={taskType}
             paramLabelMap={strategyComparisonContext.labelMap}
             schemaPropertiesByType={
               strategyComparisonContext.schemaPropertiesByType
@@ -658,15 +713,18 @@ export function ExecutionComparisonDialog({
 function ConfigComparisonPanel({
   executions,
   type,
+  taskType,
   paramLabelMap,
   schemaPropertiesByType,
 }: {
   executions: TaskExecution[];
   type: 'task' | 'strategy';
+  taskType: TaskType;
   paramLabelMap?: Map<string, string>;
   schemaPropertiesByType?: Map<string, Record<string, ConfigProperty>>;
 }) {
   const { t, i18n } = useTranslation('common');
+  const { timezone } = useDateTimeFormatter({ includeTimezone: true });
   const booleanLabels = useMemo(
     () => ({
       yes: t('labels.yes'),
@@ -674,6 +732,14 @@ function ConfigComparisonPanel({
     }),
     [t]
   );
+  const taskLabelMap = useMemo(() => {
+    if (type !== 'task') return undefined;
+    return buildTaskComparisonLabelMap(t, taskType, {
+      includeDebugOptions: true,
+      language: i18n.language,
+      timezone,
+    });
+  }, [i18n.language, t, taskType, timezone, type]);
 
   const { configs, allKeys, keyLabels } = useMemo(() => {
     if (type === 'strategy') {
@@ -691,11 +757,11 @@ function ConfigComparisonPanel({
     }
 
     const taskConfigs = executions.map((exec) => {
-      const raw =
-        type === 'task'
-          ? (exec.task_config ?? {})
-          : (exec.strategy_config ?? {});
-      return flattenObject(raw as Record<string, unknown>, booleanLabels);
+      const raw = exec.task_config ?? {};
+      const config = resolveTaskComparisonConfig(
+        raw as Record<string, unknown>
+      );
+      return flattenObject(config, booleanLabels);
     });
 
     const keys = new Set<string>();
@@ -808,7 +874,7 @@ function ConfigComparisonPanel({
                       paramLabelMap,
                       key
                     )
-                  : { primary: titleCaseConfigKey(key) };
+                  : resolveTaskComparisonLabel(taskLabelMap, key);
               return (
                 <tr key={key}>
                   <td>

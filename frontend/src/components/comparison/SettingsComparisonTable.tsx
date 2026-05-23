@@ -84,6 +84,25 @@ function orderIndex(key: string, keyOrder: string[]): number {
   return prefixIndex >= 0 ? prefixIndex : Number.MAX_SAFE_INTEGER;
 }
 
+function resolveSettingLabel(
+  key: string,
+  labelMap: Map<string, string> | undefined
+): string {
+  const directLabel = labelMap?.get(key);
+  if (directLabel) return directLabel;
+
+  const parts = key.split('.');
+  for (let index = parts.length - 1; index > 0; index -= 1) {
+    const prefix = parts.slice(0, index).join('.');
+    const prefixLabel = labelMap?.get(prefix);
+    if (prefixLabel) {
+      return `${prefixLabel} / ${titleCaseKey(parts.slice(index).join('.'))}`;
+    }
+  }
+
+  return titleCaseKey(key);
+}
+
 export function SettingsComparisonTable({
   items,
   labelMap,
@@ -272,7 +291,7 @@ export function SettingsComparisonTable({
                         variant="body2"
                         fontWeight={isDifferent ? 700 : 500}
                       >
-                        {labelMap?.get(key) ?? titleCaseKey(key)}
+                        {resolveSettingLabel(key, labelMap)}
                       </Typography>
                       <Typography
                         variant="caption"
