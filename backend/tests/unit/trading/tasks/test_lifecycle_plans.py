@@ -67,6 +67,8 @@ def test_resume_plan_rotates_and_clears_failed_task() -> None:
         "error_message",
         "error_traceback",
         "completed_at",
+        "status_reason_code",
+        "status_reason_message",
         "celery_task_id",
     )
     assert plan.transition.dispatch_task is True
