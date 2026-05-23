@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from rest_framework.throttling import UserRateThrottle
+from apps.common.throttling import ResilientUserRateThrottle
 
 
-class TaskDataRateThrottle(UserRateThrottle):
+class TaskDataRateThrottle(ResilientUserRateThrottle):
     """Higher rate limit for read-heavy task data endpoints (metrics, logs, events)."""
 
     scope = "task_data"

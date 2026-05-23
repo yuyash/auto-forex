@@ -154,6 +154,8 @@ REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_DB = int(os.getenv("REDIS_DB", "0"))
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
+REDIS_CACHE_MAX_CONNECTIONS = int(os.getenv("REDIS_CACHE_MAX_CONNECTIONS", "20"))
+REDIS_CACHE_POOL_TIMEOUT = float(os.getenv("REDIS_CACHE_POOL_TIMEOUT", "2"))
 
 REDIS_URL = (
     f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
@@ -173,6 +175,8 @@ CACHES = {
         "OPTIONS": {
             "db": REDIS_DB,
             "pool_class": "redis.BlockingConnectionPool",
+            "max_connections": REDIS_CACHE_MAX_CONNECTIONS,
+            "timeout": REDIS_CACHE_POOL_TIMEOUT,
         },
         "KEY_PREFIX": "auto_forex",
         "TIMEOUT": 300,
