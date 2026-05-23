@@ -26,6 +26,7 @@ class MetricWatermarkSpec:
     key: str
     sources: tuple[MetricWatermarkSource, ...]
     mode: WatermarkMode
+    select_extreme_source: bool = False
 
 
 WATERMARK_SPECS: tuple[MetricWatermarkSpec, ...] = (
@@ -36,6 +37,7 @@ WATERMARK_SPECS: tuple[MetricWatermarkSpec, ...] = (
             MetricWatermarkSource("snowball_net_margin_ratio_pct", Decimal("0.01")),
         ),
         mode="max",
+        select_extreme_source=True,
     ),
     MetricWatermarkSpec(
         key="base_units_max",
@@ -113,12 +115,19 @@ def _candidate_value(
     metrics: dict[str, Any],
     spec: MetricWatermarkSpec,
 ) -> tuple[Decimal, str] | None:
+    candidates: list[tuple[Decimal, str]] = []
     for source in spec.sources:
         value = _decimal_metric(metrics.get(source.key))
         if value is None:
             continue
-        return value * source.scale, source.key
-    return None
+        candidates.append((value * source.scale, source.key))
+    if not candidates:
+        return None
+    if not spec.select_extreme_source:
+        return candidates[0]
+    if spec.mode == "min":
+        return min(candidates, key=lambda candidate: candidate[0])
+    return max(candidates, key=lambda candidate: candidate[0])
 
 
 def _decimal_metric(raw: Any) -> Decimal | None:

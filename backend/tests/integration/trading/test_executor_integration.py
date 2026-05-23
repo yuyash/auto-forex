@@ -299,6 +299,7 @@ class TestFlushMetrics:
             first_timestamp,
             {
                 "margin_ratio": "0.05",
+                "snowball_net_margin_ratio_pct": "5",
                 "current_base_units": "1000",
                 "open_long_units": "1200",
                 "realized_pnl_quote": "10",
@@ -311,6 +312,7 @@ class TestFlushMetrics:
             second_timestamp,
             {
                 "margin_ratio": "0.08",
+                "snowball_net_margin_ratio_pct": "42",
                 "current_base_units": "900",
                 "open_short_units": "1600",
                 "realized_pnl_quote": "12",
@@ -323,8 +325,12 @@ class TestFlushMetrics:
         executor._metrics_aggregator.flush(final=True)
 
         aggregate = ExecutionMetricAggregate.objects.get(task_id=executor.task.pk)
-        assert aggregate.watermarks["margin_ratio_max"]["value"] == "0.08"
+        assert aggregate.watermarks["margin_ratio_max"]["value"] == "0.42"
         assert aggregate.watermarks["margin_ratio_max"]["timestamp"] == second_timestamp.isoformat()
+        assert (
+            aggregate.watermarks["margin_ratio_max"]["source_metric"]
+            == "snowball_net_margin_ratio_pct"
+        )
         assert aggregate.watermarks["base_units_max"]["value"] == "1000"
         assert aggregate.watermarks["open_short_units_max"]["value"] == "1600"
         assert aggregate.watermarks["realized_pnl_max"]["value"] == "12"

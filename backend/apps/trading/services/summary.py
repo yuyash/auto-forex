@@ -802,6 +802,7 @@ def _compute_watermarks(
     """Load aggregate watermarks and fold in the current unflushed metrics."""
 
     watermarks: dict[str, object] = {}
+    aggregate_latest_metrics: dict[str, object] = {}
     if execution_id is not None:
         from apps.trading.models.metrics import ExecutionMetricAggregate
 
@@ -811,11 +812,26 @@ def _compute_watermarks(
                 task_id=task_id,
                 execution_id=execution_id,
             )
-            .values("watermarks")
+            .values("watermarks", "latest_metrics")
             .first()
         )
         if row and isinstance(row.get("watermarks"), dict):
             watermarks = dict(row["watermarks"])
+        if row and isinstance(row.get("latest_metrics"), dict):
+            aggregate_latest_metrics = dict(row["latest_metrics"])
+
+        if _should_repair_margin_watermark(
+            watermarks=watermarks,
+            latest_metrics=latest_metrics,
+            aggregate_latest_metrics=aggregate_latest_metrics,
+        ):
+            repaired = _snowball_net_margin_watermark_from_metrics(
+                task_type=task_type,
+                task_id=task_id,
+                execution_id=execution_id,
+            )
+            if repaired is not None:
+                watermarks["margin_ratio_max"] = repaired
 
     if latest_metrics and latest_timestamp is not None:
         watermarks = update_watermarks(
@@ -825,6 +841,68 @@ def _compute_watermarks(
         )
 
     return _watermarks_from_map(watermarks)
+
+
+def _should_repair_margin_watermark(
+    *,
+    watermarks: dict[str, object],
+    latest_metrics: dict[str, object],
+    aggregate_latest_metrics: dict[str, object],
+) -> bool:
+    margin_watermark = watermarks.get("margin_ratio_max")
+    if isinstance(margin_watermark, dict):
+        margin_watermark_data = cast(dict[str, object], margin_watermark)
+        source_metric = str(margin_watermark_data.get("source_metric") or "")
+        if source_metric == "snowball_net_margin_ratio_pct":
+            return False
+    return _has_snowball_net_margin_metric(latest_metrics) or _has_snowball_net_margin_metric(
+        aggregate_latest_metrics
+    )
+
+
+def _has_snowball_net_margin_metric(metrics: dict[str, object]) -> bool:
+    return metrics.get("snowball_net_margin_ratio_pct") not in (None, "")
+
+
+def _snowball_net_margin_watermark_from_metrics(
+    *,
+    task_type: str,
+    task_id: str,
+    execution_id,
+) -> dict[str, object] | None:
+    from apps.trading.models.metrics import Metrics
+
+    best_value: Decimal | None = None
+    best_timestamp: datetime | None = None
+    rows = (
+        Metrics.objects.filter(
+            task_type=task_type,
+            task_id=task_id,
+            execution_id=execution_id,
+        )
+        .values("timestamp", "metrics")
+        .iterator(chunk_size=1000)
+    )
+    for row in rows:
+        metrics = row.get("metrics")
+        if not isinstance(metrics, dict):
+            continue
+        pct = _optional_decimal_from_value(metrics.get("snowball_net_margin_ratio_pct"))
+        if pct is None:
+            continue
+        value = pct * Decimal("0.01")
+        if best_value is None or value > best_value:
+            best_value = value
+            timestamp = row.get("timestamp")
+            best_timestamp = timestamp if isinstance(timestamp, datetime) else None
+
+    if best_value is None or best_timestamp is None:
+        return None
+    return {
+        "value": str(best_value),
+        "timestamp": best_timestamp.isoformat(),
+        "source_metric": "snowball_net_margin_ratio_pct",
+    }
 
 
 def _watermarks_from_map(raw: dict[str, object]) -> ExecutionWatermarks:
