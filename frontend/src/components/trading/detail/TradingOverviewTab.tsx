@@ -7,6 +7,7 @@ import {
   ExecutionStatusSummary,
   type ExecutionStatusExtraItem,
 } from '../../tasks/detail/ExecutionStatusSummary';
+import { ExecutionWatermarkSummary } from '../../tasks/detail/ExecutionWatermarkSummary';
 import { HistoricalStrategyConfigDialog } from '../../tasks/detail/HistoricalStrategyConfigDialog';
 import {
   InitialPositionSettingValue,
@@ -299,6 +300,10 @@ export function TradingOverviewTab({
             extraItems={executionStatusExtraItems}
             onRefresh={onRefreshExecutionStatus}
             isRefreshing={executionStatusRefreshing}
+          />
+          <ExecutionWatermarkSummary
+            summary={summary}
+            pnlCurrency={pnlCurrency}
           />
         </Grid>
         <Grid size={{ xs: 12 }}>

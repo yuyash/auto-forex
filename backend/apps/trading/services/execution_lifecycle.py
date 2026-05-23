@@ -32,6 +32,8 @@ def transition_task_to_terminal(
     expected_current_status: TaskStatus | None = None,
     error_message: str | None = None,
     error_traceback: str | None = None,
+    status_reason_code: str | None = None,
+    status_reason_message: str | None = None,
 ) -> int:
     """Persist a terminal task transition and sync snapshots.
 
@@ -56,6 +58,10 @@ def transition_task_to_terminal(
         update_fields["error_message"] = error_message
     if error_traceback is not None:
         update_fields["error_traceback"] = error_traceback
+    if status_reason_code is not None:
+        update_fields["status_reason_code"] = status_reason_code
+    if status_reason_message is not None:
+        update_fields["status_reason_message"] = status_reason_message
 
     rows_updated = queryset.update(**update_fields)
     if rows_updated > 0:
@@ -69,6 +75,8 @@ def transition_task_to_stopped(
     task,
     task_type: str,
     expected_current_status: TaskStatus | None = None,
+    status_reason_code: str | None = None,
+    status_reason_message: str | None = None,
 ) -> int:
     """Persist a STOPPED transition without a completion timestamp.
 
@@ -83,10 +91,16 @@ def transition_task_to_stopped(
             allowed.add(TaskStatus.IDLE)
         queryset = queryset.filter(status__in=allowed)
 
-    rows_updated = queryset.update(
-        status=TaskStatus.STOPPED,
-        completed_at=None,
-    )
+    update_fields: dict[str, object] = {
+        "status": TaskStatus.STOPPED,
+        "completed_at": None,
+    }
+    if status_reason_code is not None:
+        update_fields["status_reason_code"] = status_reason_code
+    if status_reason_message is not None:
+        update_fields["status_reason_message"] = status_reason_message
+
+    rows_updated = queryset.update(**update_fields)
     if rows_updated > 0:
         task.refresh_from_db()
         sync_terminal_execution_artifacts(task=task, task_type=task_type)

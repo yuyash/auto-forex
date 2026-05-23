@@ -2,7 +2,7 @@
     "openapi": "3.0.3",
     "info": {
         "title": "Auto Forex Trader API",
-        "version": "2.7.1",
+        "version": "2.7.2",
         "description": "Auto Forex Trader Backend API.\n\n## Authentication\nMost endpoints require JWT authentication. Include the token in the `Authorization: Bearer <token>` header.\n\n## Rate Limiting\nAuthentication endpoints are rate-limited to prevent abuse."
     },
     "paths": {
@@ -7700,6 +7700,16 @@
                         "description": "Return the stable public failure code.",
                         "readOnly": true
                     },
+                    "status_reason_code": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "Stable public reason code for the latest stop/failure trigger"
+                    },
+                    "status_reason_message": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "Public message explaining the latest stop/failure trigger"
+                    },
                     "created_at": {
                         "type": "string",
                         "format": "date-time",
@@ -7753,6 +7763,8 @@
                     "start_time",
                     "started_at",
                     "status",
+                    "status_reason_code",
+                    "status_reason_message",
                     "strategy_type",
                     "updated_at",
                     "user_id"
@@ -8270,6 +8282,16 @@
                         "description": "Return the stable public failure code.",
                         "readOnly": true
                     },
+                    "status_reason_code": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "Stable public reason code for the latest stop/failure trigger"
+                    },
+                    "status_reason_message": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "Public message explaining the latest stop/failure trigger"
+                    },
                     "created_at": {
                         "type": "string",
                         "format": "date-time",
@@ -8352,6 +8374,8 @@
                     "start_time",
                     "started_at",
                     "status",
+                    "status_reason_code",
+                    "status_reason_message",
                     "strategy_type",
                     "tick_granularity",
                     "tick_window_value_mode",
@@ -8954,6 +8978,46 @@
                     "recovery_status",
                     "resume_cursor_timestamp",
                     "ticks_processed"
+                ]
+            },
+            "ExecutionWatermarks": {
+                "type": "object",
+                "description": "Serializer for execution extrema displayed on the overview tab.",
+                "properties": {
+                    "margin_ratio_max": {
+                        "$ref": "#/components/schemas/WatermarkInfo"
+                    },
+                    "base_units_max": {
+                        "$ref": "#/components/schemas/WatermarkInfo"
+                    },
+                    "open_long_units_max": {
+                        "$ref": "#/components/schemas/WatermarkInfo"
+                    },
+                    "open_short_units_max": {
+                        "$ref": "#/components/schemas/WatermarkInfo"
+                    },
+                    "realized_pnl_max": {
+                        "$ref": "#/components/schemas/WatermarkInfo"
+                    },
+                    "unrealized_pnl_min": {
+                        "$ref": "#/components/schemas/WatermarkInfo"
+                    },
+                    "open_positions_max": {
+                        "$ref": "#/components/schemas/WatermarkInfo"
+                    },
+                    "active_cycles_max": {
+                        "$ref": "#/components/schemas/WatermarkInfo"
+                    }
+                },
+                "required": [
+                    "active_cycles_max",
+                    "base_units_max",
+                    "margin_ratio_max",
+                    "open_long_units_max",
+                    "open_positions_max",
+                    "open_short_units_max",
+                    "realized_pnl_max",
+                    "unrealized_pnl_min"
                 ]
             },
             "FxRateResponse": {
@@ -13082,6 +13146,14 @@
                         "type": "string",
                         "nullable": true
                     },
+                    "status_reason_code": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "status_reason_message": {
+                        "type": "string",
+                        "nullable": true
+                    },
                     "stop_reason": {
                         "type": "string",
                         "nullable": true
@@ -13693,6 +13765,9 @@
                     },
                     "task": {
                         "$ref": "#/components/schemas/TaskInfo"
+                    },
+                    "watermarks": {
+                        "$ref": "#/components/schemas/ExecutionWatermarks"
                     }
                 },
                 "required": [
@@ -13701,7 +13776,8 @@
                     "pnl",
                     "task",
                     "tick",
-                    "timestamp"
+                    "timestamp",
+                    "watermarks"
                 ]
             },
             "TaskTradePaginatedResponse": {
@@ -14343,6 +14419,16 @@
                         "description": "Return the stable public failure code.",
                         "readOnly": true
                     },
+                    "status_reason_code": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "Stable public reason code for the latest stop/failure trigger"
+                    },
+                    "status_reason_message": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "Public message explaining the latest stop/failure trigger"
+                    },
                     "api_retry_max_attempts": {
                         "type": "integer",
                         "maximum": 2147483647,
@@ -14461,6 +14547,8 @@
                     "pip_size",
                     "started_at",
                     "status",
+                    "status_reason_code",
+                    "status_reason_message",
                     "strategy_type",
                     "updated_at",
                     "user_id"
@@ -14758,6 +14846,16 @@
                         "description": "Return the stable public failure code.",
                         "readOnly": true
                     },
+                    "status_reason_code": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "Stable public reason code for the latest stop/failure trigger"
+                    },
+                    "status_reason_message": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "Public message explaining the latest stop/failure trigger"
+                    },
                     "api_retry_max_attempts": {
                         "type": "integer",
                         "readOnly": true,
@@ -14873,6 +14971,8 @@
                     "sell_on_stop",
                     "started_at",
                     "status",
+                    "status_reason_code",
+                    "status_reason_message",
                     "strategy_type",
                     "tick_granularity",
                     "updated_at",
@@ -15349,6 +15449,30 @@
                     "email_verified",
                     "id",
                     "username"
+                ]
+            },
+            "WatermarkInfo": {
+                "type": "object",
+                "description": "Serializer for one execution watermark.",
+                "properties": {
+                    "value": {
+                        "type": "string",
+                        "format": "decimal",
+                        "pattern": "^-?\\d{0,14}(?:\\.\\d{0,10})?$",
+                        "nullable": true
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "source_metric": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "required": [
+                    "timestamp",
+                    "value"
                 ]
             }
         },

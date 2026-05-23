@@ -21,6 +21,7 @@ from apps.trading.tasks.lifecycle_events import (
     build_failed_event_spec,
     finalize_task_terminal_lifecycle,
 )
+from apps.trading.services.status_reasons import failure_reason_for_exception
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ def handle_task_exception(
     )
 
     if task is not None:
+        public_reason = failure_reason_for_exception(error)
         finalize_task_terminal_lifecycle(
             logger=logger,
             task=task,
@@ -63,4 +65,6 @@ def handle_task_exception(
             ),
             error_message=error_message,
             error_traceback=error_tb,
+            status_reason_code=public_reason.code,
+            status_reason_message=public_reason.message,
         )

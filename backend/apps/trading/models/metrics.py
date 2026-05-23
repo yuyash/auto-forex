@@ -98,6 +98,11 @@ class ExecutionMetricAggregate(models.Model):
         blank=True,
         help_text="Maximum observed margin_ratio in the aggregate window",
     )
+    watermarks = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Execution watermark values and timestamps keyed by summary metric",
+    )
     continuity_warnings = models.JSONField(
         default=list,
         blank=True,

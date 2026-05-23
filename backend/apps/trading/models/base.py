@@ -104,6 +104,17 @@ class ExecutableTaskModel(UUIDModel):
         blank=True,
         help_text="Internal traceback if task failed",
     )
+    status_reason_code = models.CharField(
+        max_length=80,
+        blank=True,
+        default="",
+        help_text="Stable public reason code for the latest stop/failure trigger",
+    )
+    status_reason_message = models.TextField(
+        blank=True,
+        default="",
+        help_text="Public message explaining the latest stop/failure trigger",
+    )
     debug_options = models.JSONField(
         default=dict,
         blank=True,
@@ -149,6 +160,8 @@ class ExecutableTaskModel(UUIDModel):
             "completed_at",
             "error_message",
             "error_traceback",
+            "status_reason_code",
+            "status_reason_message",
             "strategy_state",
         }
     )

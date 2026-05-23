@@ -308,7 +308,11 @@ export function patchTaskDerivedCaches(
   patchTaskSummaryStatus(
     effectiveTask.id,
     taskType,
-    String(effectiveTask.status)
+    String(effectiveTask.status),
+    {
+      statusReasonCode: effectiveTask.status_reason_code ?? null,
+      statusReasonMessage: effectiveTask.status_reason_message ?? null,
+    }
   );
   patchTaskLogComponents(effectiveTask.id, taskType, []);
 

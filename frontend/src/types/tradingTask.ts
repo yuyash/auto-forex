@@ -48,6 +48,8 @@ export interface TradingTask {
   completed_at?: string;
   error_message?: string;
   error_code?: string;
+  status_reason_code?: string;
+  status_reason_message?: string;
   pip_size?: string;
   instrument_context?: TaskInstrumentContext;
   created_at: string;

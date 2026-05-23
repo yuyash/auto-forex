@@ -774,6 +774,20 @@
     "title": "Execution status tile order",
     "description": "Drag tiles or use the arrow buttons to change their display order."
   },
+  "watermarks": {
+    "title": "Watermarks",
+    "marginRatioMax": "Max Margin Closeout Ratio",
+    "baseUnitsMax": "Max Base Units",
+    "openLongUnitsMax": "Max Open Long Size",
+    "openShortUnitsMax": "Max Open Short Size",
+    "realizedPnlMax": "Max Realized PnL",
+    "unrealizedPnlMin": "Min Unrealized PnL",
+    "openPositionsMax": "Max Open Positions",
+    "activeCyclesMax": "Max Active Cycles",
+    "timestamp": "At {{time}}",
+    "noTimestamp": "Time unavailable",
+    "noData": "No watermark data available for this execution."
+  },
   "footer": {
     "oandaApiReachable": "OANDA API is reachable",
     "oandaApiUnavailable": "OANDA API is unavailable",

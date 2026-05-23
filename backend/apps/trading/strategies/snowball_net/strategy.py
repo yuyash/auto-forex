@@ -1038,6 +1038,7 @@ class SnowballNetStrategy(Strategy):
         metrics = dict(sn.metrics)
         metrics.update(
             {
+                "active_cycles": "1" if sn.net_units > 0 else "0",
                 "snowball_net_net_units": str(sn.net_units),
                 "snowball_net_direction": sn.direction,
                 "snowball_net_direction_mode": sn.direction_mode,

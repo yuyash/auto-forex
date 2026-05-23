@@ -16,6 +16,7 @@ from apps.trading.dataclasses import EventExecutionResult
 from apps.trading.enums import TaskType
 from apps.trading.models import (
     BacktestTask,
+    ExecutionMetricAggregate,
     ExecutionState,
     Metrics,
     TradingEvent,
@@ -288,6 +289,54 @@ class TestFlushMetrics:
         executor._metrics_aggregator.flush(final=True)
 
         assert Metrics.objects.filter(task_id=executor.task.pk).count() == 2
+
+    def test_updates_metric_watermarks(self):
+        executor = _make_executor()
+
+        first_timestamp = datetime(2024, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+        second_timestamp = datetime(2024, 6, 1, 12, 1, 0, tzinfo=timezone.utc)
+        executor._metrics_aggregator.record(
+            first_timestamp,
+            {
+                "margin_ratio": "0.05",
+                "snowball_net_margin_ratio_pct": "5",
+                "current_base_units": "1000",
+                "open_long_units": "1200",
+                "realized_pnl_quote": "10",
+                "unrealized_pnl_quote": "-20",
+                "open_positions": "2",
+                "active_cycles": "1",
+            },
+        )
+        executor._metrics_aggregator.record(
+            second_timestamp,
+            {
+                "margin_ratio": "0.08",
+                "snowball_net_margin_ratio_pct": "42",
+                "current_base_units": "900",
+                "open_short_units": "1600",
+                "realized_pnl_quote": "12",
+                "unrealized_pnl_quote": "-35",
+                "open_positions": "3",
+                "active_cycles": "2",
+            },
+        )
+
+        executor._metrics_aggregator.flush(final=True)
+
+        aggregate = ExecutionMetricAggregate.objects.get(task_id=executor.task.pk)
+        assert aggregate.watermarks["margin_ratio_max"]["value"] == "0.42"
+        assert aggregate.watermarks["margin_ratio_max"]["timestamp"] == second_timestamp.isoformat()
+        assert (
+            aggregate.watermarks["margin_ratio_max"]["source_metric"]
+            == "snowball_net_margin_ratio_pct"
+        )
+        assert aggregate.watermarks["base_units_max"]["value"] == "1000"
+        assert aggregate.watermarks["open_short_units_max"]["value"] == "1600"
+        assert aggregate.watermarks["realized_pnl_max"]["value"] == "12"
+        assert aggregate.watermarks["unrealized_pnl_min"]["value"] == "-35"
+        assert aggregate.watermarks["open_positions_max"]["value"] == "3"
+        assert aggregate.watermarks["active_cycles_max"]["value"] == "2"
 
     def test_tick_rate_uses_metric_record_interval(self):
         executor = _make_executor()

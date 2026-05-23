@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Link as RouterLink } from 'react-router-dom';
 import { ExecutionHistoryTable } from '../../tasks/display/ExecutionHistoryTable';
 import { ExecutionStatusSummary } from '../../tasks/detail/ExecutionStatusSummary';
+import { ExecutionWatermarkSummary } from '../../tasks/detail/ExecutionWatermarkSummary';
 import { HistoricalStrategyConfigDialog } from '../../tasks/detail/HistoricalStrategyConfigDialog';
 import {
   InitialPositionSettingValue,
@@ -366,6 +367,10 @@ export function BacktestOverviewTab({
             snapshotError={strategySnapshotError}
             onRefresh={onRefreshExecutionStatus}
             isRefreshing={executionStatusRefreshing}
+          />
+          <ExecutionWatermarkSummary
+            summary={summary}
+            pnlCurrency={pnlCurrency}
           />
         </Grid>
 

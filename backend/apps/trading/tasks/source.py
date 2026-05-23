@@ -796,6 +796,11 @@ class DirectBacktestTickDataSource(TickDataSource):
                 status=TaskStatus.FAILED,
                 completed_at=dj_timezone.now(),
                 error_message=f"Insufficient tick data: {reason}",
+                status_reason_code="insufficient_tick_data",
+                status_reason_message=(
+                    "Backtest stopped because historical tick data did not cover "
+                    "the requested period."
+                ),
             )
         except Exception:
             logger.debug(

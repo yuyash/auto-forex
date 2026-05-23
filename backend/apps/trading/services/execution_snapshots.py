@@ -12,12 +12,14 @@ from apps.trading.services.execution_metrics import build_execution_metrics
 from apps.trading.services.summary import (
     CountsInfo,
     ExecutionInfo,
+    ExecutionWatermarks,
     PnlInfo,
     TaskInfo,
     TaskSummary,
     TASK_SUMMARY_READ_MODEL,
     TickDeliveryInfo,
     TickInfo,
+    WatermarkInfo,
 )
 
 TERMINAL_SNAPSHOT_STATUSES = frozenset({"completed", "stopped", "failed"})
@@ -183,6 +185,7 @@ def _deserialize_summary(raw: dict[str, Any]) -> TaskSummary:
     execution = raw.get("execution", {})
     tick = raw.get("tick", {})
     task = raw.get("task", {})
+    watermarks = raw.get("watermarks", {})
     return TaskSummary(
         timestamp=_to_str_or_none(raw.get("timestamp")),
         pnl=PnlInfo(
@@ -244,9 +247,12 @@ def _deserialize_summary(raw: dict[str, Any]) -> TaskSummary:
             completed_at=_to_str_or_none(task.get("completed_at")),
             error_message=_to_str_or_none(task.get("error_message")),
             error_code=_to_str_or_none(task.get("error_code")),
+            status_reason_code=_to_str_or_none(task.get("status_reason_code")),
+            status_reason_message=_to_str_or_none(task.get("status_reason_message")),
             stop_reason=_to_str_or_none(task.get("stop_reason")),
             progress=int(task.get("progress") or 0),
         ),
+        watermarks=_deserialize_watermarks(watermarks),
     )
 
 
@@ -260,6 +266,30 @@ def _deserialize_tick_delivery(raw: Any) -> TickDeliveryInfo | None:
         age_seconds=_to_optional_float(raw.get("age_seconds")),
         max_age_seconds=_to_optional_int(raw.get("max_age_seconds")),
         message=_to_str_or_none(raw.get("message")),
+    )
+
+
+def _deserialize_watermarks(raw: Any) -> ExecutionWatermarks:
+    data = raw if isinstance(raw, dict) else {}
+    return ExecutionWatermarks(
+        margin_ratio_max=_deserialize_watermark(data.get("margin_ratio_max")),
+        base_units_max=_deserialize_watermark(data.get("base_units_max")),
+        open_long_units_max=_deserialize_watermark(data.get("open_long_units_max")),
+        open_short_units_max=_deserialize_watermark(data.get("open_short_units_max")),
+        realized_pnl_max=_deserialize_watermark(data.get("realized_pnl_max")),
+        unrealized_pnl_min=_deserialize_watermark(data.get("unrealized_pnl_min")),
+        open_positions_max=_deserialize_watermark(data.get("open_positions_max")),
+        active_cycles_max=_deserialize_watermark(data.get("active_cycles_max")),
+    )
+
+
+def _deserialize_watermark(raw: Any) -> WatermarkInfo:
+    if not isinstance(raw, dict):
+        return WatermarkInfo(value=None, timestamp=None)
+    return WatermarkInfo(
+        value=_to_optional_decimal(raw.get("value")),
+        timestamp=_to_str_or_none(raw.get("timestamp")),
+        source_metric=_to_str_or_none(raw.get("source_metric")),
     )
 
 

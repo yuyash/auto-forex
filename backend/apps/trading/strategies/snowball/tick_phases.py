@@ -310,6 +310,7 @@ class SnowballAccountMetricsPhase:
         current_base_units = context.strategy.config.effective_base_units(
             context.snowball_state.account_balance
         )
+        context.set_metric("active_cycles", len(context.snowball_state.active_cycles()))
         context.set_metric("current_base_units", current_base_units)
         context.set_metric("snowball_current_base_units", current_base_units)
         return NOOP_PHASE_OUTCOME
@@ -337,6 +338,7 @@ class SnowballWarmupPhase:
             context.snowball_state.account_balance,
             ratio_pct=decision.unit_ratio_pct,
         )
+        context.set_metric("active_cycles", len(context.snowball_state.active_cycles()))
         context.set_metric("current_base_units", current_base_units)
         context.set_metric("snowball_current_base_units", current_base_units)
         return NOOP_PHASE_OUTCOME

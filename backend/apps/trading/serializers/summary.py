@@ -94,8 +94,35 @@ class TaskInfoSerializer(serializers.Serializer):
     completed_at = serializers.CharField(allow_null=True)
     error_message = serializers.CharField(allow_null=True)
     error_code = serializers.CharField(allow_null=True)
+    status_reason_code = serializers.CharField(allow_null=True, required=False)
+    status_reason_message = serializers.CharField(allow_null=True, required=False)
     stop_reason = serializers.CharField(allow_null=True)
     progress = serializers.IntegerField()
+
+
+class WatermarkInfoSerializer(serializers.Serializer):
+    """Serializer for one execution watermark."""
+
+    value = serializers.DecimalField(
+        max_digits=24,
+        decimal_places=10,
+        allow_null=True,
+    )
+    timestamp = serializers.CharField(allow_null=True)
+    source_metric = serializers.CharField(allow_null=True, required=False)
+
+
+class ExecutionWatermarksSerializer(serializers.Serializer):
+    """Serializer for execution extrema displayed on the overview tab."""
+
+    margin_ratio_max = WatermarkInfoSerializer()
+    base_units_max = WatermarkInfoSerializer()
+    open_long_units_max = WatermarkInfoSerializer()
+    open_short_units_max = WatermarkInfoSerializer()
+    realized_pnl_max = WatermarkInfoSerializer()
+    unrealized_pnl_min = WatermarkInfoSerializer()
+    open_positions_max = WatermarkInfoSerializer()
+    active_cycles_max = WatermarkInfoSerializer()
 
 
 class TaskSummarySerializer(serializers.Serializer):
@@ -116,3 +143,4 @@ class TaskSummarySerializer(serializers.Serializer):
     execution = ExecutionInfoSerializer()
     tick = TickInfoSerializer()
     task = TaskInfoSerializer()
+    watermarks = ExecutionWatermarksSerializer()

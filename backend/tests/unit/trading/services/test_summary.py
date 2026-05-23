@@ -10,7 +10,13 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from apps.trading.enums import Direction, TaskStatus, TaskType
-from apps.trading.models import BacktestTask, StrategyConfiguration, TaskExecutionSnapshot
+from apps.trading.models import (
+    BacktestTask,
+    ExecutionMetricAggregate,
+    Metrics,
+    StrategyConfiguration,
+    TaskExecutionSnapshot,
+)
 from apps.trading.models.positions import Position
 from apps.trading.models.state import ExecutionState
 from apps.trading.models.trades import Trade
@@ -66,8 +72,16 @@ def _create_state(
     execution_id,
     realized_account: Decimal,
     realized_quote: Decimal,
+    extra_metrics: dict[str, str] | None = None,
 ) -> None:
     tick_time = datetime(2026, 1, 1, 13, 0, tzinfo=UTC)
+    metrics = {
+        "realized_pnl": str(realized_account),
+        "realized_pnl_quote": str(realized_quote),
+        "unrealized_pnl": "0",
+        "unrealized_pnl_quote": "0",
+        **(extra_metrics or {}),
+    }
     ExecutionState.objects.create(
         task_type=TaskType.BACKTEST,
         task_id=task.pk,
@@ -78,14 +92,7 @@ def _create_state(
         last_tick_price=Decimal("150"),
         last_tick_bid=Decimal("149.99"),
         last_tick_ask=Decimal("150.01"),
-        strategy_state={
-            "metrics": {
-                "realized_pnl": str(realized_account),
-                "realized_pnl_quote": str(realized_quote),
-                "unrealized_pnl": "0",
-                "unrealized_pnl_quote": "0",
-            }
-        },
+        strategy_state={"metrics": metrics},
     )
 
 
@@ -194,6 +201,78 @@ def test_task_summary_has_serializer_ready_dto_payload():
         == "JPY"
     )
     assert payload["execution"]["ticks_processed"] == 10
+
+
+@pytest.mark.django_db
+def test_task_summary_repairs_snowball_net_margin_watermark_from_metrics():
+    task = _make_task(strategy_type="snowball_net")
+    execution_id = uuid4()
+    task.execution_id = execution_id
+    task.save(update_fields=["execution_id"])
+    first_timestamp = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    second_timestamp = datetime(2026, 1, 1, 12, 1, tzinfo=UTC)
+    _create_state(
+        task=task,
+        execution_id=execution_id,
+        realized_account=Decimal("0"),
+        realized_quote=Decimal("0"),
+        extra_metrics={
+            "margin_ratio": "0.002",
+            "snowball_net_margin_ratio_pct": "20",
+        },
+    )
+    Metrics.objects.bulk_create(
+        [
+            Metrics(
+                task_type=TaskType.BACKTEST,
+                task_id=task.pk,
+                execution_id=execution_id,
+                timestamp=first_timestamp,
+                metrics={
+                    "margin_ratio": "0.0105",
+                    "snowball_net_margin_ratio_pct": "20",
+                },
+            ),
+            Metrics(
+                task_type=TaskType.BACKTEST,
+                task_id=task.pk,
+                execution_id=execution_id,
+                timestamp=second_timestamp,
+                metrics={
+                    "margin_ratio": "0.009",
+                    "snowball_net_margin_ratio_pct": "42",
+                },
+            ),
+        ]
+    )
+    ExecutionMetricAggregate.objects.create(
+        task_type=TaskType.BACKTEST,
+        task_id=task.pk,
+        execution_id=execution_id,
+        latest_timestamp=second_timestamp,
+        latest_metrics={
+            "margin_ratio": "0.009",
+            "snowball_net_margin_ratio_pct": "42",
+        },
+        sample_count=2,
+        watermarks={
+            "margin_ratio_max": {
+                "value": "0.0105",
+                "timestamp": first_timestamp.isoformat(),
+                "source_metric": "margin_ratio",
+            }
+        },
+    )
+
+    summary = compute_task_summary(
+        task_type=TaskType.BACKTEST,
+        task_id=str(task.pk),
+        execution_id=execution_id,
+    )
+
+    assert summary.watermarks.margin_ratio_max.value == Decimal("0.42")
+    assert summary.watermarks.margin_ratio_max.timestamp == second_timestamp.isoformat()
+    assert summary.watermarks.margin_ratio_max.source_metric == "snowball_net_margin_ratio_pct"
 
 
 @pytest.mark.django_db

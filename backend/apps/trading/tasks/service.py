@@ -22,6 +22,11 @@ from apps.trading.models import (
     BacktestTask,
     TradingTask,
 )
+from apps.trading.services.public_errors import (
+    TASK_FAILED_ERROR_CODE,
+    TASK_FAILED_PUBLIC_MESSAGE,
+)
+from apps.trading.services.status_reasons import empty_status_reason_update
 from apps.trading.services.task_policy import ACCOUNT_BLOCKING_STATUSES
 from apps.trading.tasks.lifecycle_commands import TaskLifecycleCommands
 from apps.trading.tasks.lifecycle_events import TaskLifecycleEventPublisher
@@ -292,8 +297,17 @@ class TaskService:
                 locked_task.execution_id = uuid4()
             locked_task.celery_task_id = uuid4()
             locked_task.status = TaskStatus.STARTING
+            for field, value in empty_status_reason_update().items():
+                setattr(locked_task, field, value)
             locked_task.save(
-                update_fields=["execution_id", "celery_task_id", "status", "updated_at"]
+                update_fields=[
+                    "execution_id",
+                    "celery_task_id",
+                    "status",
+                    "status_reason_code",
+                    "status_reason_message",
+                    "updated_at",
+                ]
             )
             return locked_task
 
@@ -318,8 +332,19 @@ class TaskService:
             task.execution_id = uuid4()
         task.celery_task_id = uuid4()
         task.status = TaskStatus.STARTING
+        for field, value in empty_status_reason_update().items():
+            setattr(task, field, value)
         try:
-            task.save(update_fields=["execution_id", "celery_task_id", "status", "updated_at"])
+            task.save(
+                update_fields=[
+                    "execution_id",
+                    "celery_task_id",
+                    "status",
+                    "status_reason_code",
+                    "status_reason_message",
+                    "updated_at",
+                ]
+            )
         except TypeError:
             task.save()
         return task
@@ -460,6 +485,8 @@ class TaskService:
             locked_task.completed_at = None
             locked_task.error_message = None
             locked_task.error_traceback = None
+            locked_task.status_reason_code = ""
+            locked_task.status_reason_message = ""
             # Rotate celery_task_id so the new Celery job is not suppressed
             # by the revoke list left over from the previous (orphaned)
             # worker.  execution_id is preserved so execution-scoped state
@@ -471,6 +498,8 @@ class TaskService:
                     "completed_at",
                     "error_message",
                     "error_traceback",
+                    "status_reason_code",
+                    "status_reason_message",
                     "celery_task_id",
                     "updated_at",
                 ]
@@ -487,6 +516,8 @@ class TaskService:
             TradingTask.objects.filter(pk=task.pk).update(
                 status=TaskStatus.FAILED,
                 error_message=f"Failed to requeue orphaned trading task: {exc}",
+                status_reason_code=TASK_FAILED_ERROR_CODE,
+                status_reason_message=TASK_FAILED_PUBLIC_MESSAGE,
             )
             task.refresh_from_db()
             raise RuntimeError(

@@ -529,6 +529,8 @@ def finalize_task_terminal_lifecycle(
     extra_details: dict[str, object] | None = None,
     error_message: str | None = None,
     error_traceback: str | None = None,
+    status_reason_code: str | None = None,
+    status_reason_message: str | None = None,
 ) -> int:
     """Persist a terminal task transition and publish its lifecycle event."""
 
@@ -537,6 +539,8 @@ def finalize_task_terminal_lifecycle(
             task=task,
             task_type=task_type,
             expected_current_status=expected_current_status,
+            status_reason_code=status_reason_code,
+            status_reason_message=status_reason_message,
         )
     else:
         rows_updated = transition_task_to_terminal(
@@ -546,6 +550,8 @@ def finalize_task_terminal_lifecycle(
             expected_current_status=expected_current_status,
             error_message=error_message,
             error_traceback=error_traceback,
+            status_reason_code=status_reason_code,
+            status_reason_message=status_reason_message,
         )
 
     if rows_updated > 0:

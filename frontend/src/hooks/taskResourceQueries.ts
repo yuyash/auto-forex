@@ -108,9 +108,27 @@ interface TaskSummaryResponse {
     completed_at?: string | null;
     error_message?: string | null;
     error_code?: string | null;
+    status_reason_code?: string | null;
+    status_reason_message?: string | null;
     stop_reason?: string | null;
     progress?: number;
   };
+  watermarks?: {
+    margin_ratio_max?: WatermarkResponse | null;
+    base_units_max?: WatermarkResponse | null;
+    open_long_units_max?: WatermarkResponse | null;
+    open_short_units_max?: WatermarkResponse | null;
+    realized_pnl_max?: WatermarkResponse | null;
+    unrealized_pnl_min?: WatermarkResponse | null;
+    open_positions_max?: WatermarkResponse | null;
+    active_cycles_max?: WatermarkResponse | null;
+  };
+}
+
+interface WatermarkResponse {
+  value?: string | number | null;
+  timestamp?: string | null;
+  source_metric?: string | null;
 }
 
 type TaskListParams = BacktestTaskListParams | TradingTaskListParams;
@@ -150,6 +168,18 @@ function normalizeMoney(
   return {
     amount: String(value.amount ?? ''),
     currency: value.currency ?? '',
+  };
+}
+
+function normalizeWatermark(value: WatermarkResponse | null | undefined): {
+  value: number | null;
+  timestamp: string | null;
+  sourceMetric?: string | null;
+} {
+  return {
+    value: parseNullableNumber(value?.value),
+    timestamp: value?.timestamp ?? null,
+    sourceMetric: value?.source_metric ?? null,
   };
 }
 
@@ -318,8 +348,30 @@ export function createTaskSummaryQuery(
             completedAt: d.task?.completed_at ?? null,
             errorMessage: d.task?.error_message ?? null,
             errorCode: d.task?.error_code ?? null,
+            statusReasonCode: d.task?.status_reason_code ?? null,
+            statusReasonMessage: d.task?.status_reason_message ?? null,
             stopReason: d.task?.stop_reason ?? null,
             progress: d.task?.progress ?? 0,
+          },
+          watermarks: {
+            marginRatioMax: normalizeWatermark(d.watermarks?.margin_ratio_max),
+            baseUnitsMax: normalizeWatermark(d.watermarks?.base_units_max),
+            openLongUnitsMax: normalizeWatermark(
+              d.watermarks?.open_long_units_max
+            ),
+            openShortUnitsMax: normalizeWatermark(
+              d.watermarks?.open_short_units_max
+            ),
+            realizedPnlMax: normalizeWatermark(d.watermarks?.realized_pnl_max),
+            unrealizedPnlMin: normalizeWatermark(
+              d.watermarks?.unrealized_pnl_min
+            ),
+            openPositionsMax: normalizeWatermark(
+              d.watermarks?.open_positions_max
+            ),
+            activeCyclesMax: normalizeWatermark(
+              d.watermarks?.active_cycles_max
+            ),
           },
         } satisfies TaskSummary;
       } catch (err) {
