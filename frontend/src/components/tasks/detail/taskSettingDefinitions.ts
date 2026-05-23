@@ -478,7 +478,7 @@ export function buildTradingTaskSettingDefinitions(
     },
     {
       key: 'dry_run',
-      label: t('trading:form.dryRun', 'Dry run'),
+      label: t('common:labels.dryRun'),
       format: formatBoolean,
     },
     {
@@ -571,4 +571,61 @@ export function buildTradingTaskSettingDefinitions(
       ? [{ key: 'debug_options', label: t('common:debug.title') }]
       : []),
   ];
+}
+
+export function buildTaskComparisonLabelMap(
+  t: TFunction,
+  taskType: 'backtest' | 'trading',
+  options: {
+    timezone?: string;
+    language?: string;
+    includeDebugOptions?: boolean;
+    numberSeparators?: NumberFormatSeparators;
+  } = {}
+): Map<string, string> {
+  const definitions =
+    taskType === 'backtest'
+      ? buildBacktestTaskSettingDefinitions(
+          t,
+          options.timezone ?? 'UTC',
+          options.language,
+          {
+            includeDebugOptions: options.includeDebugOptions,
+            numberSeparators: options.numberSeparators,
+          }
+        )
+      : buildTradingTaskSettingDefinitions(t, {
+          includeDebugOptions: options.includeDebugOptions,
+          numberSeparators: options.numberSeparators,
+        });
+
+  const map = new Map<string, string>(
+    definitions.map((definition) => [definition.key, definition.label])
+  );
+
+  map.set(
+    'config_revision',
+    t('common:comparison.configRevision', {
+      defaultValue: 'Config Revision',
+    })
+  );
+  map.set(
+    'config_hash',
+    t('common:comparison.configHash', { defaultValue: 'Config Hash' })
+  );
+  map.set(
+    'segment_index',
+    t('common:tables.executions.configSegment', {
+      defaultValue: 'Config Segment',
+    })
+  );
+  map.set('sell_on_stop', t('common:labels.sellOnStop'));
+  map.set(
+    'debug_options.tracemalloc',
+    t('common:debug.tracemalloc', {
+      defaultValue: 'Memory Profiling (tracemalloc)',
+    })
+  );
+
+  return map;
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildBacktestTaskSettingDefinitions,
+  buildTaskComparisonLabelMap,
   buildTradingTaskSettingDefinitions,
 } from './taskSettingDefinitions';
 
@@ -185,9 +186,13 @@ describe('task setting definition contracts', () => {
       'trading:form.apiRetryMaxAttempts': 'OANDA API リトライ回数',
       'trading:form.apiRetryBaseSeconds': 'リトライ初期待機 (秒)',
       'trading:form.apiRetryMaxSeconds': 'リトライ最大待機 (秒)',
+      'common:labels.dryRun': 'ドライラン',
+      'common:debug.tracemalloc': 'メモリプロファイリング (tracemalloc)',
     };
-    const translate = (key: string, fallback?: string) =>
-      jaLabels[key] ?? fallback ?? key;
+    const translate = (
+      key: string,
+      fallback?: string | { defaultValue?: string; [key: string]: unknown }
+    ) => jaLabels[key] ?? t(key, fallback);
 
     const tradingDefinitions = buildTradingTaskSettingDefinitions(
       translate as never
@@ -210,6 +215,7 @@ describe('task setting definition contracts', () => {
     expect(tradingLabelByKey.account_type).toBe('アカウント種別');
     expect(tradingLabelByKey.execution_id).toBe('実行ID');
     expect(backtestLabelByKey.execution_id).toBe('実行ID');
+    expect(tradingLabelByKey.dry_run).toBe('ドライラン');
     expect(tradingLabelByKey.api_retry_max_attempts).toBe(
       'OANDA API リトライ回数'
     );
@@ -218,6 +224,21 @@ describe('task setting definition contracts', () => {
     );
     expect(tradingLabelByKey.api_retry_backoff_max_seconds).toBe(
       'リトライ最大待機 (秒)'
+    );
+
+    const comparisonLabelMap = buildTaskComparisonLabelMap(
+      translate as never,
+      'trading',
+      { includeDebugOptions: true }
+    );
+    expect(comparisonLabelMap.get('api_retry_backoff_base_seconds')).toBe(
+      'リトライ初期待機 (秒)'
+    );
+    expect(comparisonLabelMap.get('api_retry_backoff_max_seconds')).toBe(
+      'リトライ最大待機 (秒)'
+    );
+    expect(comparisonLabelMap.get('debug_options.tracemalloc')).toBe(
+      'メモリプロファイリング (tracemalloc)'
     );
   });
 });

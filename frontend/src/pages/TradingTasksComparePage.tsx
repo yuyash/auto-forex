@@ -18,6 +18,7 @@ import {
   SettingsComparisonTable,
   type SettingsComparisonItem,
 } from '../components/comparison/SettingsComparisonTable';
+import { buildTaskComparisonLabelMap } from '../components/tasks/detail/taskSettingDefinitions';
 import { parseCompareIds } from '../utils/compareParams';
 import { getStrategyDisplayName, useStrategies } from '../hooks/useStrategies';
 
@@ -118,97 +119,9 @@ export default function TradingTasksComparePage() {
 
   const labelMap = useMemo(
     () =>
-      new Map<string, string>([
-        ['name', t('labels.name')],
-        ['description', t('labels.description')],
-        ['strategy_type', t('labels.strategyType')],
-        ['config_name', t('labels.strategyConfiguration')],
-        [
-          'config_revision',
-          t('comparison.configRevision', {
-            defaultValue: 'Config Revision',
-          }),
-        ],
-        [
-          'config_hash',
-          t('comparison.configHash', { defaultValue: 'Config Hash' }),
-        ],
-        ['instrument', t('labels.instrument')],
-        ['account_name', t('labels.oandaAccount')],
-        [
-          'account_type',
-          t('comparison.accountType', { defaultValue: 'Account Type' }),
-        ],
-        ['account_currency', t('labels.accountCurrency')],
-        ['display_currency', t('labels.displayCurrency')],
-        ['sell_on_stop', t('labels.sellOnStop')],
-        ['dry_run', t('labels.dryRun')],
-        ['hedging_enabled', t('labels.hedgingEnabled')],
-        [
-          'api_retry_max_attempts',
-          t('trading:form.apiRetryMaxAttempts', {
-            defaultValue: 'API retry max attempts',
-          }),
-        ],
-        [
-          'api_retry_backoff_base_seconds',
-          t('trading:form.apiRetryBackoffBaseSeconds', {
-            defaultValue: 'API retry backoff base (s)',
-          }),
-        ],
-        [
-          'api_retry_backoff_max_seconds',
-          t('trading:form.apiRetryBackoffMaxSeconds', {
-            defaultValue: 'API retry backoff max (s)',
-          }),
-        ],
-        [
-          'drain_duration_hours',
-          t('trading:form.drainDurationHours', {
-            defaultValue: 'Drain duration (h)',
-          }),
-        ],
-        [
-          'market_idle_pre_close_minutes',
-          t('trading:form.marketIdlePreCloseMinutes', {
-            defaultValue: 'Market idle before close (min)',
-          }),
-        ],
-        [
-          'market_idle_resume_delay_minutes',
-          t('trading:form.marketIdleResumeDelayMinutes', {
-            defaultValue: 'Market resume delay (min)',
-          }),
-        ],
-        [
-          'live_tick_stale_guard_enabled',
-          t('trading:form.liveTickStaleGuardEnabled', {
-            defaultValue: 'Live tick stale guard',
-          }),
-        ],
-        [
-          'live_tick_max_age_seconds',
-          t('trading:form.liveTickMaxAgeSeconds', {
-            defaultValue: 'Live tick max age (s)',
-          }),
-        ],
-        [
-          'live_tick_status_log_interval_seconds',
-          t('trading:form.liveTickStatusLogIntervalSeconds', {
-            defaultValue: 'Live tick status log interval (s)',
-          }),
-        ],
-        [
-          'broker_drift_check_interval_seconds',
-          t('trading:form.brokerDriftCheckIntervalSeconds', {
-            defaultValue: 'OANDA drift check interval (s)',
-          }),
-        ],
-        [
-          'debug_options',
-          t('comparison.debugOptions', { defaultValue: 'Debug Options' }),
-        ],
-      ]),
+      buildTaskComparisonLabelMap(t, 'trading', {
+        includeDebugOptions: true,
+      }),
     [t]
   );
 
