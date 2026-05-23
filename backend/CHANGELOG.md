@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.2](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.7.1...backend-v2.7.2) (2026-05-22)
+
+
+### Bug Fixes
+
+* **snowball:** keep auto base unit metrics fresh ([#802](https://github.com/yuyash/auto-forex-web-service/issues/802)) ([b495921](https://github.com/yuyash/auto-forex-web-service/commit/b49592190445b67814bf397a810141f3165d2c36))
+
 ## [2.7.1](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.7.0...backend-v2.7.1) (2026-05-22)
 
 
