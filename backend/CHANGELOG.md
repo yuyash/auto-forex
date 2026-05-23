@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.1](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.8.0...backend-v2.8.1) (2026-05-23)
+
+
+### Bug Fixes
+
+* **api:** tolerate Redis throttle cache outages ([#807](https://github.com/yuyash/auto-forex-web-service/issues/807)) ([d3c4966](https://github.com/yuyash/auto-forex-web-service/commit/d3c49669afb7eef02c127bfff5c53d50b375f65d))
+
 ## [2.8.0](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.7.2...backend-v2.8.0) (2026-05-23)
 
 
