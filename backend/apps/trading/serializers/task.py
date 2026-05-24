@@ -1,13 +1,44 @@
 """Task serializers for unified task-centric API."""
 
+from typing import Any
+
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
+from apps.market.models import MarketEvent
 from apps.trading.models import BacktestTask, TradingTask
 from apps.trading.models.logs import RecoveryAttempt, TaskLog
 from apps.trading.services.public_errors import (
     task_public_error_code,
     task_public_error_message,
 )
+
+SENSITIVE_MARKET_DETAIL_KEY_PARTS = (
+    "authorization",
+    "exception_message",
+    "password",
+    "raw",
+    "request",
+    "response",
+    "secret",
+    "token",
+    "traceback",
+)
+
+
+def _sanitize_market_event_details(value: Any) -> Any:
+    """Remove internal/upstream diagnostics before exposing MarketEvent details."""
+    if isinstance(value, dict):
+        sanitized = {}
+        for key, nested in value.items():
+            normalized_key = str(key).lower()
+            if any(part in normalized_key for part in SENSITIVE_MARKET_DETAIL_KEY_PARTS):
+                continue
+            sanitized[key] = _sanitize_market_event_details(nested)
+        return sanitized
+    if isinstance(value, list):
+        return [_sanitize_market_event_details(item) for item in value]
+    return value
 
 
 class TaskSerializer(serializers.ModelSerializer):
@@ -172,6 +203,33 @@ class TaskLogSerializer(serializers.ModelSerializer):
             "details",
         ]
         read_only_fields = ["id", "timestamp"]
+
+
+class MarketEventSerializer(serializers.ModelSerializer):
+    """Serializer for task-associated market events."""
+
+    details = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MarketEvent
+        fields = [
+            "id",
+            "task_type",
+            "task_id",
+            "execution_id",
+            "created_at",
+            "category",
+            "severity",
+            "event_type",
+            "description",
+            "instrument",
+            "details",
+        ]
+        read_only_fields = fields
+
+    @extend_schema_field(serializers.JSONField)
+    def get_details(self, obj: MarketEvent) -> Any:
+        return _sanitize_market_event_details(obj.details)
 
 
 class RecoveryAttemptSerializer(serializers.ModelSerializer):

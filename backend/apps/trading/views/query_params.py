@@ -314,6 +314,24 @@ SEVERITY_SPEC = QueryFieldSpec(
     allow_blank=True,
     help_text="Severity filter.",
 )
+CATEGORY_SPEC = QueryFieldSpec(
+    name="category",
+    kind="string",
+    allow_blank=True,
+    help_text="Event category filter.",
+)
+INSTRUMENT_SPEC = QueryFieldSpec(
+    name="instrument",
+    kind="string",
+    allow_blank=True,
+    help_text="Instrument filter.",
+)
+DESCRIPTION_SPEC = QueryFieldSpec(
+    name="message",
+    kind="string",
+    allow_blank=True,
+    help_text="Event description text filter.",
+)
 SCOPE_SPEC = QueryFieldSpec(
     name="scope",
     kind="choice",
@@ -581,6 +599,21 @@ QUERY_GROUP_SPECS = {
         ),
         description="OpenAPI serializer for task events query parameters.",
     ),
+    "market_events": QueryGroupSpec(
+        name="MarketEventsQueryParamsSchemaSerializer",
+        specs=(
+            *EXECUTION_SCOPED_ACTIVITY_GROUP,
+            EVENT_TYPE_SPEC,
+            SEVERITY_SPEC,
+            CATEGORY_SPEC,
+            INSTRUMENT_SPEC,
+            DESCRIPTION_SPEC,
+            CREATED_FROM_SPEC,
+            CREATED_TO_SPEC,
+            ORDERING_SPEC,
+        ),
+        description="OpenAPI serializer for task market event query parameters.",
+    ),
     "strategy_events": QueryGroupSpec(
         name="StrategyEventsQueryParamsSchemaSerializer",
         specs=(
@@ -678,6 +711,7 @@ ENDPOINT_QUERY_SPECS = {
         "logs",
         "log_components",
         "events",
+        "market_events",
         "strategy_events",
         "trades",
         "positions",
@@ -813,6 +847,7 @@ ExecutionScopedQueryParamsSchemaSerializer = _build_query_serializer_alias("exec
 LogsQueryParamsSchemaSerializer = _build_query_serializer_alias("logs")
 LogComponentsQueryParamsSchemaSerializer = _build_query_serializer_alias("log_components")
 EventsQueryParamsSchemaSerializer = _build_query_serializer_alias("events")
+MarketEventsQueryParamsSchemaSerializer = _build_query_serializer_alias("market_events")
 StrategyEventsQueryParamsSchemaSerializer = _build_query_serializer_alias("strategy_events")
 TradesQueryParamsSchemaSerializer = _build_query_serializer_alias("trades")
 PositionsQueryParamsSchemaSerializer = _build_query_serializer_alias("positions")
@@ -1054,6 +1089,51 @@ class EventsQueryParams:
             event_type=cast(str, parsed["event_type"]),
             severity=cast(str, parsed["severity"]),
             scope=scope,
+            created_range=_build_date_range_query(
+                request,
+                start_key="created_from",
+                end_key="created_to",
+                group_name="created",
+            ),
+            ordering=cast(str, parsed["ordering"]),
+        )
+
+
+@dataclass(frozen=True)
+class MarketEventsQueryParams:
+    execution: ExecutionScopedQuery
+    event_type: str
+    severities: list[str]
+    categories: list[str]
+    instrument: str
+    message: str
+    created_range: DateRangeQuery
+    ordering: str
+
+    @classmethod
+    def from_request(
+        cls,
+        request: Request,
+        *,
+        default_execution_id: UUID | None,
+        default_page_size: int = 100,
+        max_page_size: int = 1000,
+    ) -> MarketEventsQueryParams:
+        parsed = _parse_endpoint_group("market_events", request)
+        severity_param = cast(str, parsed["severity"])
+        category_param = cast(str, parsed["category"])
+        return cls(
+            execution=_build_execution_scoped_query(
+                request,
+                default_execution_id=default_execution_id,
+                default_page_size=default_page_size,
+                max_page_size=max_page_size,
+            ),
+            event_type=cast(str, parsed["event_type"]).strip(),
+            severities=[v.strip() for v in severity_param.split(",") if v.strip()],
+            categories=[v.strip() for v in category_param.split(",") if v.strip()],
+            instrument=cast(str, parsed["instrument"]).strip(),
+            message=cast(str, parsed["message"]).strip(),
             created_range=_build_date_range_query(
                 request,
                 start_key="created_from",

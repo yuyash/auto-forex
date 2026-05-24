@@ -2,7 +2,7 @@
     "openapi": "3.0.3",
     "info": {
         "title": "Auto Forex Trader API",
-        "version": "2.8.0",
+        "version": "2.8.1",
         "description": "Auto Forex Trader Backend API.\n\n## Authentication\nMost endpoints require JWT authentication. Include the token in the `Authorization: Bearer <token>` header.\n\n## Rate Limiting\nAuthentication endpoints are rate-limited to prevent abuse."
     },
     "paths": {
@@ -5797,6 +5797,151 @@
                 }
             }
         },
+        "/api/trading/tasks/trading/{id}/market-events/": {
+            "get": {
+                "operationId": "trading_tasks_trading_market_events_retrieve",
+                "description": "Retrieve paginated market events associated with this trading task.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "category",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Event category filter."
+                    },
+                    {
+                        "in": "query",
+                        "name": "created_from",
+                        "schema": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                        },
+                        "description": "Filter events created at or after this RFC3339 timestamp."
+                    },
+                    {
+                        "in": "query",
+                        "name": "created_to",
+                        "schema": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                        },
+                        "description": "Filter events created at or before this RFC3339 timestamp."
+                    },
+                    {
+                        "in": "query",
+                        "name": "event_type",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Event type filter."
+                    },
+                    {
+                        "in": "query",
+                        "name": "execution_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "nullable": true
+                        },
+                        "description": "Filter by execution ID (UUID)."
+                    },
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Unique identifier for this record"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "instrument",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Instrument filter."
+                    },
+                    {
+                        "in": "query",
+                        "name": "message",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Event description text filter."
+                    },
+                    {
+                        "in": "query",
+                        "name": "ordering",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Sort field. Prefix with '-' for descending."
+                    },
+                    {
+                        "in": "query",
+                        "name": "page",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "description": "Page number (1-based)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "page_size",
+                        "schema": {
+                            "type": "integer",
+                            "maximum": 1000,
+                            "minimum": 1
+                        },
+                        "description": "Results per page. Default 100, maximum 1000."
+                    },
+                    {
+                        "in": "query",
+                        "name": "severity",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Severity filter."
+                    },
+                    {
+                        "in": "query",
+                        "name": "since",
+                        "schema": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                        },
+                        "description": "RFC3339 timestamp for incremental fetch."
+                    }
+                ],
+                "tags": [
+                    "Trading"
+                ],
+                "security": [
+                    {
+                        "JWTAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskMarketEventPaginatedResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/trading/tasks/trading/{id}/orders/": {
             "get": {
                 "operationId": "trading_tasks_trading_orders_retrieve",
@@ -9581,6 +9726,74 @@
                     "sessions_terminated"
                 ]
             },
+            "MarketEvent": {
+                "type": "object",
+                "description": "Serializer for task-associated market events.",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "task_type": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "task_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "execution_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Execution run UUID when this event is associated with a task."
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "category": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "severity": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "event_type": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "description": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "instrument": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "details": {
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "category",
+                    "created_at",
+                    "description",
+                    "details",
+                    "event_type",
+                    "execution_id",
+                    "id",
+                    "instrument",
+                    "severity",
+                    "task_id",
+                    "task_type"
+                ]
+            },
             "MarketOrder": {
                 "type": "object",
                 "description": "Schema serializer for a single market order response item.",
@@ -11460,7 +11673,7 @@
                     },
                     "live_tick_stale_guard_enabled": {
                         "type": "boolean",
-                        "description": "Fail the task before strategy/order processing when a live tick is older than live_tick_max_age_seconds."
+                        "description": "Skip strategy/order processing for live ticks older than live_tick_max_age_seconds while waiting for fresh stream data."
                     },
                     "live_tick_max_age_seconds": {
                         "type": "integer",
@@ -13315,6 +13528,34 @@
                     "results"
                 ]
             },
+            "TaskMarketEventPaginatedResponse": {
+                "type": "object",
+                "properties": {
+                    "count": {
+                        "type": "integer"
+                    },
+                    "next": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "previous": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MarketEvent"
+                        }
+                    }
+                },
+                "required": [
+                    "count",
+                    "next",
+                    "previous",
+                    "results"
+                ]
+            },
             "TaskMoneyContext": {
                 "type": "object",
                 "description": "Serializer for task-level money and display-currency context.",
@@ -14467,7 +14708,7 @@
                     },
                     "live_tick_stale_guard_enabled": {
                         "type": "boolean",
-                        "description": "Fail the task before strategy/order processing when a live tick is older than live_tick_max_age_seconds."
+                        "description": "Skip strategy/order processing for live ticks older than live_tick_max_age_seconds while waiting for fresh stream data."
                     },
                     "live_tick_max_age_seconds": {
                         "type": "integer",
@@ -14652,7 +14893,7 @@
                     },
                     "live_tick_stale_guard_enabled": {
                         "type": "boolean",
-                        "description": "Fail the task before strategy/order processing when a live tick is older than live_tick_max_age_seconds."
+                        "description": "Skip strategy/order processing for live ticks older than live_tick_max_age_seconds while waiting for fresh stream data."
                     },
                     "live_tick_max_age_seconds": {
                         "type": "integer",
@@ -14893,7 +15134,7 @@
                     "live_tick_stale_guard_enabled": {
                         "type": "boolean",
                         "readOnly": true,
-                        "description": "Fail the task before strategy/order processing when a live tick is older than live_tick_max_age_seconds."
+                        "description": "Skip strategy/order processing for live ticks older than live_tick_max_age_seconds while waiting for fresh stream data."
                     },
                     "live_tick_max_age_seconds": {
                         "type": "integer",
@@ -15058,7 +15299,7 @@
                     },
                     "live_tick_stale_guard_enabled": {
                         "type": "boolean",
-                        "description": "Fail the task before strategy/order processing when a live tick is older than live_tick_max_age_seconds."
+                        "description": "Skip strategy/order processing for live ticks older than live_tick_max_age_seconds while waiting for fresh stream data."
                     },
                     "live_tick_max_age_seconds": {
                         "type": "integer",

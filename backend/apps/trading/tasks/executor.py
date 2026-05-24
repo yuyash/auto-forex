@@ -236,6 +236,7 @@ class TaskExecutor:
                 client = OandaService(
                     self.task.oanda_account,
                     retry_policy=OandaRetryPolicy.short_default(),
+                    task=self.task,
                 )
                 details = client.get_account_details()
                 return details.balance
@@ -801,7 +802,7 @@ class TaskExecutor:
         tick,
         tick_ts: datetime,
     ) -> bool:
-        """Record live tick delivery and stop before strategy code on stale ticks."""
+        """Record live tick delivery and skip stale ticks before strategy code."""
         return self._live_tick_delivery_guard.handle(
             loop=loop,
             tick=tick,

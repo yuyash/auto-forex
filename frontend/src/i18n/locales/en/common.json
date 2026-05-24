@@ -702,6 +702,26 @@
       "adjustmentDisplayMoney": "Display adjustment",
       "adjustmentMoney": "Account adjustment"
     },
+    "marketEvents": {
+      "title": "Market Events",
+      "createdAt": "Created At",
+      "severity": "Severity",
+      "category": "Category",
+      "eventType": "Event Type",
+      "instrument": "Instrument",
+      "description": "Description",
+      "details": "Details",
+      "severityFilter": "Severity Filter",
+      "categoryFilter": "Category Filter",
+      "eventTypeFilter": "Event Type Filter",
+      "instrumentFilter": "Instrument Filter",
+      "messageFilter": "Message Filter",
+      "messageFilterPlaceholder": "Search market event descriptions",
+      "createdFrom": "From",
+      "createdTo": "To",
+      "noEvents": "No market events available",
+      "resetFilters": "Reset Filters"
+    },
     "executions": {
       "title": "Execution History",
       "executionId": "Execution ID",

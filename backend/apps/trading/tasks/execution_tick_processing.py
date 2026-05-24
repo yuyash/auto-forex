@@ -58,7 +58,7 @@ class ExecutionTickProcessor:
             return False
 
         if executor._handle_live_tick_delivery(loop=loop, tick=tick, tick_ts=tick_ts):
-            return True
+            return loop.stopped_early
 
         if executor._backtest_gap_guard.stop_for_gap(loop=loop, tick_ts=tick_ts):
             return True
@@ -126,7 +126,7 @@ class ExecutionTickProcessor:
 
 
 class LiveTickDeliveryGuard:
-    """Record live tick delivery state and block stale live ticks."""
+    """Record live tick delivery state and keep stale ticks out of strategy code."""
 
     def __init__(self, executor: "TaskExecutor") -> None:
         """Bind the guard to one executor instance."""
@@ -139,7 +139,7 @@ class LiveTickDeliveryGuard:
         tick,
         tick_ts: datetime,
     ) -> bool:
-        """Return True when stale live tick processing should stop."""
+        """Return True when the current tick has been handled without strategy processing."""
         executor = self.executor
         if executor.task_type != TaskType.TRADING:
             return False
@@ -177,16 +177,17 @@ class LiveTickDeliveryGuard:
                 age_seconds=age_seconds,
                 max_age_seconds=max_age_seconds,
                 message=(
-                    "Live tick is stale; stopped before strategy/order processing. "
+                    "Live tick is stale; skipped before strategy/order processing. "
+                    "Waiting for the pricing stream to recover. "
                     f"age_seconds={age_seconds:.3f}, max_age_seconds={max_age_seconds}, "
                     f"tick_timestamp={tick_ts.isoformat()}"
                 ),
             )
-            logger.error(
+            logger.warning(
                 "[EXECUTOR:LIVE_TICK_STALE] task_id=%s execution_id=%s "
                 "tick_ts=%s observed_at=%s age_seconds=%.3f max_age_seconds=%d "
                 "ticks_processed=%d bid=%s ask=%s mid=%s. "
-                "Stopping before strategy/order processing.",
+                "Skipped before strategy/order processing; waiting for a fresh tick.",
                 executor.task.pk,
                 executor.task.execution_id,
                 tick_ts.isoformat(),
@@ -199,12 +200,6 @@ class LiveTickDeliveryGuard:
                 getattr(tick, "mid", None),
             )
             loop.last_live_tick_status_log_at = now
-            loop.stopped_early = True
-            loop.stop_reason = (
-                "live_tick_stale:"
-                f"age={age_seconds:.3f}s,max={max_age_seconds}s,tick_ts={tick_ts.isoformat()}"
-            )
-            loop.is_error = True
             latency_metrics = executor._maybe_update_live_tick_latency_metrics(
                 loop=loop,
                 tick=tick,

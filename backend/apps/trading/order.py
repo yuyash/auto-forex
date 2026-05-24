@@ -70,6 +70,7 @@ class OrderService:
             account=account,
             dry_run=dry_run,
             retry_policy=OandaRetryPolicy.from_task(task),
+            task=task,
         )
         self.broker_gateway: BrokerGateway = OandaBrokerGateway(broker_service)
         # Backward-compatible attribute for callers that still refer to the

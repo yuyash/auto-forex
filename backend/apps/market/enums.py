@@ -43,6 +43,9 @@ class MarketEventType(models.TextChoices):
     """Known event types emitted by the market app."""
 
     COMPLIANCE_VIOLATION = "compliance_violation", "Compliance Violation"
+    TICK_STREAM_STARTED = "tick_stream_started", "Tick Stream Started"
+    TICK_STREAM_RETRY = "tick_stream_retry", "Tick Stream Retry"
+    TICK_STREAM_STOPPED = "tick_stream_stopped", "Tick Stream Stopped"
     ORDER_FAILED = "order_failed", "Order Failed"
     ORDER_SUBMITTED = "order_submitted", "Order Submitted"
     ORDER_REJECTED = "order_rejected", "Order Rejected"

@@ -702,6 +702,26 @@
       "adjustmentDisplayMoney": "表示調整額",
       "adjustmentMoney": "口座調整額"
     },
+    "marketEvents": {
+      "title": "マーケットイベント",
+      "createdAt": "作成日時",
+      "severity": "重要度",
+      "category": "カテゴリ",
+      "eventType": "イベント種別",
+      "instrument": "銘柄",
+      "description": "説明",
+      "details": "詳細",
+      "severityFilter": "重要度フィルター",
+      "categoryFilter": "カテゴリフィルター",
+      "eventTypeFilter": "イベント種別フィルター",
+      "instrumentFilter": "銘柄フィルター",
+      "messageFilter": "説明フィルター",
+      "messageFilterPlaceholder": "マーケットイベントの説明を検索",
+      "createdFrom": "開始日時",
+      "createdTo": "終了日時",
+      "noEvents": "マーケットイベントなし",
+      "resetFilters": "フィルターリセット"
+    },
     "executions": {
       "title": "実行履歴",
       "executionId": "実行ID",

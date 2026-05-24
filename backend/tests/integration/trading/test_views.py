@@ -4,6 +4,7 @@ import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from apps.market.models import MarketEvent
 from apps.trading.enums import TaskStatus
 from tests.integration.factories import (
     BacktestTaskFactory,
@@ -251,3 +252,59 @@ class TestTradingTaskAPI:
         response = client.get("/api/trading/tasks/trading/")
         assert response.status_code == status.HTTP_200_OK
         assert response.data["count"] == 0
+
+    def test_market_events_endpoint_returns_only_task_events(self):
+        task = TradingTaskFactory(status=TaskStatus.RUNNING)
+        other_task = TradingTaskFactory(user=task.user)
+        MarketEvent.objects.create(
+            event_type="tick_stream_retry",
+            category="market",
+            severity="warning",
+            description="Relevant stream retry",
+            user=task.user,
+            account=task.oanda_account,
+            instrument=task.instrument,
+            task_type="trading",
+            task_id=task.pk,
+            execution_id=task.execution_id,
+            details={
+                "exception_type": "RuntimeError",
+                "exception_message": "raw upstream detail",
+                "retry_delay_seconds": 5,
+            },
+        )
+        MarketEvent.objects.create(
+            event_type="tick_stream_retry",
+            category="market",
+            severity="warning",
+            description="Other task stream retry",
+            user=other_task.user,
+            account=other_task.oanda_account,
+            instrument=other_task.instrument,
+            task_type="trading",
+            task_id=other_task.pk,
+            execution_id=other_task.execution_id,
+        )
+        MarketEvent.objects.create(
+            event_type="tick_stream_started",
+            category="market",
+            severity="info",
+            description="Unrelated account event",
+            account=task.oanda_account,
+            instrument=task.instrument,
+        )
+
+        client = self._auth_client(task.user)
+        response = client.get(
+            f"/api/trading/tasks/trading/{task.pk}/market-events/",
+            {"severity": "warning", "ordering": "-created_at"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["count"] == 1
+        row = response.data["results"][0]
+        assert row["task_id"] == str(task.pk)
+        assert row["event_type"] == "tick_stream_retry"
+        assert row["details"]["exception_type"] == "RuntimeError"
+        assert row["details"]["retry_delay_seconds"] == 5
+        assert "exception_message" not in row["details"]

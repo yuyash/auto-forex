@@ -9,10 +9,13 @@ from logging import Logger, getLogger
 from typing import Any
 
 from celery import shared_task
+from django.apps import apps as django_apps
 from django.conf import settings
 
+from apps.market.enums import MarketEventCategory, MarketEventSeverity, MarketEventType
 from apps.market.models import CeleryTaskStatus, OandaAccounts
 from apps.market.services.celery import CeleryTaskService
+from apps.market.services.events import MarketEventService
 from apps.market.services.oanda import OandaService
 from apps.market.tasks.base import (
     acquire_lock,
@@ -28,6 +31,14 @@ logger: Logger = getLogger(name=__name__)
 
 OANDA_TICK_PUBLISH_LATENCY_SECONDS_KEY = "oanda_tick_publish_latency_seconds"
 OANDA_TICK_PUBLISHED_AT_KEY = "oanda_tick_published_at"
+STREAM_EVENT_TASK_STATUSES = (
+    "starting",
+    "running",
+    "paused",
+    "idle",
+    "draining",
+    "stopping",
+)
 
 
 def publisher_lock_key_for_account(account_id: int) -> str:
@@ -167,6 +178,13 @@ class TickPublisherRunner:
             account_id,
             self.account.account_id if self.account else "?",
         )
+        self._persist_stream_event(
+            event_type=MarketEventType.TICK_STREAM_STARTED,
+            severity=MarketEventSeverity.INFO,
+            description="OANDA pricing stream publisher started.",
+            account_pk=account_id,
+            instruments=instruments_list,
+        )
 
         # Start streaming
         self._stream_ticks(client, lock_key, instruments_list, account_id)
@@ -200,8 +218,11 @@ class TickPublisherRunner:
         shared_channel = getattr(settings, "MARKET_TICK_CHANNEL", "market:ticks")
         latency_log_interval_seconds = self._live_tick_latency_metric_interval_seconds()
         last_latency_log_at_by_instrument: dict[str, datetime] = {}
+        retry_delay_seconds = self._stream_retry_delay_seconds()
 
         ticks_published = 0
+        stream_error_count = 0
+        reconnect_attempt = 0
         try:
             while True:
                 if self.task_service.should_stop():
@@ -212,11 +233,13 @@ class TickPublisherRunner:
                     break
 
                 try:
+                    reconnect_attempt += 1
                     logger.info(
                         "Publisher: connecting to OANDA pricing stream "
-                        "(instruments=%s, account_id=%s)",
+                        "(instruments=%s, account_id=%s, attempt=%s)",
                         instruments_list,
                         account_id,
+                        reconnect_attempt,
                     )
                     service = OandaService(self.account)
                     for tick in service.stream_pricing_ticks(instruments_list, snapshot=True):
@@ -289,13 +312,40 @@ class TickPublisherRunner:
                             )
 
                 except Exception as exc:  # pylint: disable=broad-exception-caught
+                    stream_error_count += 1
+                    error_observed_at = datetime.now(UTC)
                     logger.exception(
-                        "Publisher: stream error, retrying in 5s (account_id=%s): %s",
+                        "Publisher: stream error, retrying in %ss (account_id=%s): %s",
+                        retry_delay_seconds,
                         account_id,
                         exc,
                     )
-                    self.task_service.heartbeat(status_message=f"error={str(exc)}", force=True)
-                    time.sleep(5)
+                    self._persist_stream_event(
+                        event_type=MarketEventType.TICK_STREAM_RETRY,
+                        severity=MarketEventSeverity.WARNING,
+                        description="OANDA pricing stream error; publisher will retry.",
+                        account_pk=account_id,
+                        instruments=instruments_list,
+                        details={
+                            "error_count": stream_error_count,
+                            "reconnect_attempt": reconnect_attempt,
+                            "retry_delay_seconds": retry_delay_seconds,
+                            "exception_type": type(exc).__name__,
+                            "exception_message": self._truncate_detail(str(exc)),
+                            "observed_at": isoformat(error_observed_at),
+                        },
+                    )
+                    self.task_service.heartbeat(
+                        status_message=f"error={str(exc)}",
+                        meta_update={
+                            "stream_error_count": stream_error_count,
+                            "stream_reconnect_attempt": reconnect_attempt,
+                            "last_stream_error_at": isoformat(error_observed_at),
+                            "last_stream_error_type": type(exc).__name__,
+                        },
+                        force=True,
+                    )
+                    time.sleep(retry_delay_seconds)
 
         finally:
             logger.info(
@@ -303,7 +353,24 @@ class TickPublisherRunner:
                 ticks_published,
                 account_id,
             )
+            self._persist_stream_event(
+                event_type=MarketEventType.TICK_STREAM_STOPPED,
+                severity=MarketEventSeverity.INFO,
+                description="OANDA pricing stream publisher stopped.",
+                account_pk=account_id,
+                instruments=instruments_list,
+                details={"published": ticks_published, "stream_error_count": stream_error_count},
+            )
             self._cleanup_and_stop(client, lock_key, f"published={ticks_published}")
+
+    @staticmethod
+    def _stream_retry_delay_seconds() -> float:
+        """Return the retry delay after a pricing stream failure."""
+        raw_value = getattr(settings, "MARKET_TICK_STREAM_RETRY_DELAY_SECONDS", 5)
+        try:
+            return max(0.1, float(raw_value))
+        except (TypeError, ValueError):
+            return 5.0
 
     def _live_tick_latency_metric_interval_seconds(self) -> int:
         """Return the account-configured latency metric/log interval."""
@@ -354,6 +421,92 @@ class TickPublisherRunner:
                 status=status_value,
                 status_message=message,
             )
+
+    def _persist_stream_event(
+        self,
+        *,
+        event_type: MarketEventType,
+        severity: MarketEventSeverity,
+        description: str,
+        account_pk: int,
+        instruments: list[str],
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        """Persist stream lifecycle diagnostics for post-incident analysis."""
+        account = self.account
+        event_details: dict[str, Any] = {
+            "account_pk": account_pk,
+            "oanda_account_id": str(getattr(account, "account_id", "") or ""),
+            "instruments": instruments,
+            "celery_task_id": current_task_id() or "",
+            "worker": lock_value(),
+        }
+        if details:
+            event_details.update(details)
+
+        task_contexts = self._stream_event_task_contexts(
+            account_pk=account_pk,
+            instruments=instruments,
+        )
+        event_service = MarketEventService()
+        if not task_contexts:
+            event_service.log_event(
+                event_type=event_type,
+                description=description,
+                severity=severity,
+                category=MarketEventCategory.MARKET,
+                account=account,
+                instrument=instruments[0] if len(instruments) == 1 else "",
+                details=event_details,
+            )
+            return
+
+        for task in task_contexts:
+            task_details = {
+                **event_details,
+                "related_task_id": str(task.pk),
+                "related_execution_id": str(task.execution_id or ""),
+            }
+            event_service.log_event(
+                event_type=event_type,
+                description=description,
+                severity=severity,
+                category=MarketEventCategory.MARKET,
+                user=getattr(task, "user", None),
+                account=account,
+                instrument=str(task.instrument or ""),
+                task_type="trading",
+                task_id=task.pk,
+                execution_id=task.execution_id,
+                details=task_details,
+            )
+
+    @staticmethod
+    def _stream_event_task_contexts(*, account_pk: int, instruments: list[str]) -> list[Any]:
+        """Return active trading tasks whose live stream this event affects."""
+        try:
+            TradingTask = django_apps.get_model("trading", "TradingTask")
+            return list(
+                TradingTask.objects.filter(
+                    oanda_account_id=account_pk,
+                    instrument__in=instruments,
+                    status__in=STREAM_EVENT_TASK_STATUSES,
+                ).select_related("user")
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.debug(
+                "Unable to resolve trading tasks for stream market event",
+                extra={"account_id": account_pk, "instruments": instruments},
+                exc_info=True,
+            )
+            return []
+
+    @staticmethod
+    def _truncate_detail(value: str, *, max_length: int = 1000) -> str:
+        """Keep persisted diagnostic strings bounded."""
+        if len(value) <= max_length:
+            return value
+        return value[: max_length - 3] + "..."
 
 
 # Note: Singleton instance is created in __init__.py

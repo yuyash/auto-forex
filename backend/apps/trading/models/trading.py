@@ -170,8 +170,8 @@ class TradingTask(ExecutableTaskModel):
     live_tick_stale_guard_enabled = models.BooleanField(
         default=True,
         help_text=(
-            "Fail the task before strategy/order processing when a live tick is older than "
-            "live_tick_max_age_seconds."
+            "Skip strategy/order processing for live ticks older than "
+            "live_tick_max_age_seconds while waiting for fresh stream data."
         ),
     )
     live_tick_max_age_seconds = models.PositiveIntegerField(

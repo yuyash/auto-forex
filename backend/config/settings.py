@@ -231,6 +231,9 @@ MARKET_TICK_ACCOUNT_KEY = os.getenv("MARKET_TICK_ACCOUNT_KEY", "market:tick_pubs
 MARKET_TICK_PUBLISHER_LOCK_KEY = os.getenv(
     "MARKET_TICK_PUBLISHER_LOCK_KEY", "market:tick_publisher:lock"
 )
+MARKET_TICK_STREAM_RETRY_DELAY_SECONDS = float(
+    os.getenv("MARKET_TICK_STREAM_RETRY_DELAY_SECONDS", "5")
+)
 MARKET_TICK_SUBSCRIBER_LOCK_KEY = os.getenv(
     "MARKET_TICK_SUBSCRIBER_LOCK_KEY", "market:tick_subscriber:lock"
 )

@@ -1407,7 +1407,7 @@ class TestCommonRuntimeMetrics:
 
 
 class TestLiveTickDeliveryGuard:
-    """Live tick freshness diagnostics and stale-tick fail-fast behavior."""
+    """Live tick freshness diagnostics and stale-tick skip behavior."""
 
     def _make_executor(self):
         from apps.trading.models import TradingTask
@@ -1443,7 +1443,7 @@ class TestLiveTickDeliveryGuard:
 
     @patch("apps.trading.tasks.executor.EventHandler")
     @freeze_time("2026-01-01 00:01:00", tz_offset=0)
-    def test_stale_live_tick_stops_before_strategy_processing(self, mock_handler):
+    def test_stale_live_tick_skips_before_strategy_processing(self, mock_handler):
         from apps.trading.tasks.executor import ExecutionLoopState
 
         executor, engine = self._make_executor()
@@ -1461,10 +1461,10 @@ class TestLiveTickDeliveryGuard:
         loop = ExecutionLoopState(state=state)
         should_stop = executor._process_single_tick(loop, tick)
 
-        assert should_stop is True
-        assert loop.stopped_early is True
-        assert loop.is_error is True
-        assert loop.stop_reason.startswith("live_tick_stale:")
+        assert should_stop is False
+        assert loop.stopped_early is False
+        assert loop.is_error is False
+        assert loop.stop_reason == ""
         assert state.ticks_processed == 5
         engine.on_tick.assert_not_called()
         delivery = state.strategy_state["live_tick_delivery"]
