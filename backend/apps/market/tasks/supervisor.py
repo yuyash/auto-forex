@@ -41,7 +41,7 @@ def ensure_tick_pubsub_running(self: Any) -> None:
 
     Publishers are maintained per active trading account. The subscriber
     remains a singleton because it persists the shared market channel.
-    This task re-schedules itself periodically and is also triggered on:
+    Celery Beat schedules this task periodically. It is also triggered on:
     - worker startup
     - OANDA account creation
     - trading-task starts
@@ -144,12 +144,10 @@ class TickSupervisorRunner:
             )
             return
 
-        # Self-schedule: keeps pub/sub alive even if tasks crash.
-        # Import the task function to schedule it
-        from apps.market.tasks import ensure_tick_pubsub_running
-
-        logger.info("Supervisor: scheduling next check in %ss", interval_seconds)
-        ensure_tick_pubsub_running.apply_async(countdown=interval_seconds, queue="system")
+        # Do not self-schedule here. Celery Beat owns the periodic cadence;
+        # enqueueing another delayed supervisor task after every run creates
+        # duplicate chains that can starve higher-priority system work such as
+        # task stop finalisation.
 
     def _active_trading_tasks(self) -> QuerySet[Any]:
         """Return active trading tasks that require live market data."""
