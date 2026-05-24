@@ -481,13 +481,92 @@ class TestSnowballCycleTp:
         cycle.add_layer(layer)
         state.cycles.append(cycle)
 
-        tick = _make_tick(datetime(2026, 1, 1, tzinfo=UTC), "143.391", "143.393")
+        tick = _make_tick(
+            datetime(2026, 1, 1, tzinfo=UTC) + timedelta(seconds=1), "143.391", "143.393"
+        )
 
         events = strategy._process_cycle_tp(state, tick, cycle)
 
         assert len(events) == 2
         assert events[0].event_type == EventType.CLOSE_POSITION
         assert events[0].exit_price == Decimal("143.391")
+
+    def test_rebuilt_r0_does_not_close_on_open_tick(self):
+        strategy = _strategy({"m_pips": "15"})
+        state = SnowballStrategyState()
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        layer = Layer.create(1, 3, 1000, 2)
+        opened_at = datetime(2026, 1, 1, tzinfo=UTC)
+        rebuilt_r0 = Entry(
+            entry_id=1,
+            step=1,
+            direction=Direction.LONG,
+            entry_price=Decimal("141.774"),
+            close_price=Decimal("143.391"),
+            units=1500,
+            opened_at=opened_at,
+            role="initial",
+            layer_number=1,
+            retracement_count=0,
+            is_rebuild=True,
+            lifecycle_realized_pnl=Decimal("-2425.5"),
+            lifecycle_stop_loss_count=2,
+        )
+        layer.slot_at(0).fill(rebuilt_r0)
+        cycle.add_layer(layer)
+        state.cycles.append(cycle)
+
+        tick = _make_tick(opened_at, "143.391", "143.393")
+
+        events = strategy._process_cycle_tp(state, tick, cycle)
+
+        assert events == []
+        assert layer.slot_at(0).entry is rebuilt_r0
+
+    def test_rebuilt_r0_waits_until_next_tick_before_tp_close(self):
+        strategy = _strategy(
+            {
+                "m_pips": "15",
+                "stop_loss_enabled": True,
+                "rebuild_enabled": True,
+            }
+        )
+        state = SnowballStrategyState()
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        layer = Layer.create(1, 3, 1000, 2)
+        opened_at = datetime(2026, 1, 1, tzinfo=UTC)
+        layer.slot_at(0).pending_rebuild = StopLossClosedEntry(
+            entry_price=Decimal("141.774"),
+            close_price=Decimal("143.391"),
+            units=1500,
+            direction=Direction.LONG,
+            role="initial",
+            layer_number=1,
+            retracement_count=0,
+            step=1,
+            cycle_id=1,
+            closed_at=opened_at - timedelta(seconds=1),
+        )
+        cycle.add_layer(layer)
+        state.cycles.append(cycle)
+
+        tick = _make_tick(opened_at, "143.391", "143.393")
+        rebuild_events = strategy._process_stop_loss_rebuilds(state, tick, cycle)
+
+        rebuilt_r0 = layer.slot_at(0).entry
+        assert len(rebuild_events) == 1
+        assert rebuilt_r0 is not None
+        assert rebuilt_r0.opened_at == opened_at
+        assert strategy._process_cycle_tp(state, tick, cycle, allow_reentry=False) == []
+
+        next_tick_events = strategy._process_cycle_tp(
+            state,
+            _make_tick(opened_at + timedelta(seconds=1), "143.391", "143.393"),
+            cycle,
+            allow_reentry=False,
+        )
+
+        assert [event.event_type for event in next_tick_events] == [EventType.CLOSE_POSITION]
 
     def test_head_tp_waits_when_counter_target_is_not_hit(self):
         strategy = _strategy({"m_pips": "15"})
@@ -582,7 +661,9 @@ class TestSnowballCycleTp:
         cycle.add_layer(layer)
         state.cycles.append(cycle)
 
-        tick = _make_tick(datetime(2026, 1, 1, tzinfo=UTC), "154.50", "154.52")
+        tick = _make_tick(
+            datetime(2026, 1, 1, tzinfo=UTC) + timedelta(seconds=1), "154.50", "154.52"
+        )
 
         events = strategy._process_cycle_tp(state, tick, cycle)
 
@@ -639,7 +720,9 @@ class TestSnowballStopLossProtectionThreshold:
             }
         )
         ss, cycle, r1, r2 = self._make_cycle_with_entries()
-        tick = _make_tick(datetime(2026, 1, 1, tzinfo=UTC), "154.39", "154.41")
+        tick = _make_tick(
+            datetime(2026, 1, 1, tzinfo=UTC) + timedelta(seconds=1), "154.39", "154.41"
+        )
 
         events = s._process_stop_loss_closes(ss, tick, cycle)
 
@@ -659,7 +742,9 @@ class TestSnowballStopLossProtectionThreshold:
             }
         )
         ss, cycle, r1, r2 = self._make_cycle_with_entries()
-        tick = _make_tick(datetime(2026, 1, 1, tzinfo=UTC), "154.39", "154.41")
+        tick = _make_tick(
+            datetime(2026, 1, 1, tzinfo=UTC) + timedelta(seconds=1), "154.39", "154.41"
+        )
 
         events = s._process_stop_loss_closes(ss, tick, cycle)
 
@@ -694,11 +779,45 @@ class TestSnowballStopLossProtectionThreshold:
         layer.slot_at(0).fill(r0)
         cycle.add_layer(layer)
         ss.cycles.append(cycle)
-        tick = _make_tick(datetime(2026, 1, 1, tzinfo=UTC), "154.59", "154.61")
+        tick = _make_tick(
+            datetime(2026, 1, 1, tzinfo=UTC) + timedelta(seconds=1), "154.59", "154.61"
+        )
 
         events = s._process_stop_loss_closes(ss, tick, cycle)
 
         assert [event.entry_id for event in events] == [r0.entry_id]
+
+    def test_stop_loss_does_not_close_on_open_tick(self):
+        s = _strategy({"stop_loss_enabled": True})
+        ss = SnowballStrategyState()
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        layer = Layer.create(1, 3, 1000, 2)
+        opened_at = datetime(2026, 1, 1, tzinfo=UTC)
+        r0 = Entry(
+            entry_id=1,
+            step=1,
+            direction=Direction.LONG,
+            entry_price=Decimal("155.00"),
+            close_price=Decimal("155.50"),
+            units=1000,
+            opened_at=opened_at,
+            role="initial",
+            layer_number=1,
+            retracement_count=0,
+            stop_loss_price=Decimal("154.60"),
+        )
+        layer.slot_at(0).fill(r0)
+        cycle.add_layer(layer)
+        ss.cycles.append(cycle)
+
+        events = s._process_stop_loss_closes(
+            ss,
+            _make_tick(opened_at, "154.59", "154.61"),
+            cycle,
+        )
+
+        assert events == []
+        assert layer.slot_at(0).entry is r0
 
 
 class TestSnowballStopLossModes:
@@ -1510,7 +1629,9 @@ class TestSnowballRebuildDisabled:
             }
         )
         ss, cycle, r0, r1 = self._make_cycle_with_two_entries()
-        tick = _make_tick(datetime(2026, 1, 1, tzinfo=UTC), "154.39", "154.41")
+        tick = _make_tick(
+            datetime(2026, 1, 1, tzinfo=UTC) + timedelta(seconds=1), "154.39", "154.41"
+        )
 
         events = s._process_stop_loss_closes(ss, tick, cycle)
         closed_ids = {event.entry_id for event in events}

@@ -144,6 +144,12 @@ class SnowballProtectionService:
         while ratio >= cfg.m1_th:
             entry, cycle = self.pick_shrink_target(ss, tick, strategy.pip_size)
             if entry is None or cycle is None:
+                if self._has_same_tick_front_entries(ss, tick):
+                    logger.info(
+                        "SHRINK deferred: front entry was opened on the current tick; "
+                        "waiting for a later tick before closing."
+                    )
+                    return ShrinkResult(events=events)
                 logger.error(
                     "SHRINK EXHAUSTED: all positions closed but margin ratio "
                     "%.1f%% still above m1_th=%.1f%%. Failing task.",
@@ -214,6 +220,8 @@ class SnowballProtectionService:
         for cycle in ss.iter_active_cycles():
             entry = cycle.grid.front_entry()
             if entry is not None:
+                if not entry.can_close_on_tick(tick):
+                    continue
                 loss = entry.unrealised_loss_pips(tick.mid, pip_size)
                 candidates.append((entry, cycle, loss))
 
@@ -222,6 +230,13 @@ class SnowballProtectionService:
 
         candidates.sort(key=lambda c: c[2], reverse=True)
         return candidates[0][0], candidates[0][1]
+
+    def _has_same_tick_front_entries(self, ss: SnowballStrategyState, tick: Tick) -> bool:
+        for cycle in ss.iter_active_cycles():
+            entry = cycle.grid.front_entry()
+            if entry is not None and not entry.can_close_on_tick(tick):
+                return True
+        return False
 
 
 SNOWBALL_PROTECTION = SnowballProtectionService()

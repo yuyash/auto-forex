@@ -99,6 +99,8 @@ class CounterTakeProfitPolicy:
 
     def hit(self, entry: Entry, tick: Tick) -> bool:
         """Return True when the tick reaches the entry's close price."""
+        if not entry.can_close_on_tick(tick):
+            return False
         if entry.close_price <= 0:
             return False
         if entry.is_long:
