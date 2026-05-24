@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.10.1](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.10.0...backend-v2.10.1) (2026-05-24)
+
+
+### Bug Fixes
+
+* strict backtest close targets ([#816](https://github.com/yuyash/auto-forex-web-service/issues/816)) ([4e9edf7](https://github.com/yuyash/auto-forex-web-service/commit/4e9edf7c0357588cc030cde1f2654999e217bd52))
+
 ## [2.10.0](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.9.0...backend-v2.10.0) (2026-05-24)
 
 
