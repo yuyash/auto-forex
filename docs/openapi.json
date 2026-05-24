@@ -13945,13 +13945,15 @@
                     "timezone": {
                         "type": "string"
                     },
-                    "periods": {}
+                    "periods": {},
+                    "returns": {}
                 },
                 "required": [
                     "currency",
                     "execution_id",
                     "instrument",
                     "periods",
+                    "returns",
                     "strategy_type",
                     "timezone"
                 ]
