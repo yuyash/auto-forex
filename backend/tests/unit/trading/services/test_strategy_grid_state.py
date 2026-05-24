@@ -36,6 +36,15 @@ class TestBuildCycleGridStateMap:
     def test_returns_empty_for_unsupported_strategy(self):
         assert build_cycle_grid_state_map(strategy_type="floor", strategy_state={}) == {}
 
+    def test_returns_empty_for_incomplete_snowball_state(self):
+        assert (
+            build_cycle_grid_state_map(
+                strategy_type="snowball",
+                strategy_state={"metrics": {}},
+            )
+            == {}
+        )
+
     def test_serializes_snowball_slot_states(self):
         layer = Layer(
             layer_number=1,
@@ -89,6 +98,15 @@ class TestBuildCycleStatusMap:
             _load_cycle_statuses(
                 strategy_type="unknown",
                 strategy_state={"cycles": [{"trade_cycle_id": "cycle-1"}]},
+            )
+            == {}
+        )
+
+    def test_returns_empty_for_incomplete_snowball_state(self):
+        assert (
+            _load_cycle_statuses(
+                strategy_type="snowball",
+                strategy_state={"metrics": {}},
             )
             == {}
         )
