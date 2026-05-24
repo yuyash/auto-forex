@@ -157,14 +157,26 @@ class MarketEventAdmin(admin.ModelAdmin):
         "severity",
         "event_type",
         "instrument",
+        "task_type",
+        "task_id",
+        "execution_id",
         "account",
         "user",
     ]
-    list_filter = ["category", "severity", "event_type", "instrument", "created_at"]
+    list_filter = [
+        "category",
+        "severity",
+        "event_type",
+        "instrument",
+        "task_type",
+        "created_at",
+    ]
     search_fields = [
         "event_type",
         "description",
         "instrument",
+        "=task_id",
+        "=execution_id",
         "account__account_id",
         "user__email",
     ]

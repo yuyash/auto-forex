@@ -1012,7 +1012,7 @@ export default function TradingTaskUpdateForm({
           <Typography variant="caption" color="text.secondary" display="block">
             {t(
               'trading:form.liveTickStaleGuardEnabledHelp',
-              'Stop before strategy/order processing when live tick delivery is delayed.'
+              'Skip delayed live ticks before strategy/order processing and wait for fresh stream data.'
             )}
           </Typography>
         </Grid>
@@ -1041,7 +1041,7 @@ export default function TradingTaskUpdateForm({
                   errors.live_tick_max_age_seconds?.message ||
                   t(
                     'trading:form.liveTickMaxAgeSecondsHelp',
-                    'Fail the task if an incoming live tick is older than this many seconds.'
+                    'Skip incoming live ticks older than this many seconds.'
                   )
                 }
                 error={!!errors.live_tick_max_age_seconds}

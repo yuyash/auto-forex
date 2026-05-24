@@ -23,6 +23,7 @@ from django.db.models.functions import Abs, Cast
 from rest_framework.request import Request
 
 from apps.common.querying import OrderingConfig
+from apps.market.models import MarketEvent
 from apps.trading.enums import EventType, LogLevel
 from apps.trading.models import TradingEvent
 from apps.trading.models.logs import TaskLog
@@ -35,6 +36,7 @@ from apps.trading.views.query_params import (
     EventsQueryParams,
     LogComponentsQueryParams,
     LogsQueryParams,
+    MarketEventsQueryParams,
     OrdersQueryParams,
     PositionQuery,
     TradesQueryParams,
@@ -153,6 +155,18 @@ ORDER_ORDERING = OrderingConfig(
         "is_dry_run": "is_dry_run",
     },
     default="-submitted_at",
+)
+MARKET_EVENT_ORDERING = OrderingConfig(
+    fields={
+        "id": "id",
+        "created_at": "created_at",
+        "event_type": "event_type",
+        "category": "category",
+        "severity": "severity",
+        "instrument": "instrument",
+        "description": "description",
+    },
+    default="-created_at",
 )
 
 
@@ -369,6 +383,36 @@ class TaskActivityQueryService:
         if query.created_range.end:
             queryset = queryset.filter(created_at__lte=query.created_range.end)
         return EVENT_ORDERING.apply_to_queryset(queryset, query.ordering)
+
+    def market_events_queryset(self, *, request: Request, task, task_type_label: str):
+        query = MarketEventsQueryParams.from_request(
+            request,
+            default_execution_id=task.execution_id,
+            default_page_size=ActivityPagination.page_size,
+            max_page_size=ActivityPagination.max_page_size,
+        )
+        queryset = MarketEvent.objects.filter(
+            task_type=task_type_label,
+            task_id=task.pk,
+            execution_id=query.execution.execution_id,
+        )
+        if query.event_type:
+            queryset = queryset.filter(event_type__icontains=query.event_type)
+        if query.severities:
+            queryset = queryset.filter(severity__in=query.severities)
+        if query.categories:
+            queryset = queryset.filter(category__in=query.categories)
+        if query.instrument:
+            queryset = queryset.filter(instrument__iexact=query.instrument)
+        if query.message:
+            queryset = queryset.filter(description__icontains=query.message)
+        if query.execution.since:
+            queryset = queryset.filter(created_at__gt=query.execution.since)
+        if query.created_range.start:
+            queryset = queryset.filter(created_at__gte=query.created_range.start)
+        if query.created_range.end:
+            queryset = queryset.filter(created_at__lte=query.created_range.end)
+        return MARKET_EVENT_ORDERING.apply_to_queryset(queryset, query.ordering)
 
     @staticmethod
     def orders_queryset(*, request: Request, task, task_type_label: str):

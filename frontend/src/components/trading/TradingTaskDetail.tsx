@@ -39,6 +39,7 @@ import { TaskLogsTable } from '../tasks/detail/TaskLogsTable';
 import { TaskPositionsTable } from '../tasks/detail/TaskPositionsTable';
 import { TaskTradesTable } from '../tasks/detail/TaskTradesTable';
 import { TaskOrdersTable } from '../tasks/detail/TaskOrdersTable';
+import { TaskMarketEventsTable } from '../tasks/detail/TaskMarketEventsTable';
 import { useTaskSummary } from '../../hooks/useTaskSummary';
 import { TaskStatus, TaskType } from '../../types/common';
 import type { TradingTask } from '../../types';
@@ -114,6 +115,7 @@ export const TradingTaskDetail: React.FC = () => {
     { id: 'positions', label: t('trading:tabs.positions'), visible: true },
     { id: 'trades', label: t('trading:tabs.trades'), visible: true },
     { id: 'orders', label: t('trading:tabs.orders'), visible: true },
+    { id: 'market', label: t('trading:tabs.market'), visible: true },
     { id: 'logs', label: t('trading:tabs.logs'), visible: true },
     { id: 'metrics', label: t('trading:tabs.metrics'), visible: true },
   ];
@@ -564,6 +566,19 @@ export const TradingTaskDetail: React.FC = () => {
             index={visibleTabIds.indexOf('orders')}
           >
             <TaskOrdersTable
+              taskId={taskId}
+              taskType={TaskType.TRADING}
+              executionRunId={activeExecutionId}
+              enableRealTimeUpdates={enableRealtime}
+            />
+          </LazyTabPanel>
+        )}
+        {visibleTabIds.includes('market') && (
+          <LazyTabPanel
+            value={activeTabIndex}
+            index={visibleTabIds.indexOf('market')}
+          >
+            <TaskMarketEventsTable
               taskId={taskId}
               taskType={TaskType.TRADING}
               executionRunId={activeExecutionId}

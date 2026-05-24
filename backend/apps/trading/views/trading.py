@@ -12,20 +12,27 @@ from drf_spectacular.utils import (
     inline_serializer,
 )
 from rest_framework import serializers, status
+from rest_framework.decorators import action
 from rest_framework.exceptions import APIException
 from rest_framework.request import Request
+from rest_framework.response import Response
 
 from apps.trading.models import TradingTask
+from apps.trading.serializers.task import MarketEventSerializer
 from apps.trading.serializers.trading import (
     TradingTaskCreateSerializer,
     TradingTaskListSerializer,
     TradingTaskSerializer,
 )
+from apps.trading.services.task_activity import TaskActivityQueryService
 from apps.trading.views.task_base import (
     TASK_LIST_PARAMETERS,
     TaskViewSetBase,
     task_stop_response_fields,
 )
+from apps.trading.views.pagination import ActivityPagination
+from apps.trading.views.query_params import MarketEventsQueryParamsSchemaSerializer
+from apps.trading.views.throttles import TaskDataRateThrottle
 
 logger: Logger = logging.getLogger(name=__name__)
 
@@ -181,3 +188,38 @@ class TradingTaskViewSet(TaskViewSetBase):
     def get_stop_response_extras(self, request: Request) -> dict[str, Any]:
         """Include the stop mode in the response."""
         return {"mode": self.get_stop_mode(request)}
+
+    @extend_schema(
+        tags=["Trading"],
+        parameters=[MarketEventsQueryParamsSchemaSerializer],
+        responses={
+            200: inline_serializer(
+                "TaskMarketEventPaginatedResponse",
+                fields={
+                    "count": serializers.IntegerField(),
+                    "next": serializers.CharField(allow_null=True),
+                    "previous": serializers.CharField(allow_null=True),
+                    "results": MarketEventSerializer(many=True),
+                },
+            )
+        },
+        description="Retrieve paginated market events associated with this trading task.",
+    )
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="market-events",
+        throttle_classes=[TaskDataRateThrottle],
+    )
+    def market_events(self, request: Request, pk: str | None = None) -> Response:
+        """Return market events explicitly linked to this trading task."""
+        task = self.get_object()
+        queryset = TaskActivityQueryService().market_events_queryset(
+            request=request,
+            task=task,
+            task_type_label=self.task_type_label,
+        )
+        paginator = ActivityPagination()
+        page = paginator.paginate_queryset(queryset, request)
+        serializer = MarketEventSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)

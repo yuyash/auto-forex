@@ -107,6 +107,7 @@ class OandaService:
         *,
         retry_policy: OandaRetryPolicy | None = None,
         retry_service: OandaRetryService | None = None,
+        task: Any | None = None,
     ):
         """
         Initialize OANDA API client.
@@ -114,9 +115,11 @@ class OandaService:
         Args:
             account: OandaAccounts instance with API credentials (optional for dry_run mode)
             dry_run: If True, simulate API calls without making actual requests
+            task: Optional task context for task-scoped market event logging
         """
         self.account = account
         self.dry_run = dry_run
+        self.task = task
         self.retry_policy = retry_policy or OandaRetryPolicy.short_default()
         self.max_retries = self.retry_policy.max_attempts
         self.retry_delay = self.retry_policy.backoff_base_seconds
@@ -129,7 +132,7 @@ class OandaService:
             retry_service=self.retry_service,
             make_jsonable=self._make_jsonable,
         )
-        self.event_service = MarketEventService()
+        self.event_service = MarketEventService(task=task)
         self.order_guard = BrokerOrderGuard()
         self.order_client_extensions = OandaOrderClientExtensions()
         self.response_parser = oanda_parsing.OandaResponseParser()

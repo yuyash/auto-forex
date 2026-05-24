@@ -153,6 +153,7 @@ class TradingResumeReconciler:
             account=task.oanda_account,
             dry_run=False,
             retry_service=OandaRetryService(policy=self.retry_policy, raise_runtime_error=False),
+            task=task,
         )
         self.failure_policy = BrokerReadFailurePolicy()
         self.broker_snapshot = BrokerSnapshotLoader(

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from uuid import uuid4
 from unittest.mock import MagicMock, patch
 
+from apps.market.enums import MarketEventType
 from apps.market.tasks.publisher import (
     TickPublisherRunner,
     build_tick_latency_payload,
@@ -206,6 +208,94 @@ class TestValidateAccount:
         result = runner._validate_account(MagicMock(), "lock:key", 1)
 
         assert result is True
+
+
+class TestStreamTicks:
+    """Tests for live OANDA stream retry diagnostics."""
+
+    @patch("apps.market.tasks.publisher.time.sleep")
+    @patch("apps.market.tasks.publisher.MarketEventService")
+    @patch("apps.market.tasks.publisher.OandaService")
+    @patch("apps.market.tasks.publisher.release_lock_if_owner")
+    def test_stream_error_persists_retry_event_and_continues(
+        self,
+        mock_release,
+        MockOandaService,
+        MockMarketEventService,
+        mock_sleep,
+        settings,
+    ):
+        settings.MARKET_TICK_CHANNEL = "market:ticks"
+        settings.MARKET_TICK_STREAM_RETRY_DELAY_SECONDS = 0.1
+
+        runner = TickPublisherRunner()
+        runner.account = MagicMock()
+        runner.account.account_id = "101-001"
+        runner.task_service = MagicMock()
+        runner.task_service.should_stop.side_effect = [False, True]
+        runner.lock_owner = "owner-1"
+
+        MockOandaService.return_value.stream_pricing_ticks.side_effect = RuntimeError("stream down")
+        event_service = MockMarketEventService.return_value
+
+        runner._stream_ticks(MagicMock(), "lock:key", ["USD_JPY"], 5)
+
+        retry_calls = [
+            call
+            for call in event_service.log_event.call_args_list
+            if call.kwargs.get("event_type") == MarketEventType.TICK_STREAM_RETRY
+        ]
+        assert retry_calls
+        retry_details = retry_calls[0].kwargs["details"]
+        assert retry_details["account_pk"] == 5
+        assert retry_details["instruments"] == ["USD_JPY"]
+        assert retry_details["exception_type"] == "RuntimeError"
+        assert retry_details["exception_message"] == "stream down"
+        runner.task_service.heartbeat.assert_called_once()
+        mock_sleep.assert_called_once_with(0.1)
+        mock_release.assert_called_once()
+
+
+class TestPersistStreamEvent:
+    """Tests for task-scoped stream event persistence."""
+
+    @patch("apps.market.tasks.publisher.MarketEventService")
+    def test_persists_event_per_related_trading_task(self, MockMarketEventService):
+        task_id = uuid4()
+        execution_id = uuid4()
+        task = MagicMock()
+        task.pk = task_id
+        task.execution_id = execution_id
+        task.instrument = "USD_JPY"
+        task.user = MagicMock()
+
+        runner = TickPublisherRunner()
+        runner.account = MagicMock()
+        runner.account.account_id = "101-001"
+
+        with patch.object(
+            runner,
+            "_stream_event_task_contexts",
+            return_value=[task],
+        ):
+            runner._persist_stream_event(
+                event_type=MarketEventType.TICK_STREAM_RETRY,
+                severity="warning",
+                description="retry",
+                account_pk=5,
+                instruments=["USD_JPY"],
+                details={"error_count": 1},
+            )
+
+        event_service = MockMarketEventService.return_value
+        event_service.log_event.assert_called_once()
+        kwargs = event_service.log_event.call_args.kwargs
+        assert kwargs["task_type"] == "trading"
+        assert kwargs["task_id"] == task_id
+        assert kwargs["execution_id"] == execution_id
+        assert kwargs["instrument"] == "USD_JPY"
+        assert kwargs["details"]["related_task_id"] == str(task_id)
+        assert kwargs["details"]["error_count"] == 1
 
 
 class TestCleanupAndStop:
