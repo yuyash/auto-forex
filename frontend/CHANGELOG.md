@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.0](https://github.com/yuyash/auto-forex-web-service/compare/frontend-v2.11.0...frontend-v2.12.0) (2026-05-24)
+
+
+### Features
+
+* **frontend:** add snowball metrics help ([#813](https://github.com/yuyash/auto-forex-web-service/issues/813)) ([1e73fe1](https://github.com/yuyash/auto-forex-web-service/commit/1e73fe1752fb4b631d86b4b892cfb8a311b94f30))
+
 ## [2.11.0](https://github.com/yuyash/auto-forex-web-service/compare/frontend-v2.10.0...frontend-v2.11.0) (2026-05-24)
 
 
