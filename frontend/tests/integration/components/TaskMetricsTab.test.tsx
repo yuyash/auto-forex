@@ -1,7 +1,12 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TaskMetricsTab } from '../../../src/components/tasks/detail/TaskMetricsTab';
-import type { MetricPoint } from '../../../src/utils/fetchMetrics';
+import type {
+  MetricPoint,
+  MetricsPeriod,
+  PeriodicReturnMetricPoint,
+  PeriodicTradeMetricsResponse,
+} from '../../../src/utils/fetchMetrics';
 
 const lineChartProps = vi.hoisted(
   () =>
@@ -46,7 +51,41 @@ describe('TaskMetricsTab', () => {
   beforeEach(() => {
     lineChartProps.length = 0;
     barChartProps.length = 0;
+    window.localStorage.clear();
   });
+
+  const periodicReturns = (
+    period: MetricsPeriod,
+    rows: Array<[label: string, periodReturn: string]>
+  ): PeriodicTradeMetricsResponse => {
+    const returns = {
+      day: [] as PeriodicReturnMetricPoint[],
+      week: [] as PeriodicReturnMetricPoint[],
+      month: [] as PeriodicReturnMetricPoint[],
+      year: [] as PeriodicReturnMetricPoint[],
+    };
+    returns[period] = rows.map(([label, periodReturn], index) => ({
+      t: index + 1,
+      timestamp: label,
+      label,
+      period_return: periodReturn,
+    }));
+
+    return {
+      execution_id: null,
+      strategy_type: '',
+      instrument: null,
+      currency: null,
+      timezone: 'UTC',
+      periods: {
+        day: [],
+        week: [],
+        month: [],
+        year: [],
+      },
+      returns,
+    };
+  };
 
   it('renders large metric series without overflowing the call stack', () => {
     const data: MetricPoint[] = Array.from({ length: 150_000 }, (_, index) => ({
@@ -68,6 +107,10 @@ describe('TaskMetricsTab', () => {
         onSinceChange={vi.fn()}
         onUntilChange={vi.fn()}
         onRefresh={vi.fn()}
+        periodicMetrics={periodicReturns('week', [
+          ['2026-01-05', '0.02'],
+          ['2026-01-12', '0.03'],
+        ])}
       />
     );
 
@@ -139,6 +182,10 @@ describe('TaskMetricsTab', () => {
         onSinceChange={vi.fn()}
         onUntilChange={vi.fn()}
         onRefresh={vi.fn()}
+        periodicMetrics={periodicReturns('week', [
+          ['2026-01-05', '2'],
+          ['2026-01-12', '3'],
+        ])}
       />
     );
 
@@ -317,6 +364,10 @@ describe('TaskMetricsTab', () => {
         onUntilChange={vi.fn()}
         onRefresh={vi.fn()}
         timezone="UTC"
+        periodicMetrics={periodicReturns('week', [
+          ['2026-01-05', '2'],
+          ['2026-01-12', '3'],
+        ])}
       />
     );
 
@@ -356,6 +407,12 @@ describe('TaskMetricsTab', () => {
         onUntilChange={vi.fn()}
         onRefresh={vi.fn()}
         timezone="UTC"
+        periodicMetrics={periodicReturns('week', [
+          ['2025-12-29', '3'],
+          ['2026-03-30', '2'],
+          ['2026-07-27', '3'],
+          ['2026-12-28', '0'],
+        ])}
       />
     );
 
@@ -393,6 +450,11 @@ describe('TaskMetricsTab', () => {
         onUntilChange={vi.fn()}
         onRefresh={vi.fn()}
         timezone="UTC"
+        periodicMetrics={periodicReturns('month', [
+          ['2024-01', '4'],
+          ['2025-06', '5'],
+          ['2027-01', '0'],
+        ])}
       />
     );
 
