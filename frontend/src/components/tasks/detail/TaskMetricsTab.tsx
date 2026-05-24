@@ -99,7 +99,7 @@ interface TaskMetricsTabProps {
   onToggleLossCutMarkers?: (next: boolean) => void;
 }
 
-type MetricFormat = 'pct' | 'int' | 'currency' | 'rate';
+type MetricFormat = 'pct' | 'int' | 'currency' | 'rate' | 'ms';
 
 type ChartMetric = {
   key: string;
@@ -139,6 +139,16 @@ const CHART_METRICS: MetricChartDefinition[] = [
     series: [
       { key: 'oanda_tick_publish_latency_seconds', color: '#00897b' },
       { key: 'trading_tick_receive_latency_seconds', color: '#c2185b' },
+    ],
+  },
+  {
+    key: 'oanda_order_response_ms',
+    color: '#6d4c41',
+    format: 'ms',
+    series: [
+      { key: 'oanda_order_response_ms', color: '#6d4c41', format: 'ms' },
+      { key: 'oanda_order_response_avg_ms', color: '#1565c0', format: 'ms' },
+      { key: 'oanda_order_response_max_ms', color: '#c62828', format: 'ms' },
     ],
   },
   { key: 'open_positions', color: '#0288d1', format: 'int' },
@@ -211,6 +221,16 @@ const SNOWBALL_NET_CHART_METRICS: MetricChartDefinition[] = [
     series: [
       { key: 'oanda_tick_publish_latency_seconds', color: '#00897b' },
       { key: 'trading_tick_receive_latency_seconds', color: '#c2185b' },
+    ],
+  },
+  {
+    key: 'oanda_order_response_ms',
+    color: '#6d4c41',
+    format: 'ms',
+    series: [
+      { key: 'oanda_order_response_ms', color: '#6d4c41', format: 'ms' },
+      { key: 'oanda_order_response_avg_ms', color: '#1565c0', format: 'ms' },
+      { key: 'oanda_order_response_max_ms', color: '#c62828', format: 'ms' },
     ],
   },
   { key: 'snowball_net_net_units', color: '#0288d1', format: 'int' },
@@ -1070,6 +1090,11 @@ function formatYLabel(v: number, format?: MetricFormat): string {
       minimumFractionDigits: 1,
       maximumFractionDigits: 1,
     })}/s`;
+  if (format === 'ms')
+    return `${formatAppNumber(v, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 1,
+    })}ms`;
   return formatAppNumber(v, {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
@@ -1820,6 +1845,11 @@ export function TaskMetricsTab({
         minimumFractionDigits: 1,
         maximumFractionDigits: 1,
       })}/s`;
+    if (format === 'ms')
+      return `${formatAppNumber(val, {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 1,
+      })} ms`;
     if (format === 'currency')
       return formatMoneyAmount(val, valueCurrency ?? currency, {
         minimumFractionDigits: 0,

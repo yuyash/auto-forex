@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -269,3 +270,12 @@ class TestOrderExecutionTime:
             )
             == tick_timestamp
         )
+
+    @patch("apps.trading.order.monotonic", side_effect=[10.0, 10.1234567])
+    def test_broker_response_seconds_quantizes_elapsed_time(self, _mock_monotonic):
+        started_at = OrderService._broker_request_started_at(MagicMock(dry_run=False))
+
+        assert OrderService._broker_response_seconds(started_at) == Decimal("0.123457")
+
+    def test_broker_request_started_at_skips_dry_run(self):
+        assert OrderService._broker_request_started_at(MagicMock(dry_run=True)) is None

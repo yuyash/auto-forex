@@ -83,6 +83,30 @@ class TestRuntimeMetricsTracker:
         assert metrics["execution_elapsed_seconds"] == "2.500000"
         assert Decimal(metrics["ticks_per_second"]) == Decimal("100.000000")
 
+    def test_build_metrics_includes_oanda_order_response_milliseconds(self):
+        tracker = RuntimeMetricsTracker(
+            instrument="USD_JPY",
+            pip_size=Decimal("0.01"),
+            account_currency="JPY",
+            margin_rate=Decimal("0.04"),
+            atr_period=14,
+        )
+        tracker.record_oanda_order_response(Decimal("0.120"))
+        tracker.record_oanda_order_response(Decimal("0.240"))
+
+        metrics = tracker.build_metrics(
+            timestamp=datetime(2026, 3, 22, 10, 0, tzinfo=UTC),
+            bid=Decimal("150.10"),
+            ask=Decimal("150.12"),
+            mid=Decimal("150.11"),
+            current_balance=Decimal("100000"),
+        )
+
+        assert metrics["oanda_order_response_ms"] == "240.000"
+        assert metrics["oanda_order_response_avg_ms"] == "180.000"
+        assert metrics["oanda_order_response_max_ms"] == "240.000"
+        assert metrics["oanda_order_response_count"] == "2"
+
     def test_build_metrics_includes_current_atr_without_strategy_specific_metrics(self):
         tracker = RuntimeMetricsTracker(
             instrument="USD_JPY",

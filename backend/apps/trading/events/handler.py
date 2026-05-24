@@ -6,7 +6,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from logging import Logger, getLogger
 from typing import Any
 
@@ -200,6 +200,8 @@ class EventHandler:
         self._current_sequence_number: int = 0
         self._current_replay_mode = False
         self._affected_refs = self._new_affected_refs()
+        self._current_oanda_response_seconds: list[Decimal] = []
+        self._current_oanda_response_order_ids: set[str] = set()
 
     @staticmethod
     def _event_type_key(strategy_event: StrategyEvent) -> str:
@@ -398,6 +400,8 @@ class EventHandler:
         self._current_sequence_number = getattr(trading_event, "sequence_number", 0) or 0
         self._current_replay_mode = replaying
         self._affected_refs = self._new_affected_refs()
+        self._current_oanda_response_seconds = []
+        self._current_oanda_response_order_ids = set()
         # Restore cycle-tracking fields from TradingEvent model columns
         # (these are not stored in the details JSON).
         if trading_event.root_entry_id is not None:
@@ -415,7 +419,14 @@ class EventHandler:
                     category, self._dispatch_informational
                 )
                 result = category_handler(strategy_event)
-            return replace(result, **self._snapshot_affected_refs())
+            return replace(
+                result,
+                **self._snapshot_affected_refs(),
+                oanda_response_seconds=(
+                    *result.oanda_response_seconds,
+                    *self._current_oanda_response_seconds,
+                ),
+            )
         finally:
             self._current_replay_mode = False
 
@@ -1262,6 +1273,19 @@ class EventHandler:
                 self._affected_refs["broker_order_ids"].add(str(order.broker_order_id))
             if order.oanda_trade_id:
                 self._affected_refs["oanda_trade_ids"].add(str(order.oanda_trade_id))
+            order_id = str(order.id)
+            response_seconds = getattr(order, "oanda_response_seconds", None)
+            if (
+                response_seconds is not None
+                and order_id not in self._current_oanda_response_order_ids
+            ):
+                try:
+                    parsed_response_seconds = Decimal(str(response_seconds))
+                except (InvalidOperation, TypeError, ValueError):
+                    parsed_response_seconds = None
+                if parsed_response_seconds is not None:
+                    self._current_oanda_response_seconds.append(parsed_response_seconds)
+                    self._current_oanda_response_order_ids.add(order_id)
         if trade is not None:
             self._affected_refs["trade_ids"].add(str(trade.id))
             if trade.oanda_trade_id:

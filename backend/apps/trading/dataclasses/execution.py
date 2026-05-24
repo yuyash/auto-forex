@@ -34,6 +34,7 @@ class EventExecutionResult:
     trade_ids: tuple[str, ...] = ()
     broker_order_ids: tuple[str, ...] = ()
     oanda_trade_ids: tuple[str, ...] = ()
+    oanda_response_seconds: tuple[Decimal, ...] = ()
 
     @property
     def realized_pnl_delta_money(self) -> Money:

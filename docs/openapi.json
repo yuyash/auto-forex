@@ -10965,6 +10965,12 @@
                         "format": "date-time",
                         "nullable": true
                     },
+                    "oanda_response_seconds": {
+                        "type": "string",
+                        "format": "decimal",
+                        "pattern": "^-?\\d{0,6}(?:\\.\\d{0,6})?$",
+                        "nullable": true
+                    },
                     "cancelled_at": {
                         "type": "string",
                         "format": "date-time",

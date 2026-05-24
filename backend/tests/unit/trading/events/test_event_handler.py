@@ -696,6 +696,36 @@ class TestHandleEvent:
         assert result.realized_pnl_delta == Decimal("0")
         assert result.entry_binding is None
 
+    def test_handle_event_returns_order_response_seconds(self):
+        svc = _make_order_service()
+        position = _make_position()
+        order = SimpleNamespace(
+            id=uuid4(),
+            fill_price=Decimal("1.10000"),
+            broker_order_id="broker-1",
+            oanda_trade_id="trade-1",
+            oanda_response_seconds=Decimal("0.123456"),
+        )
+        svc.open_position.return_value = (position, order)
+        handler = EventHandler(order_service=svc, instrument="EUR_USD")
+        handler._record_trade = MagicMock()
+
+        trading_event = SimpleNamespace(
+            details={
+                "event_type": "open_position",
+                "layer_number": 1,
+                "direction": "long",
+                "units": 1000,
+            },
+            sequence_number=1,
+            root_entry_id=None,
+            parent_entry_id=None,
+        )
+
+        result = handler.handle_event(trading_event)
+
+        assert result.oanda_response_seconds == (Decimal("0.123456"),)
+
     def test_custom_event_handler_registration(self):
         svc = _make_order_service()
         handler = EventHandler(order_service=svc, instrument="EUR_USD")

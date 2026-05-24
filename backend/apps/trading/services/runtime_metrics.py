@@ -69,6 +69,10 @@ class RuntimeMetricsTracker:
         self._closed_positions = 0
         self._winning_trades = 0
         self._losing_trades = 0
+        self._latest_oanda_order_response_seconds: Decimal | None = None
+        self._oanda_order_response_total_seconds = Decimal("0")
+        self._oanda_order_response_max_seconds: Decimal | None = None
+        self._oanda_order_response_count = 0
 
     def sync_open_positions(self, positions: Iterable[Position]) -> None:
         """Replace the in-memory open position cache with current open positions."""
@@ -101,6 +105,25 @@ class RuntimeMetricsTracker:
             self._winning_trades += 1
         elif realized_pnl < 0:
             self._losing_trades += 1
+
+    def record_oanda_order_response(self, seconds: Decimal | int | float | str | None) -> None:
+        """Record elapsed wall-clock time for one broker order request."""
+        if seconds in (None, ""):
+            return
+        try:
+            value = Decimal(str(seconds))
+        except (InvalidOperation, TypeError, ValueError):
+            return
+        if value < 0:
+            return
+        self._latest_oanda_order_response_seconds = value
+        self._oanda_order_response_total_seconds += value
+        self._oanda_order_response_count += 1
+        if (
+            self._oanda_order_response_max_seconds is None
+            or value > self._oanda_order_response_max_seconds
+        ):
+            self._oanda_order_response_max_seconds = value
 
     def restore_counters(
         self,
@@ -240,6 +263,23 @@ class RuntimeMetricsTracker:
         if elapsed_seconds is not None:
             metrics["execution_elapsed_seconds"] = f"{elapsed_seconds:.6f}"
             metrics["ticks_per_second"] = f"{max(ticks_processed, 0) / elapsed_seconds:.6f}"
+
+        if self._latest_oanda_order_response_seconds is not None:
+            latest_ms = self._latest_oanda_order_response_seconds * Decimal("1000")
+            avg_ms = (
+                self._oanda_order_response_total_seconds
+                / Decimal(self._oanda_order_response_count)
+                * Decimal("1000")
+            )
+            max_ms = (self._oanda_order_response_max_seconds or Decimal("0")) * Decimal("1000")
+            metrics.update(
+                {
+                    "oanda_order_response_ms": str(latest_ms),
+                    "oanda_order_response_avg_ms": str(avg_ms),
+                    "oanda_order_response_max_ms": str(max_ms),
+                    "oanda_order_response_count": str(self._oanda_order_response_count),
+                }
+            )
 
         atr_cache: dict[int, Decimal] = {}
 

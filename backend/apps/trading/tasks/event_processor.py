@@ -126,6 +126,8 @@ class TaskEventProcessor:
         execution_result: EventExecutionResult,
     ) -> None:
         executor = self.executor
+        for response_seconds in execution_result.oanda_response_seconds:
+            executor._runtime_metrics.record_oanda_order_response(response_seconds)
         if execution_result.realized_pnl_delta != Decimal("0"):
             state.current_balance = (
                 Decimal(str(state.current_balance)) + execution_result.realized_pnl_delta
