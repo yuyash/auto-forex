@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.9.0](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.8.1...backend-v2.9.0) (2026-05-24)
+
+
+### Features
+
+* **trading:** add task-scoped market events ([#809](https://github.com/yuyash/auto-forex-web-service/issues/809)) ([6c0efbe](https://github.com/yuyash/auto-forex-web-service/commit/6c0efbe1829d8de457343266e8a1fef125b08947))
+
 ## [2.8.1](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.8.0...backend-v2.8.1) (2026-05-23)
 
 
