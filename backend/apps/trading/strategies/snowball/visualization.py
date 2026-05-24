@@ -20,10 +20,10 @@ class SnowballVisualizationBuilder:
         strategy_state: dict[str, Any] | None,
     ) -> dict[str, dict[str, Any]]:
         """Return cycle_id -> grid state mappings for Snowball cycles."""
-        if not isinstance(strategy_state, dict):
+        state = self._parse_state(strategy_state)
+        if state is None:
             return {}
 
-        state = SnowballStrategyState.from_dict(strategy_state)
         result: dict[str, dict[str, Any]] = {}
 
         for cycle in state.cycles:
@@ -44,15 +44,24 @@ class SnowballVisualizationBuilder:
         strategy_state: dict[str, Any] | None,
     ) -> dict[str, str]:
         """Return trade_cycle_id -> status mappings for Snowball cycles."""
-        if not isinstance(strategy_state, dict):
+        state = self._parse_state(strategy_state)
+        if state is None:
             return {}
 
-        state = SnowballStrategyState.from_dict(strategy_state)
         result: dict[str, str] = {}
         for cycle in state.cycles:
             if cycle.trade_cycle_id:
                 result[str(cycle.trade_cycle_id)] = str(cycle.status.value)
         return result
+
+    def _parse_state(self, strategy_state: dict[str, Any] | None) -> SnowballStrategyState | None:
+        if not isinstance(strategy_state, dict):
+            return None
+
+        try:
+            return SnowballStrategyState.from_dict(strategy_state)
+        except (KeyError, TypeError, ValueError):
+            return None
 
     def _serialize_cycle_grid(self, cycle: Any) -> dict[str, Any]:
         layers: list[dict[str, Any]] = []

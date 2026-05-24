@@ -150,6 +150,27 @@ class TestTickSupervisorRunnerExtendedIntegration:
 
         mock_sub_apply_async.assert_called_once_with(queue="market")
 
+    def test_run_does_not_self_schedule_supervisor(self) -> None:
+        mock_client = MagicMock()
+        mock_service_instance = MagicMock()
+        mock_service_instance.should_stop.return_value = False
+
+        with (
+            patch("apps.market.tasks.supervisor.redis_client", return_value=mock_client),
+            patch("apps.market.tasks.supervisor.acquire_lock", return_value="owner-1"),
+            patch("apps.market.tasks.supervisor.release_lock_if_owner"),
+            patch(
+                "apps.market.tasks.supervisor.CeleryTaskService",
+                return_value=mock_service_instance,
+            ),
+            patch("apps.market.tasks.subscribe_ticks_to_db.apply_async") as mock_subscribe,
+            patch("apps.market.tasks.ensure_tick_pubsub_running.apply_async") as mock_supervisor,
+        ):
+            TickSupervisorRunner().run()
+
+        mock_subscribe.assert_called_once_with(queue="market")
+        mock_supervisor.assert_not_called()
+
     def test_fresh_market_task_ignores_stale_rows(self) -> None:
         CeleryTaskStatus.objects.create(
             task_name="market.tasks.subscribe_ticks_to_db",
