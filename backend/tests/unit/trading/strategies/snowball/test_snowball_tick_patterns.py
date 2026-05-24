@@ -719,7 +719,7 @@ class TestLifecycleNegativePnlWarnings:
     def test_non_stop_loss_close_with_negative_pnl_warns(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Directly invoke ``_close_entry`` with a losing TP close and
+        """Directly invoke ``_close_entry`` with a losing non-SL close and
         assert the warning fires.  Bypasses the tick-pattern helpers so
         the test is deterministic."""
         import logging
@@ -730,7 +730,7 @@ class TestLifecycleNegativePnlWarnings:
         entry = long_cycle.initial_entry
         assert entry is not None
 
-        # Synthesise a TP close at an unfavourable price to force pnl<0.
+        # Synthesise a protection close at an unfavourable price to force pnl<0.
         bad_tick = _make_tick(
             runner.ts + timedelta(seconds=1),
             START_PRICE - Decimal("0.50"),
@@ -739,8 +739,8 @@ class TestLifecycleNegativePnlWarnings:
             runner.strategy._close_entry(
                 bad_tick,
                 entry,
-                description="forced losing TP",
-                close_reason="tp",
+                description="forced losing shrink",
+                close_reason="shrink",
                 cycle=long_cycle,
             )
 

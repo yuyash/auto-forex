@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import pytest
 from django.utils import timezone
 
 from apps.trading.dataclasses import EventExecutionResult
@@ -19,7 +20,11 @@ from apps.trading.events import (
     VolatilityHedgeNeutralizeEvent,
     VolatilityLockEvent,
 )
-from apps.trading.events.handler import EventHandler
+from apps.trading.events.handler import (
+    ClosePositionResolutionError,
+    CycleResolutionError,
+    EventHandler,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -226,7 +231,7 @@ class TestHandleClosePosition:
         assert result[0] == Decimal("10.00")
         svc.close_position.assert_called_once()
 
-    def test_no_target_position_returns_zero(self):
+    def test_no_target_position_raises(self):
         svc = _make_order_service()
         handler = EventHandler(order_service=svc, instrument="EUR_USD")
         handler._find_close_position_target = MagicMock(return_value=None)
@@ -238,38 +243,72 @@ class TestHandleClosePosition:
             units=1000,
         )
 
-        result = handler.handle_close_position(event)
-
-        assert result == (Decimal("0"), Decimal("0"))
+        with pytest.raises(ClosePositionResolutionError):
+            handler.handle_close_position(event)
         svc.close_position.assert_not_called()
 
-    def test_partial_close_iterates_positions(self):
+    def test_find_close_position_target_uses_entry_binding(self):
+        svc = _make_order_service()
+        position = _make_position(direction="short")
+        handler = EventHandler(order_service=svc, instrument="EUR_USD")
+        handler._entry_id_to_position_id[42] = str(position.id)
+        handler._get_open_position_by_id = MagicMock(return_value=position)
+
+        event = ClosePositionEvent(
+            event_type=EventType.CLOSE_POSITION,
+            layer_number=1,
+            direction="short",
+            units=1000,
+            entry_id=42,
+        )
+
+        assert handler._find_close_position_target(event) is position
+        handler._get_open_position_by_id.assert_called_once_with(str(position.id))
+
+    def test_find_close_position_target_does_not_replace_stale_position_id(self):
+        svc = _make_order_service()
+        handler = EventHandler(order_service=svc, instrument="EUR_USD")
+        handler._entry_id_to_position_id[42] = str(uuid4())
+        handler._get_open_position_by_id = MagicMock(return_value=None)
+        stale_position_id = str(uuid4())
+
+        event = ClosePositionEvent(
+            event_type=EventType.CLOSE_POSITION,
+            layer_number=1,
+            direction="short",
+            units=1000,
+            entry_id=42,
+            position_id=stale_position_id,
+        )
+
+        with pytest.raises(ClosePositionResolutionError):
+            handler._find_close_position_target(event)
+        handler._get_open_position_by_id.assert_called_once_with(stale_position_id)
+
+    def test_close_cycle_mismatch_raises(self):
+        svc = _make_order_service()
+        position = _make_position()
+        handler = EventHandler(order_service=svc, instrument="EUR_USD")
+        handler._resolve_cycle_id_for_position = MagicMock(return_value="position-cycle")
+        handler._entry_id_to_cycle_id[42] = "event-cycle"
+
+        event = ClosePositionEvent(
+            event_type=EventType.CLOSE_POSITION,
+            layer_number=1,
+            direction="long",
+            units=1000,
+            entry_id=42,
+        )
+
+        with pytest.raises(CycleResolutionError):
+            handler._resolve_cycle_id_for_close(event, position)
+
+    def test_close_does_not_spill_into_another_position(self):
         svc = _make_order_service()
         p1 = _make_position(units=500)
-        p2 = _make_position(units=1000)
-
-        closed_p1 = _make_position(units=500, is_open=False)
-        closed_p1.exit_price = Decimal("1.11000")
-        closed_p2 = _make_position(units=500, is_open=True)
-        closed_p2.exit_price = Decimal("1.11000")
-
-        call_count = [0]
-
-        def _find_target(event):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return p1
-            if call_count[0] == 2:
-                return p2
-            return None
-
-        svc.close_position.side_effect = [
-            (closed_p1, Decimal("5.00"), MagicMock()),
-            (closed_p2, Decimal("5.00"), MagicMock()),
-        ]
 
         handler = EventHandler(order_service=svc, instrument="EUR_USD")
-        handler._find_close_position_target = MagicMock(side_effect=_find_target)
+        handler._find_close_position_target = MagicMock(return_value=p1)
         handler._prune_closed_position = MagicMock()
         handler._record_trade = MagicMock()
 
@@ -280,9 +319,9 @@ class TestHandleClosePosition:
             units=1000,
         )
 
-        result = handler.handle_close_position(event)
-        assert result[0] == Decimal("10.00")
-        assert svc.close_position.call_count == 2
+        with pytest.raises(ClosePositionResolutionError):
+            handler.handle_close_position(event)
+        svc.close_position.assert_not_called()
 
     def test_partial_close_records_order_fill_price(self):
         svc = _make_order_service()
@@ -590,12 +629,14 @@ class TestClearPositions:
         handler.position_map[1] = _make_position()
         handler._position_cache["x"] = _make_position()
         handler.layer_position_ids[1] = ["x"]
+        handler._entry_id_to_position_id[1] = "x"
 
         handler.clear_positions()
 
         assert handler.position_map == {}
         assert handler._position_cache == {}
         assert handler.layer_position_ids == {}
+        assert handler._entry_id_to_position_id == {}
 
 
 class TestHandleEvent:
@@ -638,9 +679,8 @@ class TestHandleEvent:
             "units": 1000,
         }
 
-        result = handler.handle_event(trading_event)
-        assert result.realized_pnl_delta == Decimal("0")
-        assert result.entry_binding is None
+        with pytest.raises(ClosePositionResolutionError):
+            handler.handle_event(trading_event)
 
     def test_unknown_event_returns_zero(self):
         svc = _make_order_service()
