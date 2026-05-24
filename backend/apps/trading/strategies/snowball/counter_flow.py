@@ -33,6 +33,8 @@ class CounterFlowStrategy(Protocol):
     pip_size: Decimal
     calculator: SnowballFormulaCalculator
 
+    def counter_interval_pips(self, step: int) -> Decimal: ...
+
 
 @dataclass(frozen=True, slots=True)
 class CounterHeadContext:
@@ -696,6 +698,9 @@ class CounterSlotSelector:
         strategy: CounterFlowStrategy,
         step: int,
     ) -> Decimal:
+        interval_method = getattr(strategy, "counter_interval_pips", None)
+        if callable(interval_method):
+            return interval_method(step)
         return self.calculator_provider.for_strategy(strategy).counter_interval_pips(step)
 
     def _cumulative_counter_intervals(
@@ -706,7 +711,11 @@ class CounterSlotSelector:
         cumulative_interval = Decimal("0")
         calculator = self.calculator_provider.for_strategy(strategy)
         for step in steps:
-            cumulative_interval += calculator.counter_interval_pips(step)
+            interval_method = getattr(strategy, "counter_interval_pips", None)
+            if callable(interval_method):
+                cumulative_interval += interval_method(step)
+            else:
+                cumulative_interval += calculator.counter_interval_pips(step)
         return cumulative_interval
 
     def _log_preceding_bound_skip(

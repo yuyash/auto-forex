@@ -16,8 +16,10 @@ import {
 import {
   Alert,
   Box,
+  Chip,
   Grid,
   LinearProgress,
+  Stack,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
@@ -144,6 +146,54 @@ const CHART_METRICS: MetricChartDefinition[] = [
   { key: 'losing_trades', color: '#c62828', format: 'int' },
   { key: 'ticks_processed', color: '#546e7a', format: 'int' },
   { key: 'ticks_per_second', color: '#00695c', format: 'rate' },
+];
+
+const SNOWBALL_GUARD_CHART_METRICS: MetricChartDefinition[] = [
+  {
+    key: 'snowball_guard_permissions',
+    color: '#0f766e',
+    format: 'int',
+    valueKey: 'snowball_allow_new_positions',
+    series: [
+      { key: 'snowball_allow_new_positions', color: '#0f766e', format: 'int' },
+      { key: 'snowball_allow_rebuilds', color: '#7c3aed', format: 'int' },
+    ],
+  },
+  {
+    key: 'snowball_adaptive_interval_multipliers',
+    color: '#2563eb',
+    series: [
+      {
+        key: 'snowball_adaptive_counter_interval_multiplier',
+        color: '#dc2626',
+      },
+      { key: 'snowball_adaptive_trend_interval_multiplier', color: '#16a34a' },
+    ],
+  },
+  {
+    key: 'snowball_volatility_guard_pips',
+    color: '#ea580c',
+    series: [
+      { key: 'snowball_volatility_guard_current_pips', color: '#ea580c' },
+      {
+        key: 'snowball_volatility_guard_baseline_current_pips',
+        color: '#64748b',
+      },
+    ],
+  },
+  {
+    key: 'snowball_trend_guard_pips',
+    color: '#0891b2',
+    series: [
+      { key: 'snowball_trend_guard_deviation_pips', color: '#0891b2' },
+      { key: 'snowball_trend_guard_slope_pips', color: '#be123c' },
+    ],
+  },
+];
+
+const SNOWBALL_CHART_METRICS: MetricChartDefinition[] = [
+  ...CHART_METRICS,
+  ...SNOWBALL_GUARD_CHART_METRICS,
 ];
 
 const SNOWBALL_NET_CHART_METRICS: MetricChartDefinition[] = [
@@ -347,6 +397,383 @@ function totalReturnValue(point: MetricPoint): number | null {
 
 function chartSeries(chart: MetricChartDefinition): ChartMetric[] {
   return chart.series ?? [chart];
+}
+
+const SNOWBALL_RISK_GUARD_METRIC_KEYS = [
+  'snowball_allow_new_positions',
+  'snowball_allow_rebuilds',
+  'snowball_add_block_reason',
+  'snowball_rebuild_block_reason',
+  'snowball_trend_blocked_directions',
+  'snowball_adaptive_counter_interval_multiplier',
+  'snowball_adaptive_trend_interval_multiplier',
+  'snowball_volatility_guard_current_pips',
+  'snowball_volatility_guard_baseline_current_pips',
+  'snowball_trend_guard_deviation_pips',
+  'snowball_trend_guard_slope_pips',
+  'snowball_volatility_guard_source',
+  'snowball_volatility_guard_candle_granularity',
+  'snowball_adaptive_counter_interval_source',
+  'snowball_adaptive_counter_interval_candle_granularity',
+  'snowball_adaptive_trend_interval_source',
+  'snowball_adaptive_trend_interval_candle_granularity',
+  'snowball_trend_guard_candle_granularity',
+];
+
+function metricText(
+  metrics: Record<string, unknown>,
+  key: string
+): string | null {
+  const raw = metrics[key];
+  if (raw == null) return null;
+  const text = String(raw).trim();
+  return text ? text : null;
+}
+
+function numericMetric(
+  metrics: Record<string, unknown>,
+  key: string
+): number | null {
+  const raw = metrics[key];
+  if (raw == null || raw === '') return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
+function csvMetric(metrics: Record<string, unknown>, key: string): string[] {
+  return (metricText(metrics, key) ?? '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function latestSnowballRiskGuardPoint(data: MetricPoint[]): MetricPoint | null {
+  for (let index = data.length - 1; index >= 0; index -= 1) {
+    const point = data[index];
+    if (
+      SNOWBALL_RISK_GUARD_METRIC_KEYS.some(
+        (key) => point.metrics[key] != null && point.metrics[key] !== ''
+      )
+    ) {
+      return point;
+    }
+  }
+  return null;
+}
+
+function translatedList(
+  values: string[],
+  keyPrefix: string,
+  t: ReturnType<typeof useTranslation>['t']
+): string {
+  if (values.length === 0) {
+    return t('metrics.snowball_guard_none', { defaultValue: 'None' });
+  }
+  return values
+    .map((value) =>
+      t(`${keyPrefix}.${value}`, {
+        defaultValue: value.replace(/_/g, ' '),
+      })
+    )
+    .join(', ');
+}
+
+function formatCompactMetric(
+  value: number,
+  options?: {
+    suffix?: string;
+    minimumFractionDigits?: number;
+    maximumFractionDigits?: number;
+  }
+): string {
+  const formatted = formatAppNumber(value, {
+    minimumFractionDigits: options?.minimumFractionDigits ?? 1,
+    maximumFractionDigits: options?.maximumFractionDigits ?? 1,
+  });
+  return options?.suffix ? `${formatted}${options.suffix}` : formatted;
+}
+
+type SnowballNumberSummaryItem = {
+  key: string;
+  value: number;
+  suffix: string;
+  maximumFractionDigits: number;
+};
+
+type SnowballSourceSummaryItem = {
+  key: string;
+  value: string;
+};
+
+function hasNumberSummaryValue(item: {
+  key: string;
+  value: number | null;
+  suffix: string;
+  maximumFractionDigits: number;
+}): item is SnowballNumberSummaryItem {
+  return item.value != null;
+}
+
+function hasSourceSummaryValue(item: {
+  key: string;
+  value: string | null;
+}): item is SnowballSourceSummaryItem {
+  return item.value != null;
+}
+
+const SUMMARY_CHIP_SX = {
+  maxWidth: '100%',
+  '& .MuiChip-label': {
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+};
+
+function SnowballRiskGuardSummary({ latest }: { latest: MetricPoint | null }) {
+  const { t } = useTranslation('common');
+  if (!latest) return null;
+
+  const metrics = latest.metrics;
+  const allowNewPositions = numericMetric(
+    metrics,
+    'snowball_allow_new_positions'
+  );
+  const allowRebuilds = numericMetric(metrics, 'snowball_allow_rebuilds');
+  const addReasons = csvMetric(metrics, 'snowball_add_block_reason');
+  const rebuildReasons = csvMetric(metrics, 'snowball_rebuild_block_reason');
+  const blockedDirections = csvMetric(
+    metrics,
+    'snowball_trend_blocked_directions'
+  );
+
+  const numberItems = [
+    {
+      key: 'snowball_adaptive_counter_interval_multiplier',
+      value: numericMetric(
+        metrics,
+        'snowball_adaptive_counter_interval_multiplier'
+      ),
+      suffix: 'x',
+      maximumFractionDigits: 2,
+    },
+    {
+      key: 'snowball_adaptive_trend_interval_multiplier',
+      value: numericMetric(
+        metrics,
+        'snowball_adaptive_trend_interval_multiplier'
+      ),
+      suffix: 'x',
+      maximumFractionDigits: 2,
+    },
+    {
+      key: 'snowball_volatility_guard_current_pips',
+      value: numericMetric(metrics, 'snowball_volatility_guard_current_pips'),
+      suffix: ' pips',
+      maximumFractionDigits: 1,
+    },
+    {
+      key: 'snowball_volatility_guard_baseline_current_pips',
+      value: numericMetric(
+        metrics,
+        'snowball_volatility_guard_baseline_current_pips'
+      ),
+      suffix: ' pips',
+      maximumFractionDigits: 1,
+    },
+    {
+      key: 'snowball_trend_guard_deviation_pips',
+      value: numericMetric(metrics, 'snowball_trend_guard_deviation_pips'),
+      suffix: ' pips',
+      maximumFractionDigits: 1,
+    },
+    {
+      key: 'snowball_trend_guard_slope_pips',
+      value: numericMetric(metrics, 'snowball_trend_guard_slope_pips'),
+      suffix: ' pips',
+      maximumFractionDigits: 2,
+    },
+  ].filter(hasNumberSummaryValue);
+
+  const sourceItems = [
+    {
+      key: 'snowball_volatility_guard_source',
+      value: metricText(metrics, 'snowball_volatility_guard_source'),
+    },
+    {
+      key: 'snowball_volatility_guard_candle_granularity',
+      value: metricText(
+        metrics,
+        'snowball_volatility_guard_candle_granularity'
+      ),
+    },
+    {
+      key: 'snowball_adaptive_counter_interval_source',
+      value: metricText(metrics, 'snowball_adaptive_counter_interval_source'),
+    },
+    {
+      key: 'snowball_adaptive_counter_interval_candle_granularity',
+      value: metricText(
+        metrics,
+        'snowball_adaptive_counter_interval_candle_granularity'
+      ),
+    },
+    {
+      key: 'snowball_adaptive_trend_interval_source',
+      value: metricText(metrics, 'snowball_adaptive_trend_interval_source'),
+    },
+    {
+      key: 'snowball_adaptive_trend_interval_candle_granularity',
+      value: metricText(
+        metrics,
+        'snowball_adaptive_trend_interval_candle_granularity'
+      ),
+    },
+    {
+      key: 'snowball_trend_guard_candle_granularity',
+      value: metricText(metrics, 'snowball_trend_guard_candle_granularity'),
+    },
+  ].filter(hasSourceSummaryValue);
+
+  return (
+    <Box
+      sx={{
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 1,
+        px: { xs: 1, sm: 1.25 },
+        py: 1,
+        mb: { xs: 0.75, sm: 1.5 },
+        minWidth: 0,
+      }}
+    >
+      <Stack spacing={0.75} sx={{ minWidth: 0 }}>
+        <Stack
+          direction="row"
+          spacing={0.75}
+          useFlexGap
+          flexWrap="wrap"
+          alignItems="center"
+        >
+          <Typography variant="subtitle2" sx={{ mr: 0.25 }}>
+            {t('metrics.snowball_risk_guard', {
+              defaultValue: 'Snowball Risk Guard',
+            })}
+          </Typography>
+          {allowNewPositions != null ? (
+            <Chip
+              size="small"
+              variant="outlined"
+              color={allowNewPositions ? 'success' : 'warning'}
+              sx={SUMMARY_CHIP_SX}
+              label={`${t('metrics.snowball_allow_new_positions', {
+                defaultValue: 'New Adds',
+              })}: ${t(
+                allowNewPositions
+                  ? 'metrics.snowball_guard_allowed'
+                  : 'metrics.snowball_guard_blocked',
+                { defaultValue: allowNewPositions ? 'Allowed' : 'Blocked' }
+              )}`}
+            />
+          ) : null}
+          {allowRebuilds != null ? (
+            <Chip
+              size="small"
+              variant="outlined"
+              color={allowRebuilds ? 'success' : 'warning'}
+              sx={SUMMARY_CHIP_SX}
+              label={`${t('metrics.snowball_allow_rebuilds', {
+                defaultValue: 'Rebuilds',
+              })}: ${t(
+                allowRebuilds
+                  ? 'metrics.snowball_guard_allowed'
+                  : 'metrics.snowball_guard_blocked',
+                { defaultValue: allowRebuilds ? 'Allowed' : 'Blocked' }
+              )}`}
+            />
+          ) : null}
+          <Chip
+            size="small"
+            variant="outlined"
+            color={addReasons.length > 0 ? 'warning' : 'default'}
+            sx={SUMMARY_CHIP_SX}
+            label={`${t('metrics.snowball_add_block_reason', {
+              defaultValue: 'Add Block Reason',
+            })}: ${translatedList(
+              addReasons,
+              'metrics.snowball_guard_reasons',
+              t
+            )}`}
+          />
+          <Chip
+            size="small"
+            variant="outlined"
+            color={rebuildReasons.length > 0 ? 'warning' : 'default'}
+            sx={SUMMARY_CHIP_SX}
+            label={`${t('metrics.snowball_rebuild_block_reason', {
+              defaultValue: 'Rebuild Block Reason',
+            })}: ${translatedList(
+              rebuildReasons,
+              'metrics.snowball_guard_reasons',
+              t
+            )}`}
+          />
+          <Chip
+            size="small"
+            variant="outlined"
+            color={blockedDirections.length > 0 ? 'warning' : 'default'}
+            sx={SUMMARY_CHIP_SX}
+            label={`${t('metrics.snowball_trend_blocked_directions', {
+              defaultValue: 'Trend Blocked Directions',
+            })}: ${translatedList(
+              blockedDirections,
+              'metrics.snowball_guard_directions',
+              t
+            )}`}
+          />
+        </Stack>
+        {numberItems.length > 0 ? (
+          <Stack direction="row" spacing={1.25} useFlexGap flexWrap="wrap">
+            {numberItems.map((item) => (
+              <Box key={item.key} sx={{ minWidth: 112 }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: 'block' }}
+                >
+                  {t(`metrics.${item.key}`, {
+                    defaultValue: item.key.replace(/_/g, ' '),
+                  })}
+                </Typography>
+                <Typography variant="body2">
+                  {formatCompactMetric(item.value, {
+                    suffix: item.suffix,
+                    maximumFractionDigits: item.maximumFractionDigits,
+                  })}
+                </Typography>
+              </Box>
+            ))}
+          </Stack>
+        ) : null}
+        {sourceItems.length > 0 ? (
+          <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
+            {sourceItems.map((item) => (
+              <Chip
+                key={item.key}
+                size="small"
+                variant="outlined"
+                sx={SUMMARY_CHIP_SX}
+                label={`${t(`metrics.${item.key}`, {
+                  defaultValue: item.key.replace(/_/g, ' '),
+                })}: ${t(`metrics.snowball_guard_sources.${item.value}`, {
+                  defaultValue: item.value,
+                })}`}
+              />
+            ))}
+          </Stack>
+        ) : null}
+      </Stack>
+    </Box>
+  );
 }
 
 function datePartsInTimezone(
@@ -981,7 +1408,14 @@ export function TaskMetricsTab({
   const chartMetricDefinitions =
     strategyType === 'snowball_net'
       ? SNOWBALL_NET_CHART_METRICS
-      : CHART_METRICS;
+      : strategyType === 'snowball'
+        ? SNOWBALL_CHART_METRICS
+        : CHART_METRICS;
+  const latestSnowballRiskGuard = useMemo(
+    () =>
+      strategyType === 'snowball' ? latestSnowballRiskGuardPoint(data) : null,
+    [data, strategyType]
+  );
   const hasTotalReturnData = useMemo(
     () => data.some((point) => totalReturnValue(point) != null),
     [data]
@@ -1474,6 +1908,7 @@ export function TaskMetricsTab({
         columnCount={columnCount}
         onColumnCountChange={setColumnCount}
       />
+      <SnowballRiskGuardSummary latest={latestSnowballRiskGuard} />
       {consistencyWarnings.length > 0 ? (
         <Alert severity="warning" sx={{ mb: { xs: 0.75, sm: 1.5 } }}>
           {consistencyWarnings.length} continuity warning(s) detected after

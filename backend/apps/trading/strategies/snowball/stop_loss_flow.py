@@ -36,6 +36,8 @@ class StopLossFlowStrategy(Protocol):
     pip_size: Decimal
     calculator: SnowballFormulaCalculator
 
+    def counter_interval_pips(self, step: int) -> Decimal: ...
+
 
 @dataclass(frozen=True, slots=True)
 class StopLossCloseCandidate:
@@ -129,7 +131,12 @@ class StopLossAssigner:
         """Assign stop-loss using the configured mode for a 1-based slot number."""
         calculator = self.calculator_provider.for_strategy(strategy)
         if strategy.config.stop_loss_mode == "auto":
-            next_interval = calculator.counter_interval_pips(slot_number)
+            interval_method = getattr(strategy, "counter_interval_pips", None)
+            next_interval = (
+                interval_method(slot_number)
+                if callable(interval_method)
+                else calculator.counter_interval_pips(slot_number)
+            )
             if next_interval > 0:
                 self.assign_auto(strategy, entry, next_interval)
             return

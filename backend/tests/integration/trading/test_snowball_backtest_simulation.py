@@ -369,17 +369,22 @@ class TestSnowballBacktestSimulation:
         for rl, fl in zip(resumed_layers, full_layers):
             assert rl["base_units"] == fl["base_units"]
             assert len(rl["slots"]) == len(fl["slots"])
-        # Compare strategy-level metrics only; runtime metrics (current_atr,
-        # baseline_atr, margin_ratio, volatility_threshold) depend on candle
-        # history that is not persisted across executor restarts.
+        # Compare strategy-level metrics only; runtime ATR metrics depend on
+        # candle history that is not persisted across executor restarts.
         _runtime_keys = {"current_atr", "baseline_atr", "margin_ratio", "volatility_threshold"}
+
+        def _is_runtime_metric(key: str) -> bool:
+            return key in _runtime_keys or key.endswith(("_current_atr", "_baseline_atr"))
+
         resumed_metrics = {
             k: v
             for k, v in resumed_state.strategy_state["metrics"].items()
-            if k not in _runtime_keys
+            if not _is_runtime_metric(k)
         }
         full_metrics = {
-            k: v for k, v in full_state.strategy_state["metrics"].items() if k not in _runtime_keys
+            k: v
+            for k, v in full_state.strategy_state["metrics"].items()
+            if not _is_runtime_metric(k)
         }
         assert _normalize_metrics(resumed_metrics) == _normalize_metrics(full_metrics)
 

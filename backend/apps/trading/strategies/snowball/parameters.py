@@ -76,6 +76,67 @@ class SnowballParameterService:
             parameters.pop("warmup_required_tp_closes", None)
         if config.warmup_enabled and config.warmup_completion_mode == "tp_closes":
             parameters.pop("warmup_min_elapsed_minutes", None)
+        if not config.add_margin_guard_enabled:
+            for key in (
+                "add_margin_guard_max_pct",
+                "add_margin_guard_scope",
+            ):
+                parameters.pop(key, None)
+        if not config.volatility_guard_enabled:
+            for key in (
+                "volatility_guard_source",
+                "volatility_guard_candle_granularity",
+                "volatility_guard_atr_period",
+                "volatility_guard_baseline_period",
+                "volatility_guard_candle_ema_period",
+                "volatility_guard_max_pips",
+                "volatility_guard_max_multiplier",
+            ):
+                parameters.pop(key, None)
+        elif config.volatility_guard_source == "atr":
+            parameters.pop("volatility_guard_candle_ema_period", None)
+        else:
+            parameters.pop("volatility_guard_atr_period", None)
+        if not config.add_trend_guard_enabled:
+            for key in (
+                "add_trend_candle_granularity",
+                "add_trend_ema_period",
+                "add_trend_max_opposite_deviation_pips",
+                "add_trend_max_opposite_slope_pips",
+            ):
+                parameters.pop(key, None)
+        if not config.adaptive_counter_interval_enabled:
+            for key in (
+                "adaptive_counter_interval_source",
+                "adaptive_counter_interval_candle_granularity",
+                "adaptive_counter_interval_atr_period",
+                "adaptive_counter_interval_baseline_period",
+                "adaptive_counter_interval_candle_ema_period",
+                "adaptive_counter_interval_reference_pips",
+                "adaptive_counter_interval_min_multiplier",
+                "adaptive_counter_interval_max_multiplier",
+            ):
+                parameters.pop(key, None)
+        elif config.adaptive_counter_interval_source == "atr":
+            parameters.pop("adaptive_counter_interval_candle_ema_period", None)
+        else:
+            parameters.pop("adaptive_counter_interval_atr_period", None)
+        if not config.adaptive_trend_interval_enabled:
+            for key in (
+                "adaptive_trend_interval_source",
+                "adaptive_trend_interval_candle_granularity",
+                "adaptive_trend_interval_atr_period",
+                "adaptive_trend_interval_baseline_period",
+                "adaptive_trend_interval_candle_ema_period",
+                "adaptive_trend_interval_reference_pips",
+                "adaptive_trend_interval_min_multiplier",
+                "adaptive_trend_interval_max_multiplier",
+            ):
+                parameters.pop(key, None)
+        elif config.adaptive_trend_interval_source == "atr":
+            parameters.pop("adaptive_trend_interval_candle_ema_period", None)
+        else:
+            parameters.pop("adaptive_trend_interval_atr_period", None)
         return parameters
 
     def normalize_parameters(self, parameters: dict[str, Any]) -> dict[str, Any]:

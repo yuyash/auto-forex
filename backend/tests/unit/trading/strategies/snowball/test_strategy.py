@@ -175,6 +175,14 @@ class TestSnowballStrategyProperties:
         assert s.instrument == "USD_JPY"
         assert s.pip_size == Decimal("0.01")
 
+    def test_runtime_adaptive_interval_helpers_round_separately(self):
+        s = _strategy({"m_pips": "50", "n_pips_head": "30", "round_step_pips": "0.1"})
+        s._snowball_adaptive_counter_interval_multiplier = Decimal("2")
+        s._snowball_adaptive_trend_interval_multiplier = Decimal("1.5")
+
+        assert s.counter_interval_pips(1) == Decimal("60.0")
+        assert s.trend_take_profit_pips() == Decimal("75.0")
+
 
 # ===================================================================
 # parse_config / normalize / defaults / validate
@@ -221,6 +229,20 @@ class TestSnowballStrategyClassMethods:
         assert defaults["warmup_enabled"] is False
         assert "warmup_initial_unit_ratio_pct" not in defaults
         assert "warmup_max_positions" not in defaults
+        assert defaults["add_margin_guard_enabled"] is False
+        assert "add_margin_guard_max_pct" not in defaults
+        assert defaults["volatility_guard_enabled"] is False
+        assert "volatility_guard_source" not in defaults
+        assert "volatility_guard_candle_granularity" not in defaults
+        assert defaults["add_trend_guard_enabled"] is False
+        assert "add_trend_candle_granularity" not in defaults
+        assert "add_trend_ema_period" not in defaults
+        assert defaults["adaptive_counter_interval_enabled"] is False
+        assert "adaptive_counter_interval_source" not in defaults
+        assert "adaptive_counter_interval_candle_granularity" not in defaults
+        assert defaults["adaptive_trend_interval_enabled"] is False
+        assert "adaptive_trend_interval_source" not in defaults
+        assert "adaptive_trend_interval_candle_granularity" not in defaults
 
     def test_normalize_parameters_keeps_only_visible_warmup_fields(self):
         result = SnowballStrategy.normalize_parameters(
@@ -247,6 +269,61 @@ class TestSnowballStrategyClassMethods:
         assert result["warmup_completion_mode"] == "tp_closes"
         assert "warmup_min_elapsed_minutes" not in result
         assert result["warmup_required_tp_closes"] == 2
+
+    def test_normalize_parameters_keeps_only_visible_risk_fields(self):
+        result = SnowballStrategy.normalize_parameters(
+            {
+                "add_margin_guard_enabled": True,
+                "add_margin_guard_max_pct": "68",
+                "add_margin_guard_scope": "adds_and_rebuilds",
+                "volatility_guard_enabled": True,
+                "volatility_guard_source": "candle_ema",
+                "volatility_guard_candle_granularity": "M5",
+                "volatility_guard_candle_ema_period": 30,
+                "volatility_guard_atr_period": 14,
+                "add_trend_guard_enabled": True,
+                "add_trend_candle_granularity": "M15",
+                "add_trend_ema_period": 120,
+                "add_trend_max_opposite_deviation_pips": "35",
+                "adaptive_counter_interval_enabled": True,
+                "adaptive_counter_interval_source": "candle_ema",
+                "adaptive_counter_interval_candle_granularity": "H1",
+                "adaptive_counter_interval_reference_pips": "12",
+                "adaptive_trend_interval_enabled": False,
+                "adaptive_trend_interval_source": "atr",
+            }
+        )
+
+        assert result["add_margin_guard_enabled"] is True
+        assert result["add_margin_guard_max_pct"] == "68"
+        assert result["add_margin_guard_scope"] == "adds_and_rebuilds"
+        assert result["volatility_guard_enabled"] is True
+        assert result["volatility_guard_source"] == "candle_ema"
+        assert result["volatility_guard_candle_granularity"] == "M5"
+        assert result["volatility_guard_candle_ema_period"] == 30
+        assert "volatility_guard_atr_period" not in result
+        assert result["add_trend_guard_enabled"] is True
+        assert result["add_trend_candle_granularity"] == "M15"
+        assert result["add_trend_ema_period"] == 120
+        assert result["adaptive_counter_interval_enabled"] is True
+        assert result["adaptive_counter_interval_source"] == "candle_ema"
+        assert result["adaptive_counter_interval_candle_granularity"] == "H1"
+        assert result["adaptive_counter_interval_reference_pips"] == "12"
+        assert "adaptive_counter_interval_atr_period" not in result
+        assert result["adaptive_trend_interval_enabled"] is False
+        assert "adaptive_trend_interval_source" not in result
+
+    def test_normalize_parameters_maps_legacy_tick_ema_source_to_candle_ema(self):
+        result = SnowballStrategy.normalize_parameters(
+            {
+                "volatility_guard_enabled": True,
+                "volatility_guard_source": "tick_ema",
+                "volatility_guard_tick_ema_period": 30,
+            }
+        )
+
+        assert result["volatility_guard_source"] == "candle_ema"
+        assert result["volatility_guard_candle_ema_period"] == 30
 
     def test_parse_config_accepts_persisted_default_parameters(self):
         cfg = SnowballStrategy.parse_config(

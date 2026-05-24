@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from decimal import Decimal
+from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
 
 from apps.trading.dataclasses import StrategyResult
@@ -216,10 +217,13 @@ class SnowballTickContext:
     events: list[StrategyEvent] = field(default_factory=list)
     ratio: Decimal = Decimal("0")
     allow_new_positions: bool = True
+    allow_rebuilds: bool = True
     new_position_limit: int | None = None
     rebuild_limit_per_tick: int | None = None
+    blocked_counter_add_directions: set[Direction] = field(default_factory=set)
     warmup_decision: SnowballWarmupDecision | None = None
     defer_metric_strings: bool = False
+    previous_mid: Decimal | None = None
 
     def set_metric(self, key: str, value: str | int | float | Decimal) -> None:
         self.snowball_state.set_metric(key, value, defer=self.defer_metric_strings)
@@ -238,6 +242,39 @@ class SnowballTickPhaseOutcome:
 
 
 NOOP_PHASE_OUTCOME = SnowballTickPhaseOutcome()
+
+CANDLE_GRANULARITY_SECONDS: dict[str, int] = {
+    "S5": 5,
+    "S10": 10,
+    "S15": 15,
+    "S30": 30,
+    "M1": 60,
+    "M2": 120,
+    "M4": 240,
+    "M5": 300,
+    "M10": 600,
+    "M15": 900,
+    "M30": 1800,
+    "H1": 3600,
+    "H2": 7200,
+    "H3": 10800,
+    "H4": 14400,
+    "H6": 21600,
+    "H8": 28800,
+    "H12": 43200,
+    "D": 86400,
+}
+
+
+@dataclass(frozen=True, slots=True)
+class SnowballCompletedCandle:
+    """Completed mid-price candle built from the task tick stream."""
+
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    previous_close: Decimal | None
 
 
 class SnowballTickStateSerializer:
@@ -332,6 +369,7 @@ class SnowballWarmupPhase:
         )
         context.warmup_decision = decision
         context.allow_new_positions = decision.allow_new_positions
+        context.allow_rebuilds = decision.allow_new_positions
         context.new_position_limit = decision.new_position_limit
         context.rebuild_limit_per_tick = decision.rebuild_limit_per_tick
         current_base_units = context.strategy.config.warmup_scaled_base_units(
@@ -342,6 +380,235 @@ class SnowballWarmupPhase:
         context.set_metric("current_base_units", current_base_units)
         context.set_metric("snowball_current_base_units", current_base_units)
         return NOOP_PHASE_OUTCOME
+
+
+class SnowballRiskGuardPhase:
+    """Apply runtime add/rebuild guards and adaptive interval multipliers."""
+
+    def run(self, context: SnowballTickContext) -> SnowballTickPhaseOutcome:
+        """Update risk indicators and gate this tick's opening decisions."""
+        cfg = context.strategy.config
+        self._reset_runtime_multipliers(context)
+
+        trend_blocked = self._apply_trend_guard(context)
+        if trend_blocked:
+            context.blocked_counter_add_directions.update(trend_blocked)
+
+        counter_multiplier = self._adaptive_multiplier(
+            context,
+            prefix="snowball_adaptive_counter_interval",
+            config=cfg.adaptive_counter_interval,
+        )
+        trend_multiplier = self._adaptive_multiplier(
+            context,
+            prefix="snowball_adaptive_trend_interval",
+            config=cfg.adaptive_trend_interval,
+        )
+        setattr(
+            context.strategy, "_snowball_adaptive_counter_interval_multiplier", counter_multiplier
+        )
+        setattr(context.strategy, "_snowball_adaptive_trend_interval_multiplier", trend_multiplier)
+        context.set_metric("snowball_adaptive_counter_interval_multiplier", counter_multiplier)
+        context.set_metric("snowball_adaptive_trend_interval_multiplier", trend_multiplier)
+
+        block_reasons: list[str] = []
+        rebuild_block_reasons: list[str] = []
+
+        if cfg.add_margin_guard_enabled and context.ratio >= cfg.add_margin_guard_max_pct:
+            block_reasons.append("margin")
+            if cfg.add_margin_guard_scope == "adds_and_rebuilds":
+                rebuild_block_reasons.append("margin")
+
+        if cfg.volatility_guard_enabled and self._volatility_exceeded(
+            context,
+            prefix="snowball_volatility_guard",
+            source=cfg.volatility_guard_source,
+            candle_granularity=cfg.volatility_guard_candle_granularity,
+            atr_period=cfg.volatility_guard_atr_period,
+            baseline_period=cfg.volatility_guard_baseline_period,
+            candle_ema_period=cfg.volatility_guard_candle_ema_period,
+            max_pips=cfg.volatility_guard_max_pips,
+            max_multiplier=cfg.volatility_guard_max_multiplier,
+        ):
+            block_reasons.append("volatility")
+            rebuild_block_reasons.append("volatility")
+
+        if block_reasons:
+            context.allow_new_positions = False
+        if rebuild_block_reasons:
+            context.allow_rebuilds = False
+
+        context.set_metric("snowball_add_block_reason", ",".join(block_reasons))
+        context.set_metric("snowball_rebuild_block_reason", ",".join(rebuild_block_reasons))
+        context.set_metric("snowball_allow_new_positions", int(context.allow_new_positions))
+        context.set_metric("snowball_allow_rebuilds", int(context.allow_rebuilds))
+        if context.blocked_counter_add_directions:
+            context.set_metric(
+                "snowball_trend_blocked_directions",
+                ",".join(
+                    sorted(direction.value for direction in context.blocked_counter_add_directions)
+                ),
+            )
+        else:
+            context.set_metric("snowball_trend_blocked_directions", "")
+        return NOOP_PHASE_OUTCOME
+
+    def _reset_runtime_multipliers(self, context: SnowballTickContext) -> None:
+        setattr(context.strategy, "_snowball_adaptive_counter_interval_multiplier", Decimal("1"))
+        setattr(context.strategy, "_snowball_adaptive_trend_interval_multiplier", Decimal("1"))
+
+    def _apply_trend_guard(self, context: SnowballTickContext) -> set[Direction]:
+        cfg = context.strategy.config
+        prefix = "snowball_trend_guard"
+        completed_candle = _update_candle_state(
+            context,
+            prefix=prefix,
+            granularity=cfg.add_trend_candle_granularity,
+        )
+        previous_ema = _decimal_metric(context.snowball_state.metrics, "snowball_trend_guard_ema")
+        trend_ema = previous_ema
+        slope_pips = _decimal_metric(
+            context.snowball_state.metrics, "snowball_trend_guard_slope_pips"
+        ) or Decimal("0")
+        if completed_candle is not None:
+            trend_ema = _ema_next(
+                current=previous_ema,
+                price=completed_candle.close,
+                period=cfg.add_trend_ema_period,
+            )
+            slope_pips = Decimal("0")
+            if previous_ema is not None:
+                slope_pips = (trend_ema - previous_ema) / context.strategy.pip_size
+            context.set_metric("snowball_trend_guard_ema", trend_ema)
+            context.set_metric("snowball_trend_guard_slope_pips", slope_pips)
+
+        if trend_ema is None:
+            context.set_metric("snowball_trend_guard_deviation_pips", Decimal("0"))
+            context.set_metric("snowball_trend_guard_slope_pips", slope_pips)
+            return set()
+
+        deviation_pips = (context.tick.mid - trend_ema) / context.strategy.pip_size
+        context.set_metric("snowball_trend_guard_deviation_pips", deviation_pips)
+        context.set_metric("snowball_trend_guard_slope_pips", slope_pips)
+
+        if not cfg.add_trend_guard_enabled:
+            return set()
+
+        blocked: set[Direction] = set()
+        if deviation_pips <= -cfg.add_trend_max_opposite_deviation_pips:
+            blocked.add(Direction.LONG)
+        if deviation_pips >= cfg.add_trend_max_opposite_deviation_pips:
+            blocked.add(Direction.SHORT)
+
+        slope_threshold = cfg.add_trend_max_opposite_slope_pips
+        if slope_threshold > 0:
+            if slope_pips <= -slope_threshold:
+                blocked.add(Direction.LONG)
+            if slope_pips >= slope_threshold:
+                blocked.add(Direction.SHORT)
+        return blocked
+
+    def _adaptive_multiplier(
+        self,
+        context: SnowballTickContext,
+        *,
+        prefix: str,
+        config: Any,
+    ) -> Decimal:
+        if not config.enabled:
+            return Decimal("1")
+        volatility, _baseline, reference_baseline = self._volatility_value(
+            context,
+            prefix=prefix,
+            source=config.source,
+            candle_granularity=config.candle_granularity,
+            atr_period=config.atr_period,
+            baseline_period=config.baseline_period,
+            candle_ema_period=config.candle_ema_period,
+        )
+        reference = (
+            reference_baseline
+            if reference_baseline is not None and reference_baseline > 0
+            else config.reference_pips
+        )
+        if volatility is None or volatility <= 0 or reference <= 0:
+            return Decimal("1")
+        multiplier = volatility / reference
+        multiplier = max(config.min_multiplier, multiplier)
+        multiplier = min(config.max_multiplier, multiplier)
+        return multiplier
+
+    def _volatility_exceeded(
+        self,
+        context: SnowballTickContext,
+        *,
+        prefix: str,
+        source: str,
+        candle_granularity: str,
+        atr_period: int,
+        baseline_period: int,
+        candle_ema_period: int,
+        max_pips: Decimal,
+        max_multiplier: Decimal,
+    ) -> bool:
+        volatility, _baseline, reference_baseline = self._volatility_value(
+            context,
+            prefix=prefix,
+            source=source,
+            candle_granularity=candle_granularity,
+            atr_period=atr_period,
+            baseline_period=baseline_period,
+            candle_ema_period=candle_ema_period,
+        )
+        if volatility is None or volatility <= 0:
+            return False
+        if volatility > max_pips:
+            return True
+        return (
+            reference_baseline is not None
+            and reference_baseline > 0
+            and volatility > reference_baseline * max_multiplier
+        )
+
+    def _volatility_value(
+        self,
+        context: SnowballTickContext,
+        *,
+        prefix: str,
+        source: str,
+        candle_granularity: str,
+        atr_period: int,
+        baseline_period: int,
+        candle_ema_period: int,
+    ) -> tuple[Decimal | None, Decimal | None, Decimal | None]:
+        completed_candle = _update_candle_state(
+            context,
+            prefix=prefix,
+            granularity=candle_granularity,
+        )
+        if source == "candle_ema":
+            current_key = f"{prefix}_candle_ema_pips"
+            period = candle_ema_period
+            sample_pips = _candle_close_change_pips(completed_candle, context.strategy.pip_size)
+        else:
+            current_key = f"{prefix}_atr_pips"
+            period = atr_period
+            sample_pips = _candle_true_range_pips(completed_candle, context.strategy.pip_size)
+        baseline_key = f"{prefix}_baseline_pips"
+
+        current = _decimal_metric(context.snowball_state.metrics, current_key)
+        baseline = _decimal_metric(context.snowball_state.metrics, baseline_key)
+        reference_baseline = baseline
+        if sample_pips is not None:
+            current = _ema_next(current=current, price=sample_pips, period=period)
+            baseline = _ema_next(current=baseline, price=current, period=baseline_period)
+            context.set_metric(current_key, current)
+            context.set_metric(baseline_key, baseline)
+        context.set_metric(f"{prefix}_source", source)
+        context.set_metric(f"{prefix}_candle_granularity", candle_granularity)
+        context.set_metric(f"{prefix}_current_pips", current or Decimal("0"))
+        context.set_metric(f"{prefix}_baseline_current_pips", baseline or Decimal("0"))
+        return current, baseline, reference_baseline
 
 
 class SnowballProtectionPhase:
@@ -454,8 +721,10 @@ class SnowballActiveCyclePhase:
             context.snowball_state,
             context.tick,
             allow_new_positions=context.allow_new_positions,
+            allow_rebuilds=context.allow_rebuilds,
             new_position_limit=context.new_position_limit,
             rebuild_limit_per_tick=context.rebuild_limit_per_tick,
+            blocked_counter_add_directions=context.blocked_counter_add_directions,
         )
         context.events.extend(cycle_result.events)
         if not cycle_result.stop_reason:
@@ -534,6 +803,7 @@ class SnowballTickPipeline:
             SnowballInitialInvariantPhase(serializer=serializer),
             SnowballAccountMetricsPhase(),
             SnowballWarmupPhase(),
+            SnowballRiskGuardPhase(),
             SnowballProtectionPhase(serializer=serializer),
             SnowballInitialisationPhase(serializer=serializer),
             SnowballActiveCyclePhase(serializer=serializer),
@@ -568,6 +838,7 @@ class SnowballTickPipeline:
     ) -> SnowballTickContext:
         state_boundary = SnowballExecutionStateBoundary(state=state)
         snowball_state = state_boundary.load()
+        previous_mid = snowball_state.last_mid
         snowball_state.last_bid = tick.bid
         snowball_state.last_ask = tick.ask
         snowball_state.last_mid = tick.mid
@@ -585,6 +856,7 @@ class SnowballTickPipeline:
             defer_metric_strings=bool(
                 getattr(state, "_defer_snowball_runtime_view_updates", False)
             ),
+            previous_mid=previous_mid,
         )
 
 
@@ -594,3 +866,141 @@ def _can_open_new_position(context: SnowballTickContext) -> bool:
     if context.new_position_limit is None:
         return True
     return context.snowball_state.entry_count() < context.new_position_limit
+
+
+def _decimal_metric(metrics: dict[str, Any], key: str) -> Decimal | None:
+    raw = metrics.get(key)
+    if raw in (None, ""):
+        return None
+    try:
+        return Decimal(str(raw))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
+def _int_metric(metrics: dict[str, Any], key: str) -> int | None:
+    raw = metrics.get(key)
+    if raw in (None, ""):
+        return None
+    try:
+        return int(str(raw))
+    except (TypeError, ValueError):
+        return None
+
+
+def _ema_next(*, current: Decimal | None, price: Decimal, period: int) -> Decimal:
+    if current is None:
+        return price
+    alpha = Decimal("2") / Decimal(max(1, period) + 1)
+    return current + (price - current) * alpha
+
+
+def _update_candle_state(
+    context: SnowballTickContext,
+    *,
+    prefix: str,
+    granularity: str,
+) -> SnowballCompletedCandle | None:
+    seconds = CANDLE_GRANULARITY_SECONDS.get(granularity, 60)
+    bucket_epoch = _candle_bucket_epoch(context.tick.timestamp, seconds)
+    metrics = context.snowball_state.metrics
+    bucket_key = f"{prefix}_active_candle_bucket"
+    open_key = f"{prefix}_active_candle_open"
+    high_key = f"{prefix}_active_candle_high"
+    low_key = f"{prefix}_active_candle_low"
+    close_key = f"{prefix}_active_candle_close"
+    previous_close_key = f"{prefix}_previous_candle_close"
+
+    context.set_metric(f"{prefix}_candle_granularity", granularity)
+
+    active_bucket = _int_metric(metrics, bucket_key)
+    active_open = _decimal_metric(metrics, open_key)
+    active_high = _decimal_metric(metrics, high_key)
+    active_low = _decimal_metric(metrics, low_key)
+    active_close = _decimal_metric(metrics, close_key)
+    price = context.tick.mid
+
+    if (
+        active_bucket is None
+        or active_open is None
+        or active_high is None
+        or active_low is None
+        or active_close is None
+    ):
+        _start_candle(context, prefix=prefix, bucket_epoch=bucket_epoch, price=price)
+        return None
+
+    if bucket_epoch == active_bucket:
+        context.set_metric(high_key, max(active_high, price))
+        context.set_metric(low_key, min(active_low, price))
+        context.set_metric(close_key, price)
+        return None
+
+    if bucket_epoch < active_bucket:
+        return None
+
+    previous_close = _decimal_metric(metrics, previous_close_key)
+    completed = SnowballCompletedCandle(
+        open=active_open,
+        high=active_high,
+        low=active_low,
+        close=active_close,
+        previous_close=previous_close,
+    )
+    context.set_metric(f"{prefix}_last_candle_open", completed.open)
+    context.set_metric(f"{prefix}_last_candle_high", completed.high)
+    context.set_metric(f"{prefix}_last_candle_low", completed.low)
+    context.set_metric(f"{prefix}_last_candle_close", completed.close)
+    context.set_metric(f"{prefix}_last_candle_bucket", active_bucket)
+    context.set_metric(previous_close_key, completed.close)
+    _start_candle(context, prefix=prefix, bucket_epoch=bucket_epoch, price=price)
+    return completed
+
+
+def _start_candle(
+    context: SnowballTickContext,
+    *,
+    prefix: str,
+    bucket_epoch: int,
+    price: Decimal,
+) -> None:
+    context.set_metric(f"{prefix}_active_candle_bucket", bucket_epoch)
+    context.set_metric(f"{prefix}_active_candle_open", price)
+    context.set_metric(f"{prefix}_active_candle_high", price)
+    context.set_metric(f"{prefix}_active_candle_low", price)
+    context.set_metric(f"{prefix}_active_candle_close", price)
+
+
+def _candle_bucket_epoch(timestamp: datetime, seconds: int) -> int:
+    ts = timestamp if timestamp.tzinfo is not None else timestamp.replace(tzinfo=UTC)
+    epoch = int(ts.astimezone(UTC).timestamp())
+    return epoch - (epoch % seconds)
+
+
+def _candle_true_range_pips(
+    candle: SnowballCompletedCandle | None,
+    pip_size: Decimal,
+) -> Decimal | None:
+    if candle is None or pip_size <= 0:
+        return None
+    high_low = candle.high - candle.low
+    if candle.previous_close is None:
+        true_range = high_low
+    else:
+        true_range = max(
+            high_low,
+            abs(candle.high - candle.previous_close),
+            abs(candle.low - candle.previous_close),
+        )
+    return abs(true_range) / pip_size
+
+
+def _candle_close_change_pips(
+    candle: SnowballCompletedCandle | None,
+    pip_size: Decimal,
+) -> Decimal | None:
+    if candle is None or pip_size <= 0:
+        return None
+    if candle.previous_close is None:
+        return abs(candle.close - candle.open) / pip_size
+    return abs(candle.close - candle.previous_close) / pip_size

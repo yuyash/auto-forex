@@ -37,6 +37,7 @@ from apps.trading.models.state import ExecutionState
 from apps.trading.strategies.base import Strategy
 from apps.trading.strategies.registry import register_strategy
 from apps.trading.strategies.snowball.calculators import SnowballCalculator
+from apps.trading.strategies.snowball.calculators import round_to_step
 from apps.trading.strategies.snowball.config import SnowballStrategyConfig
 from apps.trading.strategies.snowball.counter_flow import (
     CounterPriceService,
@@ -223,6 +224,8 @@ class SnowballStrategy(Strategy):
         self._close_order_violation: str | None = None
         self._grid_order_violation: str | None = None
         self._last_tolerated_grid_order_violation: str | None = None
+        self._snowball_adaptive_counter_interval_multiplier = Decimal("1")
+        self._snowball_adaptive_trend_interval_multiplier = Decimal("1")
         self.grid_policy = SNOWBALL_GRID_POLICY
         self.decision_engine = SnowballDecisionEngine(
             invariant_validator=SnowballInvariantValidator(config=config),
@@ -254,6 +257,17 @@ class SnowballStrategy(Strategy):
             instrument,
             pip_size,
         )
+
+    def counter_interval_pips(self, step: int) -> Decimal:
+        """Return the runtime counter-side interval after adaptive widening."""
+        base = self.calculator.counter_interval_pips(step)
+        multiplier = max(Decimal("1"), self._snowball_adaptive_counter_interval_multiplier)
+        return round_to_step(base * multiplier, self.config.round_step_pips)
+
+    def trend_take_profit_pips(self) -> Decimal:
+        """Return the runtime trend-side take-profit distance."""
+        multiplier = max(Decimal("1"), self._snowball_adaptive_trend_interval_multiplier)
+        return round_to_step(self.config.m_pips * multiplier, self.config.round_step_pips)
 
     # ------------------------------------------------------------------
     # Registry interface
@@ -653,8 +667,6 @@ class SnowballStrategy(Strategy):
             return []
 
         direction = cycle.direction
-        cfg = self.config
-
         # Determine the dynamic head and its close target.  Shrink and
         # out-of-order closes can move the cycle head away from L1/R0.
         head_entry = cycle.initial_entry
@@ -663,10 +675,11 @@ class SnowballStrategy(Strategy):
 
         head_close_price = head_entry.close_price
         if head_close_price <= 0:
+            tp_pips = self.trend_take_profit_pips()
             if direction == Direction.LONG:
-                head_close_price = head_entry.entry_price + cfg.m_pips * self.pip_size
+                head_close_price = head_entry.entry_price + tp_pips * self.pip_size
             else:
-                head_close_price = head_entry.entry_price - cfg.m_pips * self.pip_size
+                head_close_price = head_entry.entry_price - tp_pips * self.pip_size
 
         # Check if cycle TP is hit based on the head's active close target.
         hit = False
@@ -952,7 +965,7 @@ class SnowballStrategy(Strategy):
             prev_layer=prev_layer,
             direction=direction,
             pip_size=self.pip_size,
-            m_pips=cfg.m_pips,
+            m_pips=self.trend_take_profit_pips(),
         )
 
         layer_entry.close_price = close_price
@@ -1031,7 +1044,7 @@ class SnowballStrategy(Strategy):
         highest = prev_layer.highest_present_slot()
         if highest is None:
             return market_price
-        interval = self.calculator.counter_interval_pips(highest.index + 1)
+        interval = self.counter_interval_pips(highest.index + 1)
         return self.layer_initial_planner.anchor_price(
             prev_layer=prev_layer,
             direction=direction,

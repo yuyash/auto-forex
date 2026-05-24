@@ -135,13 +135,16 @@ class SnowballActiveCycleProcessor:
         tick: Tick,
         *,
         allow_new_positions: bool,
+        allow_rebuilds: bool,
         new_position_limit: int | None = None,
         rebuild_limit_per_tick: int | None = None,
+        blocked_counter_add_directions: set[Direction] | None = None,
     ) -> CycleProcessingResult:
         """Process every active Snowball cycle for the current tick."""
         events: list[StrategyEvent] = []
         trace = self.decision_trace_recorder.start_tick(tick=tick)
         remaining_rebuild_limit = rebuild_limit_per_tick
+        blocked_counter_add_directions = blocked_counter_add_directions or set()
         for cycle in list(ss.iter_active_cycles()):
             result = self._process_cycle(
                 strategy=strategy,
@@ -149,8 +152,10 @@ class SnowballActiveCycleProcessor:
                 tick=tick,
                 cycle=cycle,
                 allow_new_positions=allow_new_positions,
+                allow_rebuilds=allow_rebuilds,
                 new_position_limit=new_position_limit,
                 rebuild_limit_per_tick=remaining_rebuild_limit,
+                blocked_counter_add_directions=blocked_counter_add_directions,
                 trace=trace,
             )
             events.extend(result.events)
@@ -189,8 +194,10 @@ class SnowballActiveCycleProcessor:
         tick: Tick,
         cycle: SnowballCycle,
         allow_new_positions: bool,
+        allow_rebuilds: bool,
         new_position_limit: int | None,
         rebuild_limit_per_tick: int | None,
+        blocked_counter_add_directions: set[Direction],
         trace: SnowballDecisionTrace | DisabledSnowballDecisionTrace,
     ) -> CycleProcessingResult:
         events: list[StrategyEvent] = []
@@ -198,7 +205,7 @@ class SnowballActiveCycleProcessor:
         rebuild_count = 0
         if cycle.grid.is_empty() and cycle.grid.has_pending_rebuilds():
             cycle.status = CycleStatus.PENDING
-            if allow_new_positions and self._can_open_new_position(ss, new_position_limit):
+            if allow_rebuilds and self._can_open_new_position(ss, new_position_limit):
                 rebuild_events = strategy._process_stop_loss_rebuilds(
                     ss,
                     tick,
@@ -225,7 +232,7 @@ class SnowballActiveCycleProcessor:
                 trace.record(
                     phase="pending_rebuild",
                     outcome="skipped",
-                    reason="new_positions_not_allowed",
+                    reason="rebuilds_not_allowed",
                     cycle=cycle,
                 )
             if cycle.grid.is_empty():
@@ -286,7 +293,7 @@ class SnowballActiveCycleProcessor:
         )
         events.extend(stop_loss_events)
 
-        if allow_new_positions and self._can_open_new_position(ss, new_position_limit):
+        if allow_rebuilds and self._can_open_new_position(ss, new_position_limit):
             rebuild_events = strategy._process_stop_loss_rebuilds(
                 ss,
                 tick,
@@ -313,7 +320,7 @@ class SnowballActiveCycleProcessor:
             trace.record(
                 phase="stop_loss_rebuild",
                 outcome="skipped",
-                reason="new_positions_not_allowed",
+                reason="rebuilds_not_allowed",
                 cycle=cycle,
             )
 
@@ -323,7 +330,16 @@ class SnowballActiveCycleProcessor:
             and self._can_open_new_position(ss, new_position_limit)
             and not counter_close_events
         ):
-            strategy._validate_grid_ordering(cycle)
+            if cycle.direction in blocked_counter_add_directions:
+                trace.record(
+                    phase="counter_add",
+                    outcome="skipped",
+                    reason="trend_guard",
+                    cycle=cycle,
+                )
+                order_checked_without_new_mutations = True
+            else:
+                strategy._validate_grid_ordering(cycle)
             if strategy._grid_order_violation:
                 self.logger.debug(
                     "Skipping Snowball counter adds while grid ordering is violated: %s",
@@ -337,7 +353,7 @@ class SnowballActiveCycleProcessor:
                 )
                 strategy._grid_order_violation = None
                 order_checked_without_new_mutations = True
-            else:
+            elif cycle.direction not in blocked_counter_add_directions:
                 max_iterations = max(1, strategy.config.f_max * (strategy.config.r_max + 1))
                 opened_new_position = False
                 for _ in range(max_iterations):
