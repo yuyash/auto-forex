@@ -22,9 +22,11 @@ import {
   Stack,
   ToggleButton,
   ToggleButtonGroup,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { LineChart } from '@mui/x-charts/LineChart';
 import { BarChart } from '@mui/x-charts/BarChart';
 import { ChartsReferenceLine } from '@mui/x-charts/ChartsReferenceLine';
@@ -529,6 +531,42 @@ const SUMMARY_CHIP_SX = {
   },
 };
 
+function SnowballMetricHelp({
+  metricKey,
+  children,
+}: {
+  metricKey: string;
+  children: ReactNode;
+}) {
+  const { t } = useTranslation('common');
+  const description = t(`metrics.snowball_metric_descriptions.${metricKey}`, {
+    defaultValue: '',
+  });
+  if (!description) return children;
+  return (
+    <Tooltip title={description} arrow enterTouchDelay={0}>
+      <Box
+        component="span"
+        sx={{ display: 'inline-flex', minWidth: 0, maxWidth: '100%' }}
+      >
+        {children}
+      </Box>
+    </Tooltip>
+  );
+}
+
+function SnowballHelpIcon({ metricKey }: { metricKey: string }) {
+  return (
+    <SnowballMetricHelp metricKey={metricKey}>
+      <InfoOutlinedIcon
+        fontSize="inherit"
+        color="action"
+        sx={{ ml: 0.5, verticalAlign: '-0.125em' }}
+      />
+    </SnowballMetricHelp>
+  );
+}
+
 function SnowballRiskGuardSummary({ latest }: { latest: MetricPoint | null }) {
   const { t } = useTranslation('common');
   if (!latest) return null;
@@ -658,6 +696,7 @@ function SnowballRiskGuardSummary({ latest }: { latest: MetricPoint | null }) {
             {t('metrics.snowball_risk_guard', {
               defaultValue: 'Snowball Risk Guard',
             })}
+            <SnowballHelpIcon metricKey="snowball_risk_guard" />
           </Typography>
           {allowNewPositions != null ? (
             <Chip
@@ -740,9 +779,13 @@ function SnowballRiskGuardSummary({ latest }: { latest: MetricPoint | null }) {
                   color="text.secondary"
                   sx={{ display: 'block' }}
                 >
-                  {t(`metrics.${item.key}`, {
-                    defaultValue: item.key.replace(/_/g, ' '),
-                  })}
+                  <SnowballMetricHelp metricKey={item.key}>
+                    <span>
+                      {t(`metrics.${item.key}`, {
+                        defaultValue: item.key.replace(/_/g, ' '),
+                      })}
+                    </span>
+                  </SnowballMetricHelp>
                 </Typography>
                 <Typography variant="body2">
                   {formatCompactMetric(item.value, {
@@ -757,17 +800,18 @@ function SnowballRiskGuardSummary({ latest }: { latest: MetricPoint | null }) {
         {sourceItems.length > 0 ? (
           <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
             {sourceItems.map((item) => (
-              <Chip
-                key={item.key}
-                size="small"
-                variant="outlined"
-                sx={SUMMARY_CHIP_SX}
-                label={`${t(`metrics.${item.key}`, {
-                  defaultValue: item.key.replace(/_/g, ' '),
-                })}: ${t(`metrics.snowball_guard_sources.${item.value}`, {
-                  defaultValue: item.value,
-                })}`}
-              />
+              <SnowballMetricHelp key={item.key} metricKey={item.key}>
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  sx={SUMMARY_CHIP_SX}
+                  label={`${t(`metrics.${item.key}`, {
+                    defaultValue: item.key.replace(/_/g, ' '),
+                  })}: ${t(`metrics.snowball_guard_sources.${item.value}`, {
+                    defaultValue: item.value,
+                  })}`}
+                />
+              </SnowballMetricHelp>
             ))}
           </Stack>
         ) : null}
