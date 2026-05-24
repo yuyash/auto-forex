@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.10.0](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.9.0...backend-v2.10.0) (2026-05-24)
+
+
+### Features
+
+* **strategy:** add snowball risk guards ([#811](https://github.com/yuyash/auto-forex-web-service/issues/811)) ([b955e1c](https://github.com/yuyash/auto-forex-web-service/commit/b955e1c8527a2faa1fa880c5605ea7e68800ff89))
+
 ## [2.9.0](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.8.1...backend-v2.9.0) (2026-05-24)
 
 
