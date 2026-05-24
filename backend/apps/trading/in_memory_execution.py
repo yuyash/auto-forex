@@ -154,6 +154,7 @@ class InMemoryOrderRepository:
         position: Position | None = None,
         layer_index: int | None = None,
         retracement_count: int | None = None,
+        oanda_response_seconds: Decimal | None = None,
     ) -> Order:
         order = Order(
             task_type=self.task_type.value,
@@ -169,6 +170,7 @@ class InMemoryOrderRepository:
             fill_price=oanda_order.price,
             status=OrderStatus.FILLED,
             filled_at=filled_at,
+            oanda_response_seconds=oanda_response_seconds,
             stop_loss=stop_loss,
             is_dry_run=self.dry_run,
             position=position,
@@ -192,6 +194,7 @@ class InMemoryOrderRepository:
         stop_loss: Decimal | None = None,
         oanda_trade_id: str | None = None,
         position: Position | None = None,
+        oanda_response_seconds: Decimal | None = None,
     ) -> Order:
         order = Order(
             task_type=self.task_type.value,
@@ -204,6 +207,7 @@ class InMemoryOrderRepository:
             requested_price=requested_price,
             stop_loss=stop_loss,
             oanda_trade_id=oanda_trade_id,
+            oanda_response_seconds=oanda_response_seconds,
             status=OrderStatus.REJECTED,
             error_message=public_error_message,
             is_dry_run=self.dry_run,

@@ -2,7 +2,7 @@
 
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 from apps.trading.dataclasses import EntryExecutionBinding, EventExecutionResult
 from apps.trading.enums import TaskType
@@ -31,6 +31,7 @@ def _executor(*, task_type: TaskType = TaskType.BACKTEST):
         _runtime_metrics=SimpleNamespace(
             record_position_closed=MagicMock(),
             record_trade=MagicMock(),
+            record_oanda_order_response=MagicMock(),
         ),
         _classify_replay_event=MagicMock(return_value="new"),
         _event_already_applied=MagicMock(return_value=False),
@@ -63,6 +64,28 @@ def test_process_applies_execution_result_and_records_metrics():
     executor.engine.apply_event_execution_result.assert_called_once()
     executor._mark_event_processed.assert_called_once_with(event)
     executor._refresh_open_positions_cache.assert_called_once()
+
+
+def test_process_records_oanda_order_response_metrics():
+    executor = _executor()
+    executor.event_handler.handle_event_with_replay.return_value = EventExecutionResult(
+        oanda_response_seconds=(Decimal("0.123456"), Decimal("0.234567")),
+    )
+    state = SimpleNamespace(current_balance=Decimal("100"))
+    event = SimpleNamespace(
+        pk="event-1",
+        is_processed=False,
+        event_type="trade_executed",
+        details={},
+        position_id=None,
+    )
+
+    TaskEventProcessor(executor).process(state, [event])
+
+    assert executor._runtime_metrics.record_oanda_order_response.call_args_list == [
+        call(Decimal("0.123456")),
+        call(Decimal("0.234567")),
+    ]
 
 
 def test_process_skips_already_applied_trading_replay_events():

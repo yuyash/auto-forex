@@ -212,6 +212,7 @@ class TaskStrategyDataMixin:
                     "currency": serializers.CharField(allow_null=True),
                     "timezone": serializers.CharField(),
                     "periods": serializers.JSONField(),
+                    "returns": serializers.JSONField(),
                 },
             )
         },

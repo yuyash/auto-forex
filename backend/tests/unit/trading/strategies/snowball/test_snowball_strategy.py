@@ -1075,6 +1075,32 @@ class TestCounterCloses:
         assert layer.slot_at(1).entry is None
         assert layer.slot_at(2).entry is None
 
+    def test_counter_tp_does_not_close_on_open_tick(self):
+        s = _strategy(counter_tp_mode="fixed", counter_tp_pips="10")
+        ss = SnowballStrategyState(initialised=True, account_nav=Decimal("100000"))
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        layer = Layer.create(1, 7, 1000)
+        counter = Entry(
+            entry_id=2,
+            step=2,
+            direction=Direction.LONG,
+            entry_price=Decimal("149.80"),
+            close_price=Decimal("150.10"),
+            units=2000,
+            opened_at=T0,
+            role="counter",
+            layer_number=1,
+            retracement_count=1,
+        )
+        layer.slot_at(1).fill(counter)
+        cycle.add_layer(layer)
+        ss.cycles.append(cycle)
+
+        events = s._process_cycle_counter_closes(ss, _tick(T0, "150.20", "150.22"), cycle)
+
+        assert events == []
+        assert layer.slot_at(1).entry is counter
+
     def test_non_primary_layer_r0_close_removes_empty_layer(self):
         from apps.trading.enums import Direction
         from apps.trading.strategies.snowball.cycle_state import (

@@ -201,6 +201,8 @@ class StopLossProtectionPolicy:
 
     def hit(self, entry: Entry, tick: Tick) -> bool:
         """Return True when the tick has crossed the entry's stop-loss price."""
+        if not entry.can_close_on_tick(tick):
+            return False
         stop_loss_price = entry.stop_loss_price
         if stop_loss_price is None:
             return False

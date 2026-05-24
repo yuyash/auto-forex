@@ -120,6 +120,10 @@ class Entry:
     def exit_price(self, tick: "Tick") -> Decimal:
         return tick.bid if self.is_long else tick.ask
 
+    def can_close_on_tick(self, tick: "Tick") -> bool:
+        """Return True when the tick is strictly after the entry-open tick."""
+        return tick.timestamp > self.opened_at
+
     def unrealised_loss_pips(self, mid_price: Decimal, pip_size: Decimal) -> Decimal:
         """Positive = losing."""
         if self.is_long:

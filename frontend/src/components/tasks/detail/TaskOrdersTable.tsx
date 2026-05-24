@@ -142,6 +142,20 @@ export const TaskOrdersTable: React.FC<TaskOrdersTableProps> = ({
     []
   );
 
+  const formatMilliseconds = useCallback(
+    (seconds: string | number | null | undefined): string => {
+      if (seconds == null || seconds === '') return '-';
+      const numericValue =
+        typeof seconds === 'string' ? parseFloat(seconds) : Number(seconds);
+      if (!Number.isFinite(numericValue)) return '-';
+      return `${formatAppNumber(numericValue * 1000, {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 1,
+      })} ms`;
+    },
+    []
+  );
+
   const statusColor = (
     status: string
   ): 'success' | 'error' | 'warning' | 'default' | 'info' => {
@@ -171,7 +185,7 @@ export const TaskOrdersTable: React.FC<TaskOrdersTableProps> = ({
     },
     {
       id: 'submitted_at',
-      label: t('tables.orders.timestamp'),
+      label: t('tables.orders.processedAt'),
       width: 220,
       minWidth: 220,
       render: (row) =>
@@ -316,6 +330,14 @@ export const TaskOrdersTable: React.FC<TaskOrdersTableProps> = ({
       render: (row) => (row.filled_at ? formatTimestamp(row.filled_at) : '-'),
     },
     {
+      id: 'oanda_response_seconds',
+      label: t('tables.orders.oandaResponseMs'),
+      width: 140,
+      minWidth: 125,
+      align: 'right',
+      render: (row) => formatMilliseconds(row.oanda_response_seconds),
+    },
+    {
       id: 'stop_loss',
       label: t('tables.orders.stopLoss'),
       width: 95,
@@ -375,6 +397,8 @@ export const TaskOrdersTable: React.FC<TaskOrdersTableProps> = ({
       requested_price: (r) => formatPrice(r.requested_price, 5),
       fill_price: (r) => formatPrice(r.fill_price, 5),
       filled_at: (r) => (r.filled_at ? formatTimestamp(r.filled_at) : '-'),
+      oanda_response_seconds: (r) =>
+        formatMilliseconds(r.oanda_response_seconds),
       stop_loss: (r) => formatPrice(r.stop_loss, 5),
       error_message: (r) => r.error_message || '-',
     };
@@ -386,6 +410,7 @@ export const TaskOrdersTable: React.FC<TaskOrdersTableProps> = ({
     selection.copySelectedRows(headers, formatRow, pageRowIds);
   }, [
     formatPrice,
+    formatMilliseconds,
     formatTimestamp,
     orders,
     pageRowIds,

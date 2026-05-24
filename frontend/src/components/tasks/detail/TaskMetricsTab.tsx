@@ -34,6 +34,7 @@ import { useTranslation } from 'react-i18next';
 import type {
   LossCutEvent,
   MetricPoint,
+  PeriodicReturnMetricPoint,
   PeriodicTradeMetricPoint,
   PeriodicTradeMetricsResponse,
 } from '../../../utils/fetchMetrics';
@@ -98,7 +99,7 @@ interface TaskMetricsTabProps {
   onToggleLossCutMarkers?: (next: boolean) => void;
 }
 
-type MetricFormat = 'pct' | 'int' | 'currency' | 'rate';
+type MetricFormat = 'pct' | 'int' | 'currency' | 'rate' | 'ms';
 
 type ChartMetric = {
   key: string;
@@ -138,6 +139,16 @@ const CHART_METRICS: MetricChartDefinition[] = [
     series: [
       { key: 'oanda_tick_publish_latency_seconds', color: '#00897b' },
       { key: 'trading_tick_receive_latency_seconds', color: '#c2185b' },
+    ],
+  },
+  {
+    key: 'oanda_order_response_ms',
+    color: '#6d4c41',
+    format: 'ms',
+    series: [
+      { key: 'oanda_order_response_ms', color: '#6d4c41', format: 'ms' },
+      { key: 'oanda_order_response_avg_ms', color: '#1565c0', format: 'ms' },
+      { key: 'oanda_order_response_max_ms', color: '#c62828', format: 'ms' },
     ],
   },
   { key: 'open_positions', color: '#0288d1', format: 'int' },
@@ -210,6 +221,16 @@ const SNOWBALL_NET_CHART_METRICS: MetricChartDefinition[] = [
     series: [
       { key: 'oanda_tick_publish_latency_seconds', color: '#00897b' },
       { key: 'trading_tick_receive_latency_seconds', color: '#c2185b' },
+    ],
+  },
+  {
+    key: 'oanda_order_response_ms',
+    color: '#6d4c41',
+    format: 'ms',
+    series: [
+      { key: 'oanda_order_response_ms', color: '#6d4c41', format: 'ms' },
+      { key: 'oanda_order_response_avg_ms', color: '#1565c0', format: 'ms' },
+      { key: 'oanda_order_response_max_ms', color: '#c62828', format: 'ms' },
     ],
   },
   { key: 'snowball_net_net_units', color: '#0288d1', format: 'int' },
@@ -388,13 +409,6 @@ function metricChartValue(
         ? metricCurrency(metrics, metric.key, fallbackCurrency)
         : undefined,
   };
-}
-
-function totalReturnValue(point: MetricPoint): number | null {
-  const raw = point.metrics.total_return;
-  if (raw == null || raw === '') return null;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : null;
 }
 
 function chartSeries(chart: MetricChartDefinition): ChartMetric[] {
@@ -820,123 +834,42 @@ function SnowballRiskGuardSummary({ latest }: { latest: MetricPoint | null }) {
   );
 }
 
-function datePartsInTimezone(
-  date: Date,
-  timezone: string
-): { year: number; month: number; day: number } {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date);
-  const values = Object.fromEntries(
-    parts
-      .filter((part) => part.type !== 'literal')
-      .map((part) => [part.type, part.value])
-  ) as Record<string, string | undefined>;
-  return {
-    year: Number(values.year ?? '1970'),
-    month: Number(values.month ?? '1'),
-    day: Number(values.day ?? '1'),
-  };
+type PeriodicChartData = {
+  labels: string[];
+  series: { metric: ChartMetric; values: number[] }[];
+  yValues: number[];
+  lastValue: number;
+};
+
+type PeriodicReturnChartData = {
+  labels: string[];
+  values: number[];
+  lastValue: number;
+};
+
+function periodicReturnValue(point: PeriodicReturnMetricPoint): number | null {
+  const value = Number(point.period_return);
+  return Number.isFinite(value) ? value : null;
 }
 
-function periodKeyAndLabel(
-  date: Date,
-  period: ReturnPeriod,
-  timezone: string
-): { key: string; label: string } {
-  const { year, month, day } = datePartsInTimezone(date, timezone);
-  const monthText = String(month).padStart(2, '0');
-  const dayText = String(day).padStart(2, '0');
-  if (period === 'day') {
-    return {
-      key: `${year}-${monthText}-${dayText}`,
-      label: `${monthText}/${dayText}`,
-    };
-  }
-  if (period === 'month') {
-    return {
-      key: `${year}-${monthText}`,
-      label: `${year}-${monthText}`,
-    };
-  }
-  if (period === 'year') {
-    return { key: String(year), label: String(year) };
-  }
-
-  const localDate = new Date(Date.UTC(year, month - 1, day));
-  const weekday = localDate.getUTCDay() || 7;
-  const weekStartDate = new Date(localDate);
-  weekStartDate.setUTCDate(localDate.getUTCDate() + 1 - weekday);
-  const weekAnchorDate = new Date(localDate);
-  weekAnchorDate.setUTCDate(localDate.getUTCDate() + 4 - weekday);
-  const weekYear = weekAnchorDate.getUTCFullYear();
-  const yearStart = new Date(Date.UTC(weekYear, 0, 1));
-  const week = Math.ceil(
-    ((weekAnchorDate.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7
-  );
-  const weekText = String(week).padStart(2, '0');
-  const weekStartMonthText = String(weekStartDate.getUTCMonth() + 1).padStart(
-    2,
-    '0'
-  );
-  const weekStartDayText = String(weekStartDate.getUTCDate()).padStart(2, '0');
-  return {
-    key: `${weekYear}-W${weekText}`,
-    label: `${weekStartDate.getUTCFullYear()}-${weekStartMonthText}-${weekStartDayText}`,
-  };
+function hasPeriodicReturnValues(
+  points: PeriodicReturnMetricPoint[] | undefined
+): boolean {
+  return points?.some((point) => periodicReturnValue(point) != null) ?? false;
 }
 
-function buildPeriodReturnData(
-  points: MetricPoint[],
-  period: ReturnPeriod,
-  timezone: string
-): { labels: string[]; values: number[]; lastValue: number } | null {
-  const sorted = [...points].sort((a, b) => a.t - b.t);
+function buildPeriodicReturnChartData(
+  points: PeriodicReturnMetricPoint[] | undefined
+): PeriodicReturnChartData | null {
+  if (!points || points.length === 0) return null;
   const labels: string[] = [];
   const values: number[] = [];
-  let current: {
-    key: string;
-    label: string;
-    startReference: number;
-    last: number;
-  } | null = null;
-  let previousReturn: number | null = null;
-
-  const flushCurrent = () => {
-    if (!current) return;
-    labels.push(current.label);
-    values.push(current.last - current.startReference);
-  };
-
-  for (const point of sorted) {
-    const value = totalReturnValue(point);
+  for (const point of points) {
+    const value = periodicReturnValue(point);
     if (value == null) continue;
-    const bucket = periodKeyAndLabel(
-      new Date(point.t * 1000),
-      period,
-      timezone
-    );
-    if (current && current.key !== bucket.key) {
-      flushCurrent();
-      current = null;
-    }
-    if (!current) {
-      current = {
-        key: bucket.key,
-        label: bucket.label,
-        startReference: previousReturn ?? value,
-        last: value,
-      };
-    } else {
-      current.last = value;
-    }
-    previousReturn = value;
+    labels.push(point.label);
+    values.push(value);
   }
-  flushCurrent();
-
   if (labels.length === 0 || values.length === 0) return null;
   return {
     labels,
@@ -944,13 +877,6 @@ function buildPeriodReturnData(
     lastValue: values[values.length - 1],
   };
 }
-
-type PeriodicChartData = {
-  labels: string[];
-  series: { metric: ChartMetric; values: number[] }[];
-  yValues: number[];
-  lastValue: number;
-};
 
 function periodicMetricValue(
   point: PeriodicTradeMetricPoint,
@@ -1164,6 +1090,11 @@ function formatYLabel(v: number, format?: MetricFormat): string {
       minimumFractionDigits: 1,
       maximumFractionDigits: 1,
     })}/s`;
+  if (format === 'ms')
+    return `${formatAppNumber(v, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 1,
+    })}ms`;
   return formatAppNumber(v, {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
@@ -1460,13 +1391,12 @@ export function TaskMetricsTab({
       strategyType === 'snowball' ? latestSnowballRiskGuardPoint(data) : null,
     [data, strategyType]
   );
-  const hasTotalReturnData = useMemo(
-    () => data.some((point) => totalReturnValue(point) != null),
-    [data]
-  );
   const availableReturnCharts = useMemo(
-    () => (hasTotalReturnData ? RETURN_BAR_CHARTS : []),
-    [hasTotalReturnData]
+    () =>
+      RETURN_BAR_CHARTS.filter((chart) =>
+        hasPeriodicReturnValues(periodicMetrics?.returns?.[chart.period])
+      ),
+    [periodicMetrics]
   );
   const defaultReturnPeriod = useMemo(
     () =>
@@ -1485,10 +1415,10 @@ export function TaskMetricsTab({
     requestedReturnPeriod;
   const activeReturnChartData = useMemo(
     () =>
-      hasTotalReturnData
-        ? buildPeriodReturnData(data, effectiveReturnPeriod, timezone)
-        : null,
-    [data, effectiveReturnPeriod, hasTotalReturnData, timezone]
+      buildPeriodicReturnChartData(
+        periodicMetrics?.returns?.[effectiveReturnPeriod]
+      ),
+    [effectiveReturnPeriod, periodicMetrics]
   );
 
   const availableTpSlPeriods = useMemo(
@@ -1835,6 +1765,7 @@ export function TaskMetricsTab({
 
   const hasAnyChart =
     data.length > 0 ||
+    availableReturnCharts.length > 0 ||
     availableTpSlPeriods.length > 0 ||
     availablePositionActivityPeriods.length > 0;
 
@@ -1914,6 +1845,11 @@ export function TaskMetricsTab({
         minimumFractionDigits: 1,
         maximumFractionDigits: 1,
       })}/s`;
+    if (format === 'ms')
+      return `${formatAppNumber(val, {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 1,
+      })} ms`;
     if (format === 'currency')
       return formatMoneyAmount(val, valueCurrency ?? currency, {
         minimumFractionDigits: 0,

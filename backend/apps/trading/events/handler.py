@@ -6,7 +6,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from logging import Logger, getLogger
 from typing import Any
 
@@ -36,6 +36,14 @@ class CycleResolutionError(Exception):
 
     This indicates corrupt or inconsistent strategy state — the task
     must stop because continuing would create orphaned positions.
+    """
+
+
+class ClosePositionResolutionError(Exception):
+    """Raised when a close event cannot identify its exact target position.
+
+    Closing an arbitrary same-layer position corrupts realized P/L and cycle
+    attribution.  The task must stop instead of continuing with a guessed target.
     """
 
 
@@ -184,10 +192,16 @@ class EventHandler:
         # Populated by handle_open_position so that subsequent close
         # trades and child entries can inherit the correct cycle_id.
         self._entry_id_to_cycle_id: dict[int, str] = {}
+        # Maps strategy-internal entry_id -> Position.id for exact close
+        # targeting within one execution batch.  This covers open/rebuild and
+        # close events emitted on the same tick before strategy state is rebound.
+        self._entry_id_to_position_id: dict[int, str] = {}
         # Sequence number from the current TradingEvent being processed.
         self._current_sequence_number: int = 0
         self._current_replay_mode = False
         self._affected_refs = self._new_affected_refs()
+        self._current_oanda_response_seconds: list[Decimal] = []
+        self._current_oanda_response_order_ids: set[str] = set()
 
     @staticmethod
     def _event_type_key(strategy_event: StrategyEvent) -> str:
@@ -239,53 +253,50 @@ class EventHandler:
         self.positions.rehydrate_layer_positions(layer_number)
 
     def _find_close_position_target(self, event: ClosePositionEvent) -> Position | None:
-        # If the event carries a specific position_id, use it directly.
-        if event.position_id:
-            candidate = self._get_open_position_by_id(event.position_id)
-            if candidate:
-                return candidate
-            logger.warning(
-                "position_id %s from ClosePositionEvent not found or already closed, "
-                "falling back to entry-time lookup for layer %s",
-                event.position_id,
-                event.layer_number,
+        position_id = str(event.position_id or "").strip()
+        source = "position_id"
+        if not position_id:
+            entry_id = getattr(event, "entry_id", None)
+            if entry_id is not None:
+                position_id = self._entry_id_to_position_id.get(int(entry_id), "")
+                source = "entry_id"
+
+        if not position_id:
+            raise ClosePositionResolutionError(
+                "ClosePositionEvent does not identify an open position: "
+                f"entry_id={getattr(event, 'entry_id', None)}, "
+                f"position_id={event.position_id}, layer={event.layer_number}, "
+                f"direction={event.direction}. Refusing to close an inferred position."
             )
 
-        layer_number = event.layer_number
+        candidate = self._get_open_position_by_id(position_id)
+        if not candidate:
+            raise ClosePositionResolutionError(
+                "ClosePositionEvent target is missing or already closed: "
+                f"{source}={position_id}, entry_id={getattr(event, 'entry_id', None)}, "
+                f"layer={event.layer_number}, direction={event.direction}."
+            )
+
         direction = Direction(event.direction)
-        self._rehydrate_layer_positions(layer_number)
-        stack = self.layer_position_ids.get(layer_number, [])
-
-        # Oldest first (entry-time order), filtered by direction
-        stale_ids: list[str] = []
-        result: Position | None = None
-        for candidate_id in stack:
-            candidate = self._get_open_position_by_id(candidate_id)
-            if not candidate:
-                stale_ids.append(candidate_id)
-                continue
-            if candidate.direction == direction.value:
-                result = candidate
-                break
-        for sid in stale_ids:
-            stack.remove(sid)
-        if result:
-            return result
-
-        fallback = (
-            Position.objects.filter(
-                task_type=self.order_service.task_type,
-                task_id=self._task_pk,
-                execution_id=self._execution_id,
-                instrument=self.instrument,
-                direction=direction,
-                is_open=True,
-                layer_index=layer_number,
+        if candidate.direction != direction.value:
+            raise ClosePositionResolutionError(
+                "ClosePositionEvent target direction mismatch: "
+                f"position_id={candidate.id}, position_direction={candidate.direction}, "
+                f"event_direction={direction.value}."
             )
-            .order_by("entry_time")
-            .first()
-        )
-        return fallback
+        if candidate.instrument != self.instrument:
+            raise ClosePositionResolutionError(
+                "ClosePositionEvent target instrument mismatch: "
+                f"position_id={candidate.id}, position_instrument={candidate.instrument}, "
+                f"handler_instrument={self.instrument}."
+            )
+        if candidate.layer_index is not None and candidate.layer_index != event.layer_number:
+            raise ClosePositionResolutionError(
+                "ClosePositionEvent target layer mismatch: "
+                f"position_id={candidate.id}, position_layer={candidate.layer_index}, "
+                f"event_layer={event.layer_number}."
+            )
+        return candidate
 
     def _prune_closed_position(self, layer_number: int, position: Position) -> None:
         self.positions.prune_closed_position(layer_number, position)
@@ -389,6 +400,8 @@ class EventHandler:
         self._current_sequence_number = getattr(trading_event, "sequence_number", 0) or 0
         self._current_replay_mode = replaying
         self._affected_refs = self._new_affected_refs()
+        self._current_oanda_response_seconds = []
+        self._current_oanda_response_order_ids = set()
         # Restore cycle-tracking fields from TradingEvent model columns
         # (these are not stored in the details JSON).
         if trading_event.root_entry_id is not None:
@@ -406,7 +419,14 @@ class EventHandler:
                     category, self._dispatch_informational
                 )
                 result = category_handler(strategy_event)
-            return replace(result, **self._snapshot_affected_refs())
+            return replace(
+                result,
+                **self._snapshot_affected_refs(),
+                oanda_response_seconds=(
+                    *result.oanda_response_seconds,
+                    *self._current_oanda_response_seconds,
+                ),
+            )
         finally:
             self._current_replay_mode = False
 
@@ -684,6 +704,8 @@ class EventHandler:
         )
 
         self._cache_position(event.layer_number, position)
+        if event.entry_id is not None:
+            self._entry_id_to_position_id[event.entry_id] = str(position.id)
         trade = self._record_trade(
             direction=direction,
             units=event.units,
@@ -759,24 +781,46 @@ class EventHandler:
 
         return position
 
-    def _resolve_cycle_id_for_close(self, event: ClosePositionEvent) -> str | None:
+    def _resolve_cycle_id_for_close(
+        self,
+        event: ClosePositionEvent,
+        position: Position | None = None,
+    ) -> str | None:
         """Look up cycle_id for a close trade from the entry being closed."""
+        position_cycle_id = self._resolve_cycle_id_for_position(position) if position else None
+
         eid = getattr(event, "entry_id", None)
+        event_cycle_id: str | None = None
         if eid is not None and eid in self._entry_id_to_cycle_id:
-            return self._entry_id_to_cycle_id[eid]
+            event_cycle_id = self._entry_id_to_cycle_id[eid]
 
         root_eid = getattr(event, "root_entry_id", None)
-        if root_eid is not None and root_eid in self._entry_id_to_cycle_id:
-            return self._entry_id_to_cycle_id[root_eid]
+        if (
+            event_cycle_id is None
+            and root_eid is not None
+            and root_eid in self._entry_id_to_cycle_id
+        ):
+            event_cycle_id = self._entry_id_to_cycle_id[root_eid]
 
         # DB fallback: look up cycle_id from the open/rebuild trade that
         # created this position.  This covers edge cases where the
         # in-memory mapping was lost or overwritten.
-        cycle_id = self._resolve_cycle_id_from_db(
-            root_eid,
-            eid,
-            direction=getattr(event, "direction", None),
-        )
+        if event_cycle_id is None:
+            event_cycle_id = self._resolve_cycle_id_from_db(
+                root_eid,
+                eid,
+                direction=getattr(event, "direction", None),
+            )
+
+        if position_cycle_id and event_cycle_id and str(position_cycle_id) != str(event_cycle_id):
+            raise CycleResolutionError(
+                "ClosePositionEvent cycle mismatch: "
+                f"position_id={getattr(position, 'id', None)}, "
+                f"position_cycle_id={position_cycle_id}, event_cycle_id={event_cycle_id}, "
+                f"entry_id={eid}."
+            )
+
+        cycle_id = position_cycle_id or event_cycle_id
         if cycle_id is not None:
             if eid is not None:
                 self._entry_id_to_cycle_id[eid] = cycle_id
@@ -807,9 +851,10 @@ class EventHandler:
                     task_id=self._task_pk,
                     execution_id=self._execution_id,
                     position_id=position.id,
-                    execution_method="open_position",
+                    execution_method__in=["open_position", "rebuild_position"],
                     cycle_id__isnull=False,
                 )
+                .order_by("timestamp", "sequence_number", "created_at")
                 .values_list("cycle_id", flat=True)
                 .first()
             )
@@ -992,11 +1037,11 @@ class EventHandler:
         return None
 
     def handle_close_position(self, event: ClosePositionEvent) -> tuple[Decimal, Decimal]:
-        """Close one or more positions.
+        """Close the exact position referenced by a close event.
 
-        When the requested units exceed a single position's size, this
-        method iterates through multiple positions in the same layer
-        until the full amount is closed or no more open positions remain.
+        ClosePositionEvent must identify one open position directly by
+        ``position_id`` or by a same-batch ``entry_id`` binding.  It must not
+        spill remaining units into another position.
 
         Args:
             event: Close position event with close details
@@ -1020,23 +1065,20 @@ class EventHandler:
         while True:
             position = self._find_close_position_target(event)
             if not position:
-                if realized_delta_total == Decimal("0"):
-                    logger.error(
-                        "Cannot close position: no open position found for layer %s, direction %s",
-                        event.layer_number,
-                        event.direction,
-                    )
-                else:
-                    logger.warning(
-                        "Close position: exhausted open positions for layer %s before fully "
-                        "closing requested %s units (%s remaining)",
-                        event.layer_number,
-                        total_requested,
-                        remaining,
-                    )
-                break
+                raise ClosePositionResolutionError(
+                    "ClosePositionEvent did not resolve to an open position: "
+                    f"entry_id={getattr(event, 'entry_id', None)}, "
+                    f"position_id={event.position_id}, layer={event.layer_number}, "
+                    f"direction={event.direction}."
+                )
 
             pos_units = abs(position.units)
+            if remaining is not None and remaining > pos_units:
+                raise ClosePositionResolutionError(
+                    "ClosePositionEvent requested more units than its exact target holds: "
+                    f"position_id={position.id}, requested_units={remaining}, "
+                    f"position_units={pos_units}."
+                )
 
             if remaining is None:
                 # Full close of this single position
@@ -1092,8 +1134,9 @@ class EventHandler:
                 position=position,
                 order=close_order,
                 description=getattr(event, "description", ""),
-                cycle_id=self._resolve_cycle_id_for_close(event),
+                cycle_id=self._resolve_cycle_id_for_close(event, position),
                 margin_ratio=event.margin_ratio,
+                is_rebuild=bool(getattr(position, "is_rebuild", False)),
             )
             self._mark_replay_records(closed_position, close_order, trade)
             self._record_affected_entities(
@@ -1230,6 +1273,19 @@ class EventHandler:
                 self._affected_refs["broker_order_ids"].add(str(order.broker_order_id))
             if order.oanda_trade_id:
                 self._affected_refs["oanda_trade_ids"].add(str(order.oanda_trade_id))
+            order_id = str(order.id)
+            response_seconds = getattr(order, "oanda_response_seconds", None)
+            if (
+                response_seconds is not None
+                and order_id not in self._current_oanda_response_order_ids
+            ):
+                try:
+                    parsed_response_seconds = Decimal(str(response_seconds))
+                except (InvalidOperation, TypeError, ValueError):
+                    parsed_response_seconds = None
+                if parsed_response_seconds is not None:
+                    self._current_oanda_response_seconds.append(parsed_response_seconds)
+                    self._current_oanda_response_order_ids.add(order_id)
         if trade is not None:
             self._affected_refs["trade_ids"].add(str(trade.id))
             if trade.oanda_trade_id:
@@ -1597,4 +1653,5 @@ class EventHandler:
         self.layer_position_ids.clear()
         self._position_cache.clear()
         self._entry_id_to_cycle_id.clear()
+        self._entry_id_to_position_id.clear()
         logger.debug("Position map cleared")

@@ -45,6 +45,13 @@ export interface PeriodicTradeMetricPoint {
   rebuild_opens: number;
 }
 
+export interface PeriodicReturnMetricPoint {
+  t: number;
+  timestamp: string;
+  label: string;
+  period_return: string;
+}
+
 export interface PeriodicTradeMetricsResponse {
   execution_id: string | null;
   strategy_type: string;
@@ -52,6 +59,7 @@ export interface PeriodicTradeMetricsResponse {
   currency: string | null;
   timezone: string;
   periods: Record<MetricsPeriod, PeriodicTradeMetricPoint[]>;
+  returns: Record<MetricsPeriod, PeriodicReturnMetricPoint[]>;
 }
 
 export interface LatestMetricsResponse {

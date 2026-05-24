@@ -147,6 +147,7 @@ ORDER_ORDERING = OrderingConfig(
         "requested_price": "requested_price",
         "fill_price": "fill_price",
         "filled_at": "filled_at",
+        "oanda_response_seconds": "oanda_response_seconds",
         "cancelled_at": "cancelled_at",
         "stop_loss": "stop_loss",
         "error_message": "error_message",

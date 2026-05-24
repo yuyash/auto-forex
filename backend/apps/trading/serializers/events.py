@@ -332,6 +332,9 @@ class OrderSerializer(serializers.Serializer):
     status = serializers.CharField()
     submitted_at = serializers.DateTimeField()
     filled_at = serializers.DateTimeField(required=False, allow_null=True)
+    oanda_response_seconds = serializers.DecimalField(
+        max_digits=12, decimal_places=6, required=False, allow_null=True
+    )
     cancelled_at = serializers.DateTimeField(required=False, allow_null=True)
     stop_loss = serializers.DecimalField(
         max_digits=20, decimal_places=10, required=False, allow_null=True

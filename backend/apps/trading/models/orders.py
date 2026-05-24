@@ -121,6 +121,13 @@ class Order(models.Model):
         blank=True,
         help_text="When the order was filled (null if not filled)",
     )
+    oanda_response_seconds = models.DecimalField(
+        max_digits=12,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        help_text="Elapsed wall-clock seconds from submitting the OANDA order request until the response/error returned.",
+    )
     cancelled_at = models.DateTimeField(
         null=True,
         blank=True,

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.utils import timezone
 
 from apps.trading.models.events import TradingEvent
+from apps.trading.models.metrics import Metrics
 from apps.trading.models.positions import Position
 from apps.trading.services.strategy_data_common import StrategyDataQuery, string_or_none
 from apps.trading.utils import Instrument
@@ -42,6 +43,7 @@ def build_periodic_trade_metrics(
 
     local_tz = _timezone(timezone_name)
     buckets: dict[str, dict[int, dict[str, Any]]] = {period: {} for period in PERIODS}
+    return_buckets: dict[str, dict[int, dict[str, Any]]] = {period: {} for period in PERIODS}
     close_event_by_position: dict[str, tuple[datetime, str]] = {}
 
     events_qs = TradingEvent.objects.filter(
@@ -109,6 +111,14 @@ def build_periodic_trade_metrics(
             elif close_reason in SL_CLOSE_REASONS:
                 _increment_all(buckets, closed_at, local_tz, "sl_loss", pnl)
 
+    _build_return_buckets(
+        buckets=return_buckets,
+        task=task,
+        task_type_label=task_type_label,
+        query=query,
+        local_tz=local_tz,
+    )
+
     return {
         "execution_id": string_or_none(query.execution_id),
         "strategy_type": str(getattr(task.config, "strategy_type", "") or ""),
@@ -119,7 +129,67 @@ def build_periodic_trade_metrics(
             period: [_serialize_bucket(bucket) for bucket in sorted(values.values(), key=_bucket_t)]
             for period, values in buckets.items()
         },
+        "returns": {
+            period: [
+                _serialize_return_bucket(bucket)
+                for bucket in sorted(values.values(), key=_bucket_t)
+            ]
+            for period, values in return_buckets.items()
+        },
     }
+
+
+def _build_return_buckets(
+    *,
+    buckets: dict[str, dict[int, dict[str, Any]]],
+    task: Any,
+    task_type_label: str,
+    query: StrategyDataQuery,
+    local_tz: ZoneInfo,
+) -> None:
+    current_bucket: dict[str, int | None] = {period: None for period in PERIODS}
+    start_reference: dict[str, Decimal | None] = {period: None for period in PERIODS}
+    previous_return: dict[str, Decimal | None] = {period: None for period in PERIODS}
+
+    metrics_qs = Metrics.objects.filter(
+        task_type=task_type_label,
+        task_id=task.pk,
+        execution_id=query.execution_id,
+    )
+    if query.since is not None:
+        metrics_qs = metrics_qs.filter(timestamp__gte=query.since)
+    if query.until is not None:
+        metrics_qs = metrics_qs.filter(timestamp__lte=query.until)
+
+    for timestamp, metrics in (
+        metrics_qs.order_by("timestamp")
+        .values_list("timestamp", "metrics")
+        .iterator(chunk_size=5000)
+    ):
+        metric_timestamp = _aware_datetime(timestamp)
+        if metric_timestamp is None:
+            continue
+        total_return = _total_return(metrics)
+        if total_return is None:
+            continue
+
+        for period in PERIODS:
+            start = _period_start(metric_timestamp, period, local_tz)
+            bucket_key = int(start.timestamp())
+            if current_bucket[period] != bucket_key:
+                current_bucket[period] = bucket_key
+                start_reference[period] = (
+                    previous_return[period] if previous_return[period] is not None else total_return
+                )
+
+            reference = start_reference[period]
+            if reference is None:
+                reference = total_return
+                start_reference[period] = reference
+
+            bucket = _return_bucket_record(buckets[period], start, period)
+            bucket["period_return"] = total_return - reference
+            previous_return[period] = total_return
 
 
 def _increment_all(
@@ -154,6 +224,24 @@ def _bucket_record(
             "tp_closes": 0,
             "sl_closes": 0,
             "rebuild_opens": 0,
+        }
+        bucket_map[unix_seconds] = record
+    return record
+
+
+def _return_bucket_record(
+    bucket_map: dict[int, dict[str, Any]],
+    start: datetime,
+    period: str,
+) -> dict[str, Any]:
+    unix_seconds = int(start.timestamp())
+    record = bucket_map.get(unix_seconds)
+    if record is None:
+        record = {
+            "t": unix_seconds,
+            "timestamp": start.isoformat(),
+            "label": _period_label(start, period),
+            "period_return": Decimal("0"),
         }
         bucket_map[unix_seconds] = record
     return record
@@ -199,6 +287,15 @@ def _serialize_bucket(bucket: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _serialize_return_bucket(bucket: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "t": bucket["t"],
+        "timestamp": bucket["timestamp"],
+        "label": bucket["label"],
+        "period_return": _decimal_string(bucket["period_return"]),
+    }
+
+
 def _bucket_t(bucket: dict[str, Any]) -> int:
     return int(bucket["t"])
 
@@ -213,6 +310,18 @@ def _realized_pnl(position: Position) -> Decimal | None:
     if direction == "short":
         return (position.entry_price - position.exit_price) * units
     return Decimal("0")
+
+
+def _total_return(metrics: Any) -> Decimal | None:
+    if not isinstance(metrics, dict):
+        return None
+    raw = metrics.get("total_return")
+    if raw in (None, ""):
+        return None
+    try:
+        return Decimal(str(raw))
+    except (InvalidOperation, ValueError):
+        return None
 
 
 def _aware_datetime(value: Any) -> datetime | None:

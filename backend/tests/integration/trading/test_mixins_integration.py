@@ -288,6 +288,19 @@ class TestMetrics:
                 ),
             ]
         )
+        return_start = datetime(2024, 1, 1, 0, 0, tzinfo=timezone.utc)
+        Metrics.objects.bulk_create(
+            [
+                Metrics(
+                    task_type=TaskType.BACKTEST,
+                    task_id=task.pk,
+                    execution_id=task.execution_id,
+                    timestamp=return_start + timedelta(minutes=index * 5),
+                    metrics={"total_return": str(index)},
+                )
+                for index in range(2500)
+            ]
+        )
 
         response = client.get(
             f"/api/trading/tasks/backtest/{task.pk}/strategy/metrics/periodic/",
@@ -308,6 +321,9 @@ class TestMetrics:
         assert month["rebuild_opens"] == 1
         assert month["tp_closes"] == 1
         assert month["sl_closes"] == 1
+        weekly_returns = response.data["returns"]["week"]
+        assert [row["label"] for row in weekly_returns] == ["2024-01-01", "2024-01-08"]
+        assert [row["period_return"] for row in weekly_returns] == ["2015", "484"]
 
 
 @pytest.mark.django_db

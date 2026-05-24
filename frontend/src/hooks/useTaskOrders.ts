@@ -23,6 +23,7 @@ export interface TaskOrder {
   status: string;
   submitted_at: string;
   filled_at?: string | null;
+  oanda_response_seconds?: string | null;
   cancelled_at?: string | null;
   stop_loss?: string | null;
   error_message?: string | null;

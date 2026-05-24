@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 from logging import Logger, getLogger
+from time import monotonic
 from typing import TYPE_CHECKING
 
 from django.utils import timezone
@@ -125,6 +126,20 @@ class OrderService:
             account_currency = getattr(self.task, "account_currency", "")
         return AccountCurrency(str(account_currency or ""))
 
+    def _broker_request_started_at(self) -> float | None:
+        """Return a monotonic start timestamp for real broker requests."""
+        if self.dry_run:
+            return None
+        return monotonic()
+
+    @staticmethod
+    def _broker_response_seconds(started_at: float | None) -> Decimal | None:
+        """Return elapsed seconds for a broker request, preserving microsecond precision."""
+        if started_at is None:
+            return None
+        elapsed = max(monotonic() - started_at, 0)
+        return Decimal(str(elapsed)).quantize(Decimal("0.000001"))
+
     def open_position(
         self,
         instrument: str,
@@ -237,6 +252,7 @@ class OrderService:
                 f"Cannot close {units} units, position only has {abs(position.units)} units"
             )
 
+        oanda_response_seconds: Decimal | None = None
         try:
             # Determine close units
             close_units_int = units if units is not None else abs(position.units)
@@ -262,18 +278,26 @@ class OrderService:
                     state="OPEN",
                     account_id=str(self.account.account_id) if self.account else "",
                 )
-                oanda_order = self.oanda_service.close_trade(
-                    trade=trade,
-                    units=close_units_decimal if units is not None else None,
-                )
+                started_at = self._broker_request_started_at()
+                try:
+                    oanda_order = self.oanda_service.close_trade(
+                        trade=trade,
+                        units=close_units_decimal if units is not None else None,
+                    )
+                finally:
+                    oanda_response_seconds = self._broker_response_seconds(started_at)
             else:
                 # Fallback: instrument-based close (dry-run or legacy positions without trade ID)
                 oanda_position = self._position_to_oanda_position(position)
-                oanda_order = self.oanda_service.close_position(
-                    position=oanda_position,
-                    units=close_units_decimal if units is not None else None,
-                    override_price=override_price,
-                )
+                started_at = self._broker_request_started_at()
+                try:
+                    oanda_order = self.oanda_service.close_position(
+                        position=oanda_position,
+                        units=close_units_decimal if units is not None else None,
+                        override_price=override_price,
+                    )
+                finally:
+                    oanda_response_seconds = self._broker_response_seconds(started_at)
 
             # Create order record for the closing trade
             order = self._create_order_record(
@@ -288,6 +312,7 @@ class OrderService:
                 position=position,
                 layer_index=position.layer_index,
                 retracement_count=position.retracement_count,
+                oanda_response_seconds=oanda_response_seconds,
             )
 
             execution_time = self._order_execution_time(
@@ -380,6 +405,7 @@ class OrderService:
                     requested_price=override_price,
                     oanda_trade_id=position.oanda_trade_id,
                     position=position,
+                    oanda_response_seconds=oanda_response_seconds,
                 )
             except Exception:
                 logger.warning(
@@ -421,6 +447,7 @@ class OrderService:
         Raises:
             OrderServiceError: If order execution fails
         """
+        oanda_response_seconds: Decimal | None = None
         try:
             instrument_obj = Instrument(instrument)
             units_obj = Units.coerce(units)
@@ -445,9 +472,13 @@ class OrderService:
             )
 
             # Execute via OANDA service
-            oanda_order = self.oanda_service.create_market_order(
-                request, override_price=override_price
-            )
+            started_at = self._broker_request_started_at()
+            try:
+                oanda_order = self.oanda_service.create_market_order(
+                    request, override_price=override_price
+                )
+            finally:
+                oanda_response_seconds = self._broker_response_seconds(started_at)
 
             # Create or update position first so we can link the order to it
             entry_time = self._order_execution_time(
@@ -482,6 +513,7 @@ class OrderService:
                 position=position,
                 layer_index=layer_index,
                 retracement_count=retracement_count,
+                oanda_response_seconds=oanda_response_seconds,
             )
 
             logger.info(
@@ -516,6 +548,7 @@ class OrderService:
                     public_error_message=error_msg,
                     requested_price=override_price,
                     stop_loss=stop_loss,
+                    oanda_response_seconds=oanda_response_seconds,
                 )
             except Exception:
                 logger.warning(
@@ -541,6 +574,7 @@ class OrderService:
         position: Position | None = None,
         layer_index: int | None = None,
         retracement_count: int | None = None,
+        oanda_response_seconds: Decimal | None = None,
     ) -> Order:
         """Create order database record."""
         return self.order_repository.create_filled(
@@ -559,6 +593,7 @@ class OrderService:
             position=position,
             layer_index=layer_index,
             retracement_count=retracement_count,
+            oanda_response_seconds=oanda_response_seconds,
         )
 
     def _order_execution_time(

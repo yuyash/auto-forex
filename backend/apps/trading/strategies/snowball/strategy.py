@@ -672,6 +672,8 @@ class SnowballStrategy(Strategy):
         head_entry = cycle.initial_entry
         if head_entry is None:
             return []
+        if not head_entry.can_close_on_tick(tick):
+            return []
 
         head_close_price = head_entry.close_price
         if head_close_price <= 0:
@@ -707,13 +709,7 @@ class SnowballStrategy(Strategy):
         for e in cycle.grid.iter_entries():
             if e.entry_id == head_entry.entry_id:
                 continue
-            if e.close_price <= 0:
-                all_counters_tp_hit = False
-                break
-            if e.is_long and tick.bid < e.close_price:
-                all_counters_tp_hit = False
-                break
-            if e.is_short and tick.ask > e.close_price:
+            if not self._entry_take_profit_hit(e, tick):
                 all_counters_tp_hit = False
                 break
 

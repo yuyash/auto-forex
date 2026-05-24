@@ -209,4 +209,5 @@ class TestOrderSerializer:
         assert "is_dry_run" in serializer.fields
         assert "broker_order_id" in serializer.fields
         assert "oanda_trade_id" in serializer.fields
+        assert "oanda_response_seconds" in serializer.fields
         assert "replayed_at" in serializer.fields
