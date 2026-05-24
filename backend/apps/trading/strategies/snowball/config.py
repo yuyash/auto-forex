@@ -35,6 +35,78 @@ WARMUP_OPTIONAL_KEYS = (
     "warmup_required_tp_closes",
 )
 
+RISK_GUARD_OPTIONAL_KEYS = (
+    "add_margin_guard_enabled",
+    "add_margin_guard_max_pct",
+    "add_margin_guard_scope",
+    "volatility_guard_enabled",
+    "volatility_guard_source",
+    "volatility_guard_candle_granularity",
+    "volatility_guard_atr_period",
+    "volatility_guard_baseline_period",
+    "volatility_guard_candle_ema_period",
+    "volatility_guard_max_pips",
+    "volatility_guard_max_multiplier",
+    "add_trend_guard_enabled",
+    "add_trend_candle_granularity",
+    "add_trend_ema_period",
+    "add_trend_max_opposite_deviation_pips",
+    "add_trend_max_opposite_slope_pips",
+    "adaptive_counter_interval_enabled",
+    "adaptive_counter_interval_source",
+    "adaptive_counter_interval_candle_granularity",
+    "adaptive_counter_interval_atr_period",
+    "adaptive_counter_interval_baseline_period",
+    "adaptive_counter_interval_candle_ema_period",
+    "adaptive_counter_interval_reference_pips",
+    "adaptive_counter_interval_min_multiplier",
+    "adaptive_counter_interval_max_multiplier",
+    "adaptive_trend_interval_enabled",
+    "adaptive_trend_interval_source",
+    "adaptive_trend_interval_candle_granularity",
+    "adaptive_trend_interval_atr_period",
+    "adaptive_trend_interval_baseline_period",
+    "adaptive_trend_interval_candle_ema_period",
+    "adaptive_trend_interval_reference_pips",
+    "adaptive_trend_interval_min_multiplier",
+    "adaptive_trend_interval_max_multiplier",
+)
+
+RISK_GUARD_SCOPES = {"adds_only", "adds_and_rebuilds"}
+VOLATILITY_SOURCES = {"atr", "candle_ema"}
+CANDLE_GRANULARITIES = {
+    "S5",
+    "S10",
+    "S15",
+    "S30",
+    "M1",
+    "M2",
+    "M4",
+    "M5",
+    "M10",
+    "M15",
+    "M30",
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H6",
+    "H8",
+    "H12",
+    "D",
+}
+
+
+def _parse_volatility_source(value: Any) -> str:
+    source = _parse_str(value, "atr").lower()
+    if source == "tick_ema":
+        return "candle_ema"
+    return source
+
+
+def _parse_candle_granularity(value: Any, default: str = "M1") -> str:
+    return _parse_str(value, default).upper()
+
 
 @dataclass(frozen=True, slots=True)
 class GridConfig:
@@ -132,6 +204,55 @@ class WarmupConfig:
     completion_mode: str
     min_elapsed_minutes: int
     required_tp_closes: int
+
+
+@dataclass(frozen=True, slots=True)
+class MarginAddGuardConfig:
+    """Margin-based add/rebuild gate settings."""
+
+    enabled: bool
+    max_pct: Decimal
+    scope: str
+
+
+@dataclass(frozen=True, slots=True)
+class VolatilityGuardConfig:
+    """Volatility-based add/rebuild gate settings."""
+
+    enabled: bool
+    source: str
+    candle_granularity: str
+    atr_period: int
+    baseline_period: int
+    candle_ema_period: int
+    max_pips: Decimal
+    max_multiplier: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class TrendAddGuardConfig:
+    """Long-term EMA trend add gate settings."""
+
+    enabled: bool
+    candle_granularity: str
+    ema_period: int
+    max_opposite_deviation_pips: Decimal
+    max_opposite_slope_pips: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class AdaptiveIntervalConfig:
+    """Volatility multiplier settings for a Snowball pip interval."""
+
+    enabled: bool
+    source: str
+    candle_granularity: str
+    atr_period: int
+    baseline_period: int
+    candle_ema_period: int
+    reference_pips: Decimal
+    min_multiplier: Decimal
+    max_multiplier: Decimal
 
 
 @dataclass(frozen=True, slots=True)
@@ -258,6 +379,45 @@ class SnowballStrategyConfig:
     warmup_completion_mode: str
     warmup_min_elapsed_minutes: int
     warmup_required_tp_closes: int
+
+    # Runtime add/rebuild gates.
+    add_margin_guard_enabled: bool
+    add_margin_guard_max_pct: Decimal
+    add_margin_guard_scope: str
+    volatility_guard_enabled: bool
+    volatility_guard_source: str
+    volatility_guard_candle_granularity: str
+    volatility_guard_atr_period: int
+    volatility_guard_baseline_period: int
+    volatility_guard_candle_ema_period: int
+    volatility_guard_max_pips: Decimal
+    volatility_guard_max_multiplier: Decimal
+    add_trend_guard_enabled: bool
+    add_trend_candle_granularity: str
+    add_trend_ema_period: int
+    add_trend_max_opposite_deviation_pips: Decimal
+    add_trend_max_opposite_slope_pips: Decimal
+
+    # Direction-specific adaptive intervals.  "counter" widens the adverse
+    # add grid; "trend" widens the favorable take-profit distance.
+    adaptive_counter_interval_enabled: bool
+    adaptive_counter_interval_source: str
+    adaptive_counter_interval_candle_granularity: str
+    adaptive_counter_interval_atr_period: int
+    adaptive_counter_interval_baseline_period: int
+    adaptive_counter_interval_candle_ema_period: int
+    adaptive_counter_interval_reference_pips: Decimal
+    adaptive_counter_interval_min_multiplier: Decimal
+    adaptive_counter_interval_max_multiplier: Decimal
+    adaptive_trend_interval_enabled: bool
+    adaptive_trend_interval_source: str
+    adaptive_trend_interval_candle_granularity: str
+    adaptive_trend_interval_atr_period: int
+    adaptive_trend_interval_baseline_period: int
+    adaptive_trend_interval_candle_ema_period: int
+    adaptive_trend_interval_reference_pips: Decimal
+    adaptive_trend_interval_min_multiplier: Decimal
+    adaptive_trend_interval_max_multiplier: Decimal
 
     @property
     def grid(self) -> GridConfig:
@@ -413,6 +573,65 @@ class SnowballStrategyConfig:
             completion_mode=self.warmup_completion_mode,
             min_elapsed_minutes=self.warmup_min_elapsed_minutes,
             required_tp_closes=self.warmup_required_tp_closes,
+        )
+
+    @property
+    def margin_add_guard(self) -> MarginAddGuardConfig:
+        return MarginAddGuardConfig(
+            enabled=self.add_margin_guard_enabled,
+            max_pct=self.add_margin_guard_max_pct,
+            scope=self.add_margin_guard_scope,
+        )
+
+    @property
+    def volatility_guard(self) -> VolatilityGuardConfig:
+        return VolatilityGuardConfig(
+            enabled=self.volatility_guard_enabled,
+            source=self.volatility_guard_source,
+            candle_granularity=self.volatility_guard_candle_granularity,
+            atr_period=self.volatility_guard_atr_period,
+            baseline_period=self.volatility_guard_baseline_period,
+            candle_ema_period=self.volatility_guard_candle_ema_period,
+            max_pips=self.volatility_guard_max_pips,
+            max_multiplier=self.volatility_guard_max_multiplier,
+        )
+
+    @property
+    def trend_add_guard(self) -> TrendAddGuardConfig:
+        return TrendAddGuardConfig(
+            enabled=self.add_trend_guard_enabled,
+            candle_granularity=self.add_trend_candle_granularity,
+            ema_period=self.add_trend_ema_period,
+            max_opposite_deviation_pips=self.add_trend_max_opposite_deviation_pips,
+            max_opposite_slope_pips=self.add_trend_max_opposite_slope_pips,
+        )
+
+    @property
+    def adaptive_counter_interval(self) -> AdaptiveIntervalConfig:
+        return AdaptiveIntervalConfig(
+            enabled=self.adaptive_counter_interval_enabled,
+            source=self.adaptive_counter_interval_source,
+            candle_granularity=self.adaptive_counter_interval_candle_granularity,
+            atr_period=self.adaptive_counter_interval_atr_period,
+            baseline_period=self.adaptive_counter_interval_baseline_period,
+            candle_ema_period=self.adaptive_counter_interval_candle_ema_period,
+            reference_pips=self.adaptive_counter_interval_reference_pips,
+            min_multiplier=self.adaptive_counter_interval_min_multiplier,
+            max_multiplier=self.adaptive_counter_interval_max_multiplier,
+        )
+
+    @property
+    def adaptive_trend_interval(self) -> AdaptiveIntervalConfig:
+        return AdaptiveIntervalConfig(
+            enabled=self.adaptive_trend_interval_enabled,
+            source=self.adaptive_trend_interval_source,
+            candle_granularity=self.adaptive_trend_interval_candle_granularity,
+            atr_period=self.adaptive_trend_interval_atr_period,
+            baseline_period=self.adaptive_trend_interval_baseline_period,
+            candle_ema_period=self.adaptive_trend_interval_candle_ema_period,
+            reference_pips=self.adaptive_trend_interval_reference_pips,
+            min_multiplier=self.adaptive_trend_interval_min_multiplier,
+            max_multiplier=self.adaptive_trend_interval_max_multiplier,
         )
 
     @staticmethod
@@ -580,6 +799,104 @@ class SnowballStrategyConfig:
                 raw.get("warmup_min_elapsed_minutes", 1440), 1440
             ),
             warmup_required_tp_closes=_parse_int(raw.get("warmup_required_tp_closes", 3), 3),
+            add_margin_guard_enabled=_parse_bool(raw.get("add_margin_guard_enabled"), False),
+            add_margin_guard_max_pct=_parse_decimal(raw.get("add_margin_guard_max_pct"), "65"),
+            add_margin_guard_scope=_parse_str(
+                raw.get("add_margin_guard_scope"), "adds_only"
+            ).lower(),
+            volatility_guard_enabled=_parse_bool(raw.get("volatility_guard_enabled"), False),
+            volatility_guard_source=_parse_volatility_source(raw.get("volatility_guard_source")),
+            volatility_guard_candle_granularity=_parse_candle_granularity(
+                raw.get("volatility_guard_candle_granularity"), "M1"
+            ),
+            volatility_guard_atr_period=_parse_int(raw.get("volatility_guard_atr_period"), 14),
+            volatility_guard_baseline_period=_parse_int(
+                raw.get("volatility_guard_baseline_period"), 96
+            ),
+            volatility_guard_candle_ema_period=_parse_int(
+                raw.get(
+                    "volatility_guard_candle_ema_period",
+                    raw.get("volatility_guard_tick_ema_period"),
+                ),
+                60,
+            ),
+            volatility_guard_max_pips=_parse_decimal(raw.get("volatility_guard_max_pips"), "25"),
+            volatility_guard_max_multiplier=_parse_decimal(
+                raw.get("volatility_guard_max_multiplier"), "3"
+            ),
+            add_trend_guard_enabled=_parse_bool(raw.get("add_trend_guard_enabled"), False),
+            add_trend_candle_granularity=_parse_candle_granularity(
+                raw.get("add_trend_candle_granularity"), "M1"
+            ),
+            add_trend_ema_period=_parse_int(raw.get("add_trend_ema_period"), 200),
+            add_trend_max_opposite_deviation_pips=_parse_decimal(
+                raw.get("add_trend_max_opposite_deviation_pips"), "50"
+            ),
+            add_trend_max_opposite_slope_pips=_parse_decimal(
+                raw.get("add_trend_max_opposite_slope_pips"), "0"
+            ),
+            adaptive_counter_interval_enabled=_parse_bool(
+                raw.get("adaptive_counter_interval_enabled"), False
+            ),
+            adaptive_counter_interval_source=_parse_volatility_source(
+                raw.get("adaptive_counter_interval_source")
+            ),
+            adaptive_counter_interval_candle_granularity=_parse_candle_granularity(
+                raw.get("adaptive_counter_interval_candle_granularity"), "M1"
+            ),
+            adaptive_counter_interval_atr_period=_parse_int(
+                raw.get("adaptive_counter_interval_atr_period"), 14
+            ),
+            adaptive_counter_interval_baseline_period=_parse_int(
+                raw.get("adaptive_counter_interval_baseline_period"), 96
+            ),
+            adaptive_counter_interval_candle_ema_period=_parse_int(
+                raw.get(
+                    "adaptive_counter_interval_candle_ema_period",
+                    raw.get("adaptive_counter_interval_tick_ema_period"),
+                ),
+                60,
+            ),
+            adaptive_counter_interval_reference_pips=_parse_decimal(
+                raw.get("adaptive_counter_interval_reference_pips"), "10"
+            ),
+            adaptive_counter_interval_min_multiplier=_parse_decimal(
+                raw.get("adaptive_counter_interval_min_multiplier"), "1"
+            ),
+            adaptive_counter_interval_max_multiplier=_parse_decimal(
+                raw.get("adaptive_counter_interval_max_multiplier"), "2.5"
+            ),
+            adaptive_trend_interval_enabled=_parse_bool(
+                raw.get("adaptive_trend_interval_enabled"), False
+            ),
+            adaptive_trend_interval_source=_parse_volatility_source(
+                raw.get("adaptive_trend_interval_source")
+            ),
+            adaptive_trend_interval_candle_granularity=_parse_candle_granularity(
+                raw.get("adaptive_trend_interval_candle_granularity"), "M1"
+            ),
+            adaptive_trend_interval_atr_period=_parse_int(
+                raw.get("adaptive_trend_interval_atr_period"), 14
+            ),
+            adaptive_trend_interval_baseline_period=_parse_int(
+                raw.get("adaptive_trend_interval_baseline_period"), 96
+            ),
+            adaptive_trend_interval_candle_ema_period=_parse_int(
+                raw.get(
+                    "adaptive_trend_interval_candle_ema_period",
+                    raw.get("adaptive_trend_interval_tick_ema_period"),
+                ),
+                60,
+            ),
+            adaptive_trend_interval_reference_pips=_parse_decimal(
+                raw.get("adaptive_trend_interval_reference_pips"), "10"
+            ),
+            adaptive_trend_interval_min_multiplier=_parse_decimal(
+                raw.get("adaptive_trend_interval_min_multiplier"), "1"
+            ),
+            adaptive_trend_interval_max_multiplier=_parse_decimal(
+                raw.get("adaptive_trend_interval_max_multiplier"), "2.5"
+            ),
         )
 
     @classmethod
@@ -605,6 +922,7 @@ class SnowballStrategyConfig:
             "base_units_step",
             "base_units_auto_adjust_floor_enabled",
             *WARMUP_OPTIONAL_KEYS,
+            *RISK_GUARD_OPTIONAL_KEYS,
         ):
             if optional_key in missing:
                 missing.remove(optional_key)
@@ -697,6 +1015,66 @@ class SnowballStrategyConfig:
             "warmup_completion_mode": self.warmup_completion_mode,
             "warmup_min_elapsed_minutes": self.warmup_min_elapsed_minutes,
             "warmup_required_tp_closes": self.warmup_required_tp_closes,
+            "add_margin_guard_enabled": self.add_margin_guard_enabled,
+            "add_margin_guard_max_pct": str(self.add_margin_guard_max_pct),
+            "add_margin_guard_scope": self.add_margin_guard_scope,
+            "volatility_guard_enabled": self.volatility_guard_enabled,
+            "volatility_guard_source": self.volatility_guard_source,
+            "volatility_guard_candle_granularity": self.volatility_guard_candle_granularity,
+            "volatility_guard_atr_period": self.volatility_guard_atr_period,
+            "volatility_guard_baseline_period": self.volatility_guard_baseline_period,
+            "volatility_guard_candle_ema_period": self.volatility_guard_candle_ema_period,
+            "volatility_guard_max_pips": str(self.volatility_guard_max_pips),
+            "volatility_guard_max_multiplier": str(self.volatility_guard_max_multiplier),
+            "add_trend_guard_enabled": self.add_trend_guard_enabled,
+            "add_trend_candle_granularity": self.add_trend_candle_granularity,
+            "add_trend_ema_period": self.add_trend_ema_period,
+            "add_trend_max_opposite_deviation_pips": str(
+                self.add_trend_max_opposite_deviation_pips
+            ),
+            "add_trend_max_opposite_slope_pips": str(self.add_trend_max_opposite_slope_pips),
+            "adaptive_counter_interval_enabled": self.adaptive_counter_interval_enabled,
+            "adaptive_counter_interval_source": self.adaptive_counter_interval_source,
+            "adaptive_counter_interval_candle_granularity": (
+                self.adaptive_counter_interval_candle_granularity
+            ),
+            "adaptive_counter_interval_atr_period": self.adaptive_counter_interval_atr_period,
+            "adaptive_counter_interval_baseline_period": (
+                self.adaptive_counter_interval_baseline_period
+            ),
+            "adaptive_counter_interval_candle_ema_period": (
+                self.adaptive_counter_interval_candle_ema_period
+            ),
+            "adaptive_counter_interval_reference_pips": str(
+                self.adaptive_counter_interval_reference_pips
+            ),
+            "adaptive_counter_interval_min_multiplier": str(
+                self.adaptive_counter_interval_min_multiplier
+            ),
+            "adaptive_counter_interval_max_multiplier": str(
+                self.adaptive_counter_interval_max_multiplier
+            ),
+            "adaptive_trend_interval_enabled": self.adaptive_trend_interval_enabled,
+            "adaptive_trend_interval_source": self.adaptive_trend_interval_source,
+            "adaptive_trend_interval_candle_granularity": (
+                self.adaptive_trend_interval_candle_granularity
+            ),
+            "adaptive_trend_interval_atr_period": self.adaptive_trend_interval_atr_period,
+            "adaptive_trend_interval_baseline_period": (
+                self.adaptive_trend_interval_baseline_period
+            ),
+            "adaptive_trend_interval_candle_ema_period": (
+                self.adaptive_trend_interval_candle_ema_period
+            ),
+            "adaptive_trend_interval_reference_pips": str(
+                self.adaptive_trend_interval_reference_pips
+            ),
+            "adaptive_trend_interval_min_multiplier": str(
+                self.adaptive_trend_interval_min_multiplier
+            ),
+            "adaptive_trend_interval_max_multiplier": str(
+                self.adaptive_trend_interval_max_multiplier
+            ),
         }
 
     def validate(self) -> None:
@@ -743,6 +1121,50 @@ class SnowballStrategyConfig:
             raise ValueError("warmup_min_elapsed_minutes must be greater than or equal to 0")
         if self.warmup_required_tp_closes < 0:
             raise ValueError("warmup_required_tp_closes must be greater than or equal to 0")
+        if not Decimal("0") < self.add_margin_guard_max_pct < Decimal("100"):
+            raise ValueError("add_margin_guard_max_pct must be in the range (0, 100)")
+        if self.add_margin_guard_scope not in RISK_GUARD_SCOPES:
+            raise ValueError("add_margin_guard_scope must be 'adds_only' or 'adds_and_rebuilds'")
+        if self.volatility_guard_source not in VOLATILITY_SOURCES:
+            raise ValueError("volatility_guard_source must be 'atr' or 'candle_ema'")
+        if self.volatility_guard_candle_granularity not in CANDLE_GRANULARITIES:
+            raise ValueError("volatility_guard_candle_granularity is not supported")
+        if self.volatility_guard_atr_period <= 0:
+            raise ValueError("volatility_guard_atr_period must be greater than 0")
+        if self.volatility_guard_baseline_period <= 0:
+            raise ValueError("volatility_guard_baseline_period must be greater than 0")
+        if self.volatility_guard_candle_ema_period <= 0:
+            raise ValueError("volatility_guard_candle_ema_period must be greater than 0")
+        if self.volatility_guard_max_pips <= 0:
+            raise ValueError("volatility_guard_max_pips must be greater than 0")
+        if self.volatility_guard_max_multiplier <= 0:
+            raise ValueError("volatility_guard_max_multiplier must be greater than 0")
+        if self.add_trend_candle_granularity not in CANDLE_GRANULARITIES:
+            raise ValueError("add_trend_candle_granularity is not supported")
+        if self.add_trend_ema_period <= 0:
+            raise ValueError("add_trend_ema_period must be greater than 0")
+        if self.add_trend_max_opposite_deviation_pips <= 0:
+            raise ValueError("add_trend_max_opposite_deviation_pips must be greater than 0")
+        if self.add_trend_max_opposite_slope_pips < 0:
+            raise ValueError("add_trend_max_opposite_slope_pips must be greater than or equal to 0")
+        for name, interval in (
+            ("adaptive_counter_interval", self.adaptive_counter_interval),
+            ("adaptive_trend_interval", self.adaptive_trend_interval),
+        ):
+            if interval.source not in VOLATILITY_SOURCES:
+                raise ValueError(f"{name}_source must be 'atr' or 'candle_ema'")
+            if interval.candle_granularity not in CANDLE_GRANULARITIES:
+                raise ValueError(f"{name}_candle_granularity is not supported")
+            if interval.atr_period <= 0:
+                raise ValueError(f"{name}_atr_period must be greater than 0")
+            if interval.baseline_period <= 0:
+                raise ValueError(f"{name}_baseline_period must be greater than 0")
+            if interval.candle_ema_period <= 0:
+                raise ValueError(f"{name}_candle_ema_period must be greater than 0")
+            if interval.reference_pips <= 0:
+                raise ValueError(f"{name}_reference_pips must be greater than 0")
+            if not Decimal("0") < interval.min_multiplier <= interval.max_multiplier:
+                raise ValueError(f"{name} multipliers must satisfy 0 < min <= max")
         if self.stop_loss_enabled and self.shrink_enabled:
             raise ValueError("stop_loss_enabled and shrink_enabled cannot both be true")
         if self.preserve_highest_retracement_enabled:

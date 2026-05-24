@@ -26,6 +26,8 @@ class CycleLifecycleStrategy(Protocol):
 
     def _assign_configured_stop_loss(self, entry: Entry, slot_number: int) -> None: ...
 
+    def trend_take_profit_pips(self) -> Decimal: ...
+
 
 @dataclass(frozen=True, slots=True)
 class SnowballCycleFactory:
@@ -44,12 +46,13 @@ class SnowballCycleFactory:
         base_units = strategy._effective_base_units(state)
         units = cfg.trend_lot_size * base_units
         price = tick.ask if direction == Direction.LONG else tick.bid
+        m_pips = strategy.trend_take_profit_pips()
         if direction == Direction.LONG:
-            close_price = price + cfg.m_pips * strategy.pip_size
-            formula = f"{price} + {cfg.m_pips} * {strategy.pip_size}"
+            close_price = price + m_pips * strategy.pip_size
+            formula = f"{price} + {m_pips} * {strategy.pip_size}"
         else:
-            close_price = price - cfg.m_pips * strategy.pip_size
-            formula = f"{price} - {cfg.m_pips} * {strategy.pip_size}"
+            close_price = price - m_pips * strategy.pip_size
+            formula = f"{price} - {m_pips} * {strategy.pip_size}"
 
         entry = Entry.open(
             state=state,
@@ -62,7 +65,7 @@ class SnowballCycleFactory:
             layer_number=1,
             retracement_count=0,
         )
-        entry.expected_tp_pips = cfg.m_pips
+        entry.expected_tp_pips = m_pips
         entry.validation_status = "pass"
         if cfg.stop_loss_enabled:
             strategy._assign_configured_stop_loss(entry, 1)

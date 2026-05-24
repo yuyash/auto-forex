@@ -45,6 +45,17 @@ class TestSnowballStrategyConfig:
         assert cfg.warmup_position_limit_enabled is True
         assert cfg.warmup_rebuild_limit_enabled is True
         assert cfg.warmup_completion_mode == "duration"
+        assert cfg.add_margin_guard_enabled is False
+        assert cfg.add_margin_guard_max_pct == Decimal("65")
+        assert cfg.add_margin_guard_scope == "adds_only"
+        assert cfg.volatility_guard_enabled is False
+        assert cfg.volatility_guard_source == "atr"
+        assert cfg.add_trend_guard_enabled is False
+        assert cfg.add_trend_max_opposite_deviation_pips == Decimal("50")
+        assert cfg.adaptive_counter_interval_enabled is False
+        assert cfg.adaptive_counter_interval_source == "atr"
+        assert cfg.adaptive_trend_interval_enabled is False
+        assert cfg.adaptive_trend_interval_source == "atr"
 
     def test_from_dict_custom(self):
         cfg = SnowballStrategyConfig.from_dict(
@@ -86,6 +97,16 @@ class TestSnowballStrategyConfig:
         assert cfg.rebuild.refill_limit_enabled is True
         assert cfg.rebuild.refill_up_to == 2
         assert cfg.risk_limits.stop_loss_enabled is True
+        assert cfg.margin_add_guard.scope == "adds_only"
+        assert cfg.volatility_guard.source == "atr"
+        assert cfg.volatility_guard.candle_granularity == "M1"
+        assert cfg.volatility_guard.candle_ema_period == 60
+        assert cfg.trend_add_guard.candle_granularity == "M1"
+        assert cfg.trend_add_guard.ema_period == 200
+        assert cfg.adaptive_counter_interval.candle_granularity == "M1"
+        assert cfg.adaptive_counter_interval.reference_pips == Decimal("10")
+        assert cfg.adaptive_trend_interval.candle_granularity == "M1"
+        assert cfg.adaptive_trend_interval.reference_pips == Decimal("10")
 
     def test_from_dict_parses_string_booleans(self):
         cfg = SnowballStrategyConfig.from_dict(

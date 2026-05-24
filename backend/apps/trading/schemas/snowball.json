@@ -413,6 +413,173 @@
       "group": "Trend Take-Profit",
       "group_ja": "順行側利確"
     },
+    "adaptive_trend_interval_enabled": {
+      "type": "boolean",
+      "title": "Adaptive Trend Interval",
+      "title_ja": "順行側Adaptive Interval",
+      "description": "Widen the trend-side take-profit distance when volatility rises.",
+      "description_ja": "ボラティリティ上昇時に順行側の利確幅を広げます。",
+      "default": false,
+      "group": "Trend Adaptive Interval",
+      "group_ja": "順行側Adaptive Interval"
+    },
+    "adaptive_trend_interval_source": {
+      "type": "string",
+      "title": "Volatility Source",
+      "title_ja": "ボラティリティ指標",
+      "description": "Indicator used to calculate the trend-side adaptive multiplier.",
+      "description_ja": "順行側adaptive倍率の計算に使う指標。",
+      "enum": ["atr", "candle_ema"],
+      "enum_labels": {
+        "atr": "Candle ATR",
+        "candle_ema": "Candle Close-Change EMA"
+      },
+      "enum_labels_ja": {
+        "atr": "ローソク足ATR",
+        "candle_ema": "ローソク足終値変化EMA"
+      },
+      "default": "atr",
+      "dependsOn": {
+        "field": "adaptive_trend_interval_enabled",
+        "values": [true]
+      },
+      "group": "Trend Adaptive Interval",
+      "group_ja": "順行側Adaptive Interval"
+    },
+    "adaptive_trend_interval_candle_granularity": {
+      "type": "string",
+      "title": "Candle Timeframe",
+      "title_ja": "ローソク足時間足",
+      "description": "OANDA candle timeframe used for the trend-side adaptive volatility calculation.",
+      "description_ja": "順行側adaptiveのボラティリティ計算に使うOANDAローソク足の時間足。",
+      "enum": [
+        "S5",
+        "S10",
+        "S15",
+        "S30",
+        "M1",
+        "M2",
+        "M4",
+        "M5",
+        "M10",
+        "M15",
+        "M30",
+        "H1",
+        "H2",
+        "H3",
+        "H4",
+        "H6",
+        "H8",
+        "H12",
+        "D"
+      ],
+      "default": "M1",
+      "dependsOn": {
+        "field": "adaptive_trend_interval_enabled",
+        "values": [true]
+      },
+      "group": "Trend Adaptive Interval",
+      "group_ja": "順行側Adaptive Interval"
+    },
+    "adaptive_trend_interval_atr_period": {
+      "type": "integer",
+      "title": "ATR Period",
+      "title_ja": "ATR期間",
+      "description": "Sample count for the candle true-range EMA.",
+      "description_ja": "ローソク足True Rangeを平滑化するEMAのサンプリング数。",
+      "default": 14,
+      "minimum": 1,
+      "dependsOn": {
+        "field": "adaptive_trend_interval_enabled",
+        "values": [true],
+        "and": [
+          { "field": "adaptive_trend_interval_source", "values": ["atr"] }
+        ]
+      },
+      "group": "Trend Adaptive Interval",
+      "group_ja": "順行側Adaptive Interval"
+    },
+    "adaptive_trend_interval_candle_ema_period": {
+      "type": "integer",
+      "title": "Candle EMA Samples",
+      "title_ja": "ローソク足EMAサンプル数",
+      "description": "Sample count for the EMA of absolute candle close-to-close movement.",
+      "description_ja": "ローソク足の終値間絶対変動を平滑化するEMAのサンプリング数。",
+      "default": 60,
+      "minimum": 1,
+      "dependsOn": {
+        "field": "adaptive_trend_interval_enabled",
+        "values": [true],
+        "and": [
+          {
+            "field": "adaptive_trend_interval_source",
+            "values": ["candle_ema"]
+          }
+        ]
+      },
+      "group": "Trend Adaptive Interval",
+      "group_ja": "順行側Adaptive Interval"
+    },
+    "adaptive_trend_interval_baseline_period": {
+      "type": "integer",
+      "title": "Baseline Period",
+      "title_ja": "通常時基準期間",
+      "description": "Sample count for the baseline volatility EMA used as the adaptive reference.",
+      "description_ja": "adaptive倍率の基準にする通常時ボラティリティEMAのサンプリング数。",
+      "default": 96,
+      "minimum": 1,
+      "dependsOn": {
+        "field": "adaptive_trend_interval_enabled",
+        "values": [true]
+      },
+      "group": "Trend Adaptive Interval",
+      "group_ja": "順行側Adaptive Interval"
+    },
+    "adaptive_trend_interval_reference_pips": {
+      "type": "number",
+      "title": "Fallback Reference (pips)",
+      "title_ja": "基準値フォールバック（pips）",
+      "description": "Reference volatility used before a baseline EMA is available.",
+      "description_ja": "基準EMAがまだない場合に使う基準ボラティリティ。",
+      "default": 10,
+      "minimum": 0.01,
+      "dependsOn": {
+        "field": "adaptive_trend_interval_enabled",
+        "values": [true]
+      },
+      "group": "Trend Adaptive Interval",
+      "group_ja": "順行側Adaptive Interval"
+    },
+    "adaptive_trend_interval_min_multiplier": {
+      "type": "number",
+      "title": "Min Multiplier",
+      "title_ja": "最小倍率",
+      "description": "Minimum multiplier applied to the trend-side take-profit distance.",
+      "description_ja": "順行側利確幅に適用する最小倍率。",
+      "default": 1,
+      "minimum": 0.01,
+      "dependsOn": {
+        "field": "adaptive_trend_interval_enabled",
+        "values": [true]
+      },
+      "group": "Trend Adaptive Interval",
+      "group_ja": "順行側Adaptive Interval"
+    },
+    "adaptive_trend_interval_max_multiplier": {
+      "type": "number",
+      "title": "Max Multiplier",
+      "title_ja": "最大倍率",
+      "description": "Maximum multiplier applied to the trend-side take-profit distance.",
+      "description_ja": "順行側利確幅に適用する最大倍率。",
+      "default": 2.5,
+      "minimum": 0.01,
+      "dependsOn": {
+        "field": "adaptive_trend_interval_enabled",
+        "values": [true]
+      },
+      "group": "Trend Adaptive Interval",
+      "group_ja": "順行側Adaptive Interval"
+    },
     "r_max": {
       "type": "integer",
       "title": "Max Steps",
@@ -568,6 +735,173 @@
       "linkedCount": { "field": "r_max", "offset": 0 },
       "itemLabel": "Step {index} interval (pips)",
       "itemLabel_ja": "段{index} 間隔（pips）"
+    },
+    "adaptive_counter_interval_enabled": {
+      "type": "boolean",
+      "title": "Adaptive Counter Interval",
+      "title_ja": "逆行側Adaptive Interval",
+      "description": "Widen counter-trend add intervals when volatility rises.",
+      "description_ja": "ボラティリティ上昇時に逆行側の増し玉間隔を広げます。",
+      "default": false,
+      "group": "Counter Adaptive Interval",
+      "group_ja": "逆行側Adaptive Interval"
+    },
+    "adaptive_counter_interval_source": {
+      "type": "string",
+      "title": "Volatility Source",
+      "title_ja": "ボラティリティ指標",
+      "description": "Indicator used to calculate the counter-side adaptive multiplier.",
+      "description_ja": "逆行側adaptive倍率の計算に使う指標。",
+      "enum": ["atr", "candle_ema"],
+      "enum_labels": {
+        "atr": "Candle ATR",
+        "candle_ema": "Candle Close-Change EMA"
+      },
+      "enum_labels_ja": {
+        "atr": "ローソク足ATR",
+        "candle_ema": "ローソク足終値変化EMA"
+      },
+      "default": "atr",
+      "dependsOn": {
+        "field": "adaptive_counter_interval_enabled",
+        "values": [true]
+      },
+      "group": "Counter Adaptive Interval",
+      "group_ja": "逆行側Adaptive Interval"
+    },
+    "adaptive_counter_interval_candle_granularity": {
+      "type": "string",
+      "title": "Candle Timeframe",
+      "title_ja": "ローソク足時間足",
+      "description": "OANDA candle timeframe used for the counter-side adaptive volatility calculation.",
+      "description_ja": "逆行側adaptiveのボラティリティ計算に使うOANDAローソク足の時間足。",
+      "enum": [
+        "S5",
+        "S10",
+        "S15",
+        "S30",
+        "M1",
+        "M2",
+        "M4",
+        "M5",
+        "M10",
+        "M15",
+        "M30",
+        "H1",
+        "H2",
+        "H3",
+        "H4",
+        "H6",
+        "H8",
+        "H12",
+        "D"
+      ],
+      "default": "M1",
+      "dependsOn": {
+        "field": "adaptive_counter_interval_enabled",
+        "values": [true]
+      },
+      "group": "Counter Adaptive Interval",
+      "group_ja": "逆行側Adaptive Interval"
+    },
+    "adaptive_counter_interval_atr_period": {
+      "type": "integer",
+      "title": "ATR Period",
+      "title_ja": "ATR期間",
+      "description": "Sample count for the candle true-range EMA.",
+      "description_ja": "ローソク足True Rangeを平滑化するEMAのサンプリング数。",
+      "default": 14,
+      "minimum": 1,
+      "dependsOn": {
+        "field": "adaptive_counter_interval_enabled",
+        "values": [true],
+        "and": [
+          { "field": "adaptive_counter_interval_source", "values": ["atr"] }
+        ]
+      },
+      "group": "Counter Adaptive Interval",
+      "group_ja": "逆行側Adaptive Interval"
+    },
+    "adaptive_counter_interval_candle_ema_period": {
+      "type": "integer",
+      "title": "Candle EMA Samples",
+      "title_ja": "ローソク足EMAサンプル数",
+      "description": "Sample count for the EMA of absolute candle close-to-close movement.",
+      "description_ja": "ローソク足の終値間絶対変動を平滑化するEMAのサンプリング数。",
+      "default": 60,
+      "minimum": 1,
+      "dependsOn": {
+        "field": "adaptive_counter_interval_enabled",
+        "values": [true],
+        "and": [
+          {
+            "field": "adaptive_counter_interval_source",
+            "values": ["candle_ema"]
+          }
+        ]
+      },
+      "group": "Counter Adaptive Interval",
+      "group_ja": "逆行側Adaptive Interval"
+    },
+    "adaptive_counter_interval_baseline_period": {
+      "type": "integer",
+      "title": "Baseline Period",
+      "title_ja": "通常時基準期間",
+      "description": "Sample count for the baseline volatility EMA used as the adaptive reference.",
+      "description_ja": "adaptive倍率の基準にする通常時ボラティリティEMAのサンプリング数。",
+      "default": 96,
+      "minimum": 1,
+      "dependsOn": {
+        "field": "adaptive_counter_interval_enabled",
+        "values": [true]
+      },
+      "group": "Counter Adaptive Interval",
+      "group_ja": "逆行側Adaptive Interval"
+    },
+    "adaptive_counter_interval_reference_pips": {
+      "type": "number",
+      "title": "Fallback Reference (pips)",
+      "title_ja": "基準値フォールバック（pips）",
+      "description": "Reference volatility used before a baseline EMA is available.",
+      "description_ja": "基準EMAがまだない場合に使う基準ボラティリティ。",
+      "default": 10,
+      "minimum": 0.01,
+      "dependsOn": {
+        "field": "adaptive_counter_interval_enabled",
+        "values": [true]
+      },
+      "group": "Counter Adaptive Interval",
+      "group_ja": "逆行側Adaptive Interval"
+    },
+    "adaptive_counter_interval_min_multiplier": {
+      "type": "number",
+      "title": "Min Multiplier",
+      "title_ja": "最小倍率",
+      "description": "Minimum multiplier applied to counter-trend add intervals.",
+      "description_ja": "逆行側増し玉間隔に適用する最小倍率。",
+      "default": 1,
+      "minimum": 0.01,
+      "dependsOn": {
+        "field": "adaptive_counter_interval_enabled",
+        "values": [true]
+      },
+      "group": "Counter Adaptive Interval",
+      "group_ja": "逆行側Adaptive Interval"
+    },
+    "adaptive_counter_interval_max_multiplier": {
+      "type": "number",
+      "title": "Max Multiplier",
+      "title_ja": "最大倍率",
+      "description": "Maximum multiplier applied to counter-trend add intervals.",
+      "description_ja": "逆行側増し玉間隔に適用する最大倍率。",
+      "default": 2.5,
+      "minimum": 0.01,
+      "dependsOn": {
+        "field": "adaptive_counter_interval_enabled",
+        "values": [true]
+      },
+      "group": "Counter Adaptive Interval",
+      "group_ja": "逆行側Adaptive Interval"
     },
 
     "counter_tp_mode": {
@@ -1159,6 +1493,260 @@
       ],
       "group": "Counter-Side Layer Settings",
       "group_ja": "逆行側レイヤー設定"
+    },
+
+    "add_margin_guard_enabled": {
+      "type": "boolean",
+      "title": "Stop Adds By Margin",
+      "title_ja": "証拠金で新規追加を停止",
+      "description": "Block new Snowball openings when margin closeout ratio reaches the configured threshold.",
+      "description_ja": "証拠金精算割合が設定しきい値に達したときにSnowballの新規オープンを停止します。",
+      "default": false,
+      "group": "Risk Guards",
+      "group_ja": "リスクゲート"
+    },
+    "add_margin_guard_max_pct": {
+      "type": "number",
+      "title": "Margin Stop Threshold (%)",
+      "title_ja": "停止しきい値（%）",
+      "description": "Margin closeout ratio at which new additions are blocked.",
+      "description_ja": "新規追加を停止する証拠金精算割合。",
+      "default": 65,
+      "exclusiveMinimum": 0,
+      "exclusiveMaximum": 100,
+      "dependsOn": { "field": "add_margin_guard_enabled", "values": [true] },
+      "group": "Risk Guards",
+      "group_ja": "リスクゲート"
+    },
+    "add_margin_guard_scope": {
+      "type": "string",
+      "title": "Margin Stop Scope",
+      "title_ja": "証拠金停止の対象",
+      "description": "Choose whether the margin gate stops only new additions or stop-loss rebuilds as well.",
+      "description_ja": "証拠金ゲートで新規追加だけを止めるか、ロスカット後の再建も止めるかを選択します。",
+      "enum": ["adds_only", "adds_and_rebuilds"],
+      "enum_labels": {
+        "adds_only": "Adds Only",
+        "adds_and_rebuilds": "Adds And Rebuilds"
+      },
+      "enum_labels_ja": {
+        "adds_only": "新規追加のみ",
+        "adds_and_rebuilds": "新規追加と再建"
+      },
+      "default": "adds_only",
+      "dependsOn": { "field": "add_margin_guard_enabled", "values": [true] },
+      "group": "Risk Guards",
+      "group_ja": "リスクゲート"
+    },
+    "volatility_guard_enabled": {
+      "type": "boolean",
+      "title": "Stop Adds By Volatility",
+      "title_ja": "ボラティリティで追加停止",
+      "description": "Block new additions and stop-loss rebuilds when volatility exceeds the configured absolute or relative threshold.",
+      "description_ja": "ボラティリティが絶対しきい値または通常時倍率を超えたときに、新規追加とロスカット後再建を停止します。",
+      "default": false,
+      "group": "Risk Guards",
+      "group_ja": "リスクゲート"
+    },
+    "volatility_guard_source": {
+      "type": "string",
+      "title": "Volatility Source",
+      "title_ja": "ボラティリティ指標",
+      "description": "Indicator used by the volatility stop gate.",
+      "description_ja": "ボラティリティ停止ゲートで使う指標。",
+      "enum": ["atr", "candle_ema"],
+      "enum_labels": {
+        "atr": "Candle ATR",
+        "candle_ema": "Candle Close-Change EMA"
+      },
+      "enum_labels_ja": {
+        "atr": "ローソク足ATR",
+        "candle_ema": "ローソク足終値変化EMA"
+      },
+      "default": "atr",
+      "dependsOn": { "field": "volatility_guard_enabled", "values": [true] },
+      "group": "Risk Guards",
+      "group_ja": "リスクゲート"
+    },
+    "volatility_guard_candle_granularity": {
+      "type": "string",
+      "title": "Candle Timeframe",
+      "title_ja": "ローソク足時間足",
+      "description": "OANDA candle timeframe used for the volatility stop gate.",
+      "description_ja": "ボラティリティ停止ゲートで使うOANDAローソク足の時間足。",
+      "enum": [
+        "S5",
+        "S10",
+        "S15",
+        "S30",
+        "M1",
+        "M2",
+        "M4",
+        "M5",
+        "M10",
+        "M15",
+        "M30",
+        "H1",
+        "H2",
+        "H3",
+        "H4",
+        "H6",
+        "H8",
+        "H12",
+        "D"
+      ],
+      "default": "M1",
+      "dependsOn": { "field": "volatility_guard_enabled", "values": [true] },
+      "group": "Risk Guards",
+      "group_ja": "リスクゲート"
+    },
+    "volatility_guard_atr_period": {
+      "type": "integer",
+      "title": "ATR Period",
+      "title_ja": "ATR期間",
+      "description": "Sample count for the candle true-range EMA.",
+      "description_ja": "ローソク足True Rangeを平滑化するEMAのサンプリング数。",
+      "default": 14,
+      "minimum": 1,
+      "dependsOn": {
+        "field": "volatility_guard_enabled",
+        "values": [true],
+        "and": [{ "field": "volatility_guard_source", "values": ["atr"] }]
+      },
+      "group": "Risk Guards",
+      "group_ja": "リスクゲート"
+    },
+    "volatility_guard_candle_ema_period": {
+      "type": "integer",
+      "title": "Candle EMA Samples",
+      "title_ja": "ローソク足EMAサンプル数",
+      "description": "Sample count for the EMA of absolute candle close-to-close movement.",
+      "description_ja": "ローソク足の終値間絶対変動を平滑化するEMAのサンプリング数。",
+      "default": 60,
+      "minimum": 1,
+      "dependsOn": {
+        "field": "volatility_guard_enabled",
+        "values": [true],
+        "and": [
+          { "field": "volatility_guard_source", "values": ["candle_ema"] }
+        ]
+      },
+      "group": "Risk Guards",
+      "group_ja": "リスクゲート"
+    },
+    "volatility_guard_baseline_period": {
+      "type": "integer",
+      "title": "Baseline Period",
+      "title_ja": "通常時基準期間",
+      "description": "Sample count for baseline volatility EMA used by the multiplier threshold.",
+      "description_ja": "倍率しきい値の基準にする通常時ボラティリティEMAのサンプリング数。",
+      "default": 96,
+      "minimum": 1,
+      "dependsOn": { "field": "volatility_guard_enabled", "values": [true] },
+      "group": "Risk Guards",
+      "group_ja": "リスクゲート"
+    },
+    "volatility_guard_max_pips": {
+      "type": "number",
+      "title": "Max Volatility (pips)",
+      "title_ja": "最大ボラティリティ（pips）",
+      "description": "Absolute volatility threshold that stops new openings.",
+      "description_ja": "新規オープンを停止する絶対ボラティリティしきい値。",
+      "default": 25,
+      "minimum": 0.01,
+      "dependsOn": { "field": "volatility_guard_enabled", "values": [true] },
+      "group": "Risk Guards",
+      "group_ja": "リスクゲート"
+    },
+    "volatility_guard_max_multiplier": {
+      "type": "number",
+      "title": "Max Baseline Multiplier",
+      "title_ja": "通常時倍率上限",
+      "description": "Relative threshold versus the baseline volatility.",
+      "description_ja": "通常時ボラティリティに対する倍率しきい値。",
+      "default": 3,
+      "minimum": 0.01,
+      "dependsOn": { "field": "volatility_guard_enabled", "values": [true] },
+      "group": "Risk Guards",
+      "group_ja": "リスクゲート"
+    },
+    "add_trend_guard_enabled": {
+      "type": "boolean",
+      "title": "Stop Adverse Adds By Trend",
+      "title_ja": "トレンドで逆行追加を停止",
+      "description": "Block adverse-side counter additions when price is too far against the cycle direction relative to a long EMA.",
+      "description_ja": "価格がEMAに対してサイクル方向へ大きく逆行している場合に、逆行側の増し玉を停止します。",
+      "default": false,
+      "group": "Risk Guards",
+      "group_ja": "リスクゲート"
+    },
+    "add_trend_candle_granularity": {
+      "type": "string",
+      "title": "Trend EMA Candle Timeframe",
+      "title_ja": "EMAローソク足時間足",
+      "description": "OANDA candle timeframe used for the trend EMA.",
+      "description_ja": "トレンドEMAに使うOANDAローソク足の時間足。",
+      "enum": [
+        "S5",
+        "S10",
+        "S15",
+        "S30",
+        "M1",
+        "M2",
+        "M4",
+        "M5",
+        "M10",
+        "M15",
+        "M30",
+        "H1",
+        "H2",
+        "H3",
+        "H4",
+        "H6",
+        "H8",
+        "H12",
+        "D"
+      ],
+      "default": "M1",
+      "dependsOn": { "field": "add_trend_guard_enabled", "values": [true] },
+      "group": "Risk Guards",
+      "group_ja": "リスクゲート"
+    },
+    "add_trend_ema_period": {
+      "type": "integer",
+      "title": "Trend EMA Period",
+      "title_ja": "EMA期間",
+      "description": "Number of completed candles used by the trend EMA.",
+      "description_ja": "トレンド乖離判定に使うEMAの確定足サンプリング数。",
+      "default": 200,
+      "minimum": 1,
+      "dependsOn": { "field": "add_trend_guard_enabled", "values": [true] },
+      "group": "Risk Guards",
+      "group_ja": "リスクゲート"
+    },
+    "add_trend_max_opposite_deviation_pips": {
+      "type": "number",
+      "title": "Max Opposite Deviation (pips)",
+      "title_ja": "最大逆行乖離（pips）",
+      "description": "For LONG cycles, block adds below EMA by this many pips. For SHORT cycles, block adds above EMA by this many pips.",
+      "description_ja": "LONGでは価格がEMAをこのpips以上下回ると停止、SHORTではこのpips以上上回ると停止します。",
+      "default": 50,
+      "minimum": 0.01,
+      "dependsOn": { "field": "add_trend_guard_enabled", "values": [true] },
+      "group": "Risk Guards",
+      "group_ja": "リスクゲート"
+    },
+    "add_trend_max_opposite_slope_pips": {
+      "type": "number",
+      "title": "Max Opposite EMA Slope (pips)",
+      "title_ja": "最大逆行EMA傾き（pips）",
+      "description": "Optional EMA slope threshold. Set 0 to disable the slope check.",
+      "description_ja": "任意のEMA傾きしきい値。0で傾き判定を無効化します。",
+      "default": 0,
+      "minimum": 0,
+      "dependsOn": { "field": "add_trend_guard_enabled", "values": [true] },
+      "group": "Risk Guards",
+      "group_ja": "リスクゲート"
     },
 
     "shrink_enabled": {
