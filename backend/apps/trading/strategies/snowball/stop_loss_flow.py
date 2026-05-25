@@ -393,7 +393,21 @@ class StopLossRebuildPricePlanner:
         """Return a rebuild plan when the trigger price has been reached."""
         if pending.closed_at is not None and tick.timestamp <= pending.closed_at:
             return None
-        if self.cycle_rebuild_guard_blocks(strategy=strategy, tick=tick, cycle=cycle):
+
+        trigger_price = self.rebuild_trigger_price(
+            strategy=strategy,
+            cycle=cycle,
+            layer=layer,
+            slot=slot,
+            pending=pending,
+        )
+        if self.cycle_rebuild_guard_blocks(
+            strategy=strategy,
+            tick=tick,
+            cycle=cycle,
+            pending=pending,
+            trigger_price=trigger_price,
+        ):
             return None
         if not self.cooldown_elapsed(
             pending=pending,
@@ -402,15 +416,6 @@ class StopLossRebuildPricePlanner:
         ):
             return None
 
-        trigger_price = self.trigger_price(pending, strategy.config.rebuild_entry_price_mode)
-        trigger_price = self.apply_entry_buffer(
-            pending=pending,
-            trigger_price=trigger_price,
-            entry_price_mode=strategy.config.rebuild_entry_price_mode,
-            buffer_pips=strategy.config.rebuild_entry_buffer_pips,
-            pip_size=strategy.pip_size,
-        )
-        trigger_price = self.clamp_entry_price(cycle, layer, slot, pending, trigger_price)
         if not self.trigger_hit(pending, tick, trigger_price):
             return None
 
@@ -427,14 +432,36 @@ class StopLossRebuildPricePlanner:
             close_price=close_price,
         )
 
+    def rebuild_trigger_price(
+        self,
+        *,
+        strategy: StopLossFlowStrategy,
+        cycle: SnowballCycle,
+        layer: Layer,
+        slot: Slot,
+        pending: StopLossClosedEntry,
+    ) -> Decimal:
+        """Return the effective trigger price for rebuilding a pending slot."""
+        trigger_price = self.trigger_price(pending, strategy.config.rebuild_entry_price_mode)
+        trigger_price = self.apply_entry_buffer(
+            pending=pending,
+            trigger_price=trigger_price,
+            entry_price_mode=strategy.config.rebuild_entry_price_mode,
+            buffer_pips=strategy.config.rebuild_entry_buffer_pips,
+            pip_size=strategy.pip_size,
+        )
+        return self.clamp_entry_price(cycle, layer, slot, pending, trigger_price)
+
     def cycle_rebuild_guard_blocks(
         self,
         *,
         strategy: StopLossFlowStrategy,
         tick: Tick,
         cycle: SnowballCycle,
+        pending: StopLossClosedEntry,
+        trigger_price: Decimal,
     ) -> bool:
-        """Return True when repeated stop-losses should pause cycle rebuilds."""
+        """Return True when repeated stop-losses should pause this pending rebuild."""
         cfg = strategy.config
         if not cfg.cycle_rebuild_guard_enabled:
             return False
@@ -444,26 +471,29 @@ class StopLossRebuildPricePlanner:
         loss_threshold = -cfg.cycle_rebuild_guard_min_loss
         if cycle.realized_pnl >= loss_threshold:
             return False
-        if self.cycle_price_recovered(strategy=strategy, tick=tick, cycle=cycle):
+        if self.pending_rebuild_price_recovered(
+            strategy=strategy,
+            tick=tick,
+            pending=pending,
+            trigger_price=trigger_price,
+        ):
             return False
         return True
 
-    def cycle_price_recovered(
+    def pending_rebuild_price_recovered(
         self,
         *,
         strategy: StopLossFlowStrategy,
         tick: Tick,
-        cycle: SnowballCycle,
+        pending: StopLossClosedEntry,
+        trigger_price: Decimal,
     ) -> bool:
-        """Return True when price has recovered to the cycle head or better."""
-        head_price, _head_id = cycle.effective_head()
-        if head_price is None:
-            return False
+        """Return True when price has recovered to this slot's rebuild trigger."""
         recovery = strategy.config.cycle_rebuild_guard_recovery_pips
         offset = recovery * strategy.pip_size
-        if cycle.direction == Direction.LONG:
-            return tick.bid >= head_price + offset
-        return tick.ask <= head_price - offset
+        if pending.direction == Direction.LONG:
+            return tick.bid >= trigger_price + offset
+        return tick.ask <= trigger_price - offset
 
     def cooldown_elapsed(
         self,

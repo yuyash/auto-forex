@@ -1442,7 +1442,7 @@ class TestSnowballRebuildTakeProfitModes:
 
         assert plan is not None
 
-    def test_cycle_rebuild_guard_resumes_when_price_recovers_to_head_plus_buffer(self):
+    def test_cycle_rebuild_guard_resumes_when_pending_trigger_recovers_before_cycle_head(self):
         strategy = _strategy(
             {
                 "stop_loss_enabled": True,
@@ -1452,13 +1452,25 @@ class TestSnowballRebuildTakeProfitModes:
                 "cycle_rebuild_guard_recovery_pips": "5",
             }
         )
+        head = Entry(
+            entry_id=1,
+            step=1,
+            direction=Direction.LONG,
+            entry_price=Decimal("145.000"),
+            close_price=Decimal("145.200"),
+            units=2000,
+            opened_at=datetime(2026, 1, 1, tzinfo=UTC),
+            role="initial",
+            layer_number=1,
+            retracement_count=0,
+        )
         pending = self._make_pending_rebuild(
             direction=Direction.LONG,
             entry_price=Decimal("144.547"),
             close_price=Decimal("144.697"),
         )
-        slot = Slot(index=0, pending_rebuild=pending)
-        layer = Layer(layer_number=1, slots=[slot])
+        slot = Slot(index=1, pending_rebuild=pending)
+        layer = Layer(layer_number=1, slots=[Slot(index=0, entry=head), slot])
         cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
         cycle.stop_loss_count = 2
         cycle.realized_pnl = Decimal("-1")
