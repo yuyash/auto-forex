@@ -183,6 +183,14 @@ class TestSnowballStrategyProperties:
         assert s.counter_interval_pips(1) == Decimal("60.0")
         assert s.trend_take_profit_pips() == Decimal("75.0")
 
+    def test_runtime_adaptive_interval_helpers_allow_contraction(self):
+        s = _strategy({"m_pips": "50", "n_pips_head": "30", "round_step_pips": "0.1"})
+        s._snowball_adaptive_counter_interval_multiplier = Decimal("0.5")
+        s._snowball_adaptive_trend_interval_multiplier = Decimal("0.6")
+
+        assert s.counter_interval_pips(1) == Decimal("15.0")
+        assert s.trend_take_profit_pips() == Decimal("30.0")
+
 
 # ===================================================================
 # parse_config / normalize / defaults / validate

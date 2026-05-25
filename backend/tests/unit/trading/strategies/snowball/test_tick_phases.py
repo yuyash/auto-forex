@@ -355,6 +355,51 @@ class TestSnowballRiskGuardPhase:
             Decimal("1.05")
         )
 
+    def test_adaptive_intervals_allow_contraction_to_min_multiplier(self) -> None:
+        context = self._context(
+            config_overrides={
+                "adaptive_counter_interval_enabled": True,
+                "adaptive_counter_interval_source": "candle_ema",
+                "adaptive_counter_interval_candle_ema_period": 3,
+                "adaptive_counter_interval_reference_pips": "10",
+                "adaptive_counter_interval_min_multiplier": "0.5",
+                "adaptive_counter_interval_max_multiplier": "2.5",
+                "adaptive_trend_interval_enabled": True,
+                "adaptive_trend_interval_source": "candle_ema",
+                "adaptive_trend_interval_candle_ema_period": 3,
+                "adaptive_trend_interval_reference_pips": "20",
+                "adaptive_trend_interval_min_multiplier": "0.5",
+                "adaptive_trend_interval_max_multiplier": "2.5",
+            },
+            metrics={
+                **self._completed_candle_metrics(
+                    prefix="snowball_adaptive_counter_interval",
+                    open_price="155.00",
+                    high="155.05",
+                    low="155.00",
+                    close="155.05",
+                ),
+                **self._completed_candle_metrics(
+                    prefix="snowball_adaptive_trend_interval",
+                    open_price="155.00",
+                    high="155.05",
+                    low="155.00",
+                    close="155.05",
+                ),
+            },
+            bid="155.30",
+            ask="155.32",
+        )
+
+        SnowballRiskGuardPhase().run(context)
+
+        assert getattr(context.strategy, "_snowball_adaptive_counter_interval_multiplier") == (
+            Decimal("0.5")
+        )
+        assert getattr(context.strategy, "_snowball_adaptive_trend_interval_multiplier") == (
+            Decimal("0.5")
+        )
+
 
 class TestSnowballDecisionTraceRecorder:
     """Verify disabled tracing stays allocation-light."""
