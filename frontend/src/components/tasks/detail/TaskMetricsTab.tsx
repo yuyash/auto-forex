@@ -504,9 +504,12 @@ function formatCompactMetric(
     maximumFractionDigits?: number;
   }
 ): string {
+  const maximumFractionDigits = options?.maximumFractionDigits ?? 1;
+  const minimumFractionDigits =
+    options?.minimumFractionDigits ?? Math.min(1, maximumFractionDigits);
   const formatted = formatAppNumber(value, {
-    minimumFractionDigits: options?.minimumFractionDigits ?? 1,
-    maximumFractionDigits: options?.maximumFractionDigits ?? 1,
+    minimumFractionDigits,
+    maximumFractionDigits,
   });
   return options?.suffix ? `${formatted}${options.suffix}` : formatted;
 }

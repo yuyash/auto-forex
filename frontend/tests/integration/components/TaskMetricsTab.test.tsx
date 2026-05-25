@@ -338,6 +338,36 @@ describe('TaskMetricsTab', () => {
     expect(lineChartLabels.flat().includes('Next Add Distance')).toBe(false);
   });
 
+  it('renders Snowball risk guard integer cooldown metrics', () => {
+    const data: MetricPoint[] = [
+      {
+        t: 1_700_000_000,
+        metrics: {
+          snowball_volatility_guard_cooldown_remaining_minutes: 3,
+        },
+      },
+    ];
+
+    render(
+      <TaskMetricsTab
+        data={data}
+        isLoading={false}
+        error={null}
+        interval={1}
+        since=""
+        until=""
+        onIntervalChange={vi.fn()}
+        onSinceChange={vi.fn()}
+        onUntilChange={vi.fn()}
+        onRefresh={vi.fn()}
+        strategyType="snowball"
+      />
+    );
+
+    expect(screen.getByText('Snowball Guard')).toBeInTheDocument();
+    expect(screen.getByText('3 min')).toBeInTheDocument();
+  });
+
   it('labels weekly period returns by the week start date', () => {
     const data: MetricPoint[] = [
       ['2026-01-06T00:00:00Z', 0],
