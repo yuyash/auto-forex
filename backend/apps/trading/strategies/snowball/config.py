@@ -70,6 +70,10 @@ RISK_GUARD_OPTIONAL_KEYS = (
     "adaptive_trend_interval_reference_pips",
     "adaptive_trend_interval_min_multiplier",
     "adaptive_trend_interval_max_multiplier",
+    "cycle_rebuild_guard_enabled",
+    "cycle_rebuild_guard_stop_count",
+    "cycle_rebuild_guard_min_loss",
+    "cycle_rebuild_guard_recovery_pips",
 )
 
 RISK_GUARD_SCOPES = {"adds_only", "adds_and_rebuilds"}
@@ -179,6 +183,16 @@ class RebuildPolicyConfig:
     enabled: bool
     entry_price_mode: str
     reseed_on_all_pending: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CycleRebuildGuardConfig:
+    """Cycle-level stop-loss guard for repeated rebuild failures."""
+
+    enabled: bool
+    stop_count: int
+    min_loss: Decimal
+    recovery_pips: Decimal
 
 
 @dataclass(frozen=True, slots=True)
@@ -350,6 +364,10 @@ class SnowballStrategyConfig:
     # the slot permanently (no pending_rebuild snapshot is retained),
     # so the grid shrinks on each SL instead of recovering.
     rebuild_enabled: bool
+    cycle_rebuild_guard_enabled: bool
+    cycle_rebuild_guard_stop_count: int
+    cycle_rebuild_guard_min_loss: Decimal
+    cycle_rebuild_guard_recovery_pips: Decimal
     emergency_enabled: bool
     emergency_threshold: Decimal
 
@@ -528,6 +546,15 @@ class SnowballStrategyConfig:
             enabled=self.rebuild_enabled,
             entry_price_mode=self.rebuild_entry_price_mode,
             reseed_on_all_pending=self.reseed_on_all_pending,
+        )
+
+    @property
+    def cycle_rebuild_guard(self) -> CycleRebuildGuardConfig:
+        return CycleRebuildGuardConfig(
+            enabled=self.cycle_rebuild_guard_enabled,
+            stop_count=self.cycle_rebuild_guard_stop_count,
+            min_loss=self.cycle_rebuild_guard_min_loss,
+            recovery_pips=self.cycle_rebuild_guard_recovery_pips,
         )
 
     @property
@@ -752,6 +779,16 @@ class SnowballStrategyConfig:
                 else 0
             ),
             rebuild_enabled=_parse_bool(raw.get("rebuild_enabled", True), True),
+            cycle_rebuild_guard_enabled=_parse_bool(raw.get("cycle_rebuild_guard_enabled"), False),
+            cycle_rebuild_guard_stop_count=_parse_int(
+                raw.get("cycle_rebuild_guard_stop_count", 15), 15
+            ),
+            cycle_rebuild_guard_min_loss=_parse_decimal(
+                raw.get("cycle_rebuild_guard_min_loss", "0"), "0"
+            ),
+            cycle_rebuild_guard_recovery_pips=_parse_decimal(
+                raw.get("cycle_rebuild_guard_recovery_pips", "0"), "0"
+            ),
             emergency_enabled=_parse_bool(raw.get("emergency_enabled", True), True),
             emergency_threshold=_parse_decimal(raw.get("emergency_threshold", "95"), "95"),
             pip_size=_parse_decimal(raw.get("pip_size", "0.01"), "0.01"),
@@ -992,6 +1029,10 @@ class SnowballStrategyConfig:
             "preserve_highest_retracement_enabled": self.preserve_highest_retracement_enabled,
             "preserve_highest_r_from": self.preserve_highest_r_from,
             "rebuild_enabled": self.rebuild_enabled,
+            "cycle_rebuild_guard_enabled": self.cycle_rebuild_guard_enabled,
+            "cycle_rebuild_guard_stop_count": self.cycle_rebuild_guard_stop_count,
+            "cycle_rebuild_guard_min_loss": str(self.cycle_rebuild_guard_min_loss),
+            "cycle_rebuild_guard_recovery_pips": str(self.cycle_rebuild_guard_recovery_pips),
             "emergency_enabled": self.emergency_enabled,
             "emergency_threshold": str(self.emergency_threshold),
             "pip_size": str(self.pip_size),
@@ -1209,6 +1250,18 @@ class SnowballStrategyConfig:
             raise ValueError("rebuild_entry_buffer_pips must be greater than or equal to 0")
         if self.rebuild_cooldown_seconds < 0:
             raise ValueError("rebuild_cooldown_seconds must be greater than or equal to 0")
+        if self.cycle_rebuild_guard_enabled and (
+            not self.stop_loss_enabled or not self.rebuild_enabled
+        ):
+            raise ValueError(
+                "cycle_rebuild_guard_enabled requires stop_loss_enabled and rebuild_enabled"
+            )
+        if self.cycle_rebuild_guard_stop_count <= 0:
+            raise ValueError("cycle_rebuild_guard_stop_count must be greater than 0")
+        if self.cycle_rebuild_guard_min_loss < 0:
+            raise ValueError("cycle_rebuild_guard_min_loss must be greater than or equal to 0")
+        if self.cycle_rebuild_guard_recovery_pips < 0:
+            raise ValueError("cycle_rebuild_guard_recovery_pips must be greater than or equal to 0")
         # Stop-loss progression.
         if not self.stop_loss_pips_head >= self.stop_loss_pips_tail > 0:
             raise ValueError("Must satisfy stop_loss_pips_head >= stop_loss_pips_tail > 0")

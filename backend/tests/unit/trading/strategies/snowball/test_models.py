@@ -38,6 +38,10 @@ class TestSnowballStrategyConfig:
         assert cfg.rebuild_take_profit_manual_pips == []
         assert cfg.preserve_highest_retracement_enabled is False
         assert cfg.preserve_highest_r_from == 0
+        assert cfg.cycle_rebuild_guard_enabled is False
+        assert cfg.cycle_rebuild_guard_stop_count == 15
+        assert cfg.cycle_rebuild_guard_min_loss == Decimal("0")
+        assert cfg.cycle_rebuild_guard_recovery_pips == Decimal("0")
         assert cfg.warmup_enabled is False
         assert cfg.warmup_initial_unit_ratio_pct == Decimal("50")
         assert cfg.warmup_start_gate_enabled is True
@@ -94,6 +98,8 @@ class TestSnowballStrategyConfig:
         assert cfg.take_profit.pips == Decimal("21")
         assert cfg.rebuild_policy.reseed_on_all_pending is True
         assert cfg.rebuild_policy.entry_price_mode == "stop_loss_exit"
+        assert cfg.cycle_rebuild_guard.enabled is False
+        assert cfg.cycle_rebuild_guard.stop_count == 15
         assert cfg.rebuild.refill_limit_enabled is True
         assert cfg.rebuild.refill_up_to == 2
         assert cfg.risk_limits.stop_loss_enabled is True
@@ -157,6 +163,10 @@ class TestSnowballStrategyConfig:
                 "rebuild_take_profit_manual_pips": ["21", "22", "23", "24", "25", "26"],
                 "preserve_highest_retracement_enabled": True,
                 "preserve_highest_r_from": 3,
+                "cycle_rebuild_guard_enabled": True,
+                "cycle_rebuild_guard_stop_count": 12,
+                "cycle_rebuild_guard_min_loss": "5000",
+                "cycle_rebuild_guard_recovery_pips": "5",
             }
         )
         d = cfg.to_dict()
@@ -185,6 +195,10 @@ class TestSnowballStrategyConfig:
         ]
         assert cfg2.preserve_highest_retracement_enabled is True
         assert cfg2.preserve_highest_r_from == 3
+        assert cfg2.cycle_rebuild_guard_enabled is True
+        assert cfg2.cycle_rebuild_guard_stop_count == 12
+        assert cfg2.cycle_rebuild_guard_min_loss == Decimal("5000")
+        assert cfg2.cycle_rebuild_guard_recovery_pips == Decimal("5")
 
     def test_auto_base_units_floor_to_configured_step(self):
         cfg = SnowballStrategyConfig.from_dict(
@@ -387,6 +401,37 @@ class TestSnowballStrategyConfig:
         cfg.validate()
 
         assert cfg.rebuild_entry_price_mode == "stop_loss_exit"
+
+    def test_validate_cycle_rebuild_guard_controls(self):
+        SnowballStrategyConfig.from_dict(
+            {
+                "stop_loss_enabled": True,
+                "rebuild_enabled": True,
+                "cycle_rebuild_guard_enabled": True,
+                "cycle_rebuild_guard_stop_count": 15,
+                "cycle_rebuild_guard_min_loss": "0",
+                "cycle_rebuild_guard_recovery_pips": "3",
+            }
+        ).validate()
+
+        with pytest.raises(ValueError, match="cycle_rebuild_guard_stop_count"):
+            SnowballStrategyConfig.from_dict(
+                {
+                    "stop_loss_enabled": True,
+                    "rebuild_enabled": True,
+                    "cycle_rebuild_guard_enabled": True,
+                    "cycle_rebuild_guard_stop_count": 0,
+                }
+            ).validate()
+
+        with pytest.raises(ValueError, match="cycle_rebuild_guard_enabled"):
+            SnowballStrategyConfig.from_dict(
+                {
+                    "stop_loss_enabled": False,
+                    "rebuild_enabled": True,
+                    "cycle_rebuild_guard_enabled": True,
+                }
+            ).validate()
 
     def test_validate_rejects_preserve_highest_r_from_above_r_max(self):
         with pytest.raises(ValueError, match="preserve_highest_r_from"):
@@ -780,6 +825,7 @@ class TestSnowballCycle:
 
     def test_to_dict_roundtrip(self):
         cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        cycle.stop_loss_count = 3
         l0 = Layer.create(0, 3, 1000)
         l0.slot_at(0).fill(_entry(entry_id=1, role="initial"))
         l0.slot_at(1).fill(_entry(entry_id=2, retracement_count=1))
@@ -792,6 +838,7 @@ class TestSnowballCycle:
         assert restored.initial_entry is not None
         assert restored.initial_entry.entry_id == 1
         assert len(restored.grid.all_entries()) == 2
+        assert restored.stop_loss_count == 3
 
     def test_cycle_from_dict_requires_grid_state(self):
         stale_state = {

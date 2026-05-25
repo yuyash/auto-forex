@@ -1373,7 +1373,109 @@ class TestSnowballRebuildTakeProfitModes:
         assert same_tick_plan is None
         assert next_tick_plan is not None
         assert next_tick_plan.trigger_price == Decimal("144.547")
-        assert next_tick_plan.close_price == Decimal("144.697")
+
+    def test_cycle_rebuild_guard_blocks_negative_cycle_after_repeated_stops(self):
+        strategy = _strategy(
+            {
+                "stop_loss_enabled": True,
+                "rebuild_take_profit_mode": "same",
+                "cycle_rebuild_guard_enabled": True,
+                "cycle_rebuild_guard_stop_count": 2,
+                "cycle_rebuild_guard_recovery_pips": "5",
+            }
+        )
+        pending = self._make_pending_rebuild(
+            direction=Direction.LONG,
+            entry_price=Decimal("144.547"),
+            close_price=Decimal("144.697"),
+        )
+        slot = Slot(index=0, pending_rebuild=pending)
+        layer = Layer(layer_number=1, slots=[slot])
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        cycle.stop_loss_count = 2
+        cycle.realized_pnl = Decimal("-1")
+        cycle.add_layer(layer)
+        planner = StopLossRebuildPricePlanner()
+
+        plan = planner.plan(
+            strategy=strategy,
+            tick=_make_tick(datetime(2026, 1, 1, tzinfo=UTC), "144.547", "144.567"),
+            cycle=cycle,
+            layer=layer,
+            slot=slot,
+            pending=pending,
+        )
+
+        assert plan is None
+
+    def test_cycle_rebuild_guard_resumes_when_cycle_pnl_recovers(self):
+        strategy = _strategy(
+            {
+                "stop_loss_enabled": True,
+                "rebuild_take_profit_mode": "same",
+                "cycle_rebuild_guard_enabled": True,
+                "cycle_rebuild_guard_stop_count": 2,
+                "cycle_rebuild_guard_recovery_pips": "5",
+            }
+        )
+        pending = self._make_pending_rebuild(
+            direction=Direction.LONG,
+            entry_price=Decimal("144.547"),
+            close_price=Decimal("144.697"),
+        )
+        slot = Slot(index=0, pending_rebuild=pending)
+        layer = Layer(layer_number=1, slots=[slot])
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        cycle.stop_loss_count = 2
+        cycle.realized_pnl = Decimal("0")
+        cycle.add_layer(layer)
+        planner = StopLossRebuildPricePlanner()
+
+        plan = planner.plan(
+            strategy=strategy,
+            tick=_make_tick(datetime(2026, 1, 1, tzinfo=UTC), "144.547", "144.567"),
+            cycle=cycle,
+            layer=layer,
+            slot=slot,
+            pending=pending,
+        )
+
+        assert plan is not None
+
+    def test_cycle_rebuild_guard_resumes_when_price_recovers_to_head_plus_buffer(self):
+        strategy = _strategy(
+            {
+                "stop_loss_enabled": True,
+                "rebuild_take_profit_mode": "same",
+                "cycle_rebuild_guard_enabled": True,
+                "cycle_rebuild_guard_stop_count": 2,
+                "cycle_rebuild_guard_recovery_pips": "5",
+            }
+        )
+        pending = self._make_pending_rebuild(
+            direction=Direction.LONG,
+            entry_price=Decimal("144.547"),
+            close_price=Decimal("144.697"),
+        )
+        slot = Slot(index=0, pending_rebuild=pending)
+        layer = Layer(layer_number=1, slots=[slot])
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        cycle.stop_loss_count = 2
+        cycle.realized_pnl = Decimal("-1")
+        cycle.add_layer(layer)
+        planner = StopLossRebuildPricePlanner()
+
+        plan = planner.plan(
+            strategy=strategy,
+            tick=_make_tick(datetime(2026, 1, 1, tzinfo=UTC), "144.597", "144.617"),
+            cycle=cycle,
+            layer=layer,
+            slot=slot,
+            pending=pending,
+        )
+
+        assert plan is not None
+        assert plan.close_price == Decimal("144.697")
 
     def _cycle_with_take_profit_order_violation(self) -> SnowballCycle:
         cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)

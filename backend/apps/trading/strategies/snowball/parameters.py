@@ -43,6 +43,14 @@ class SnowballParameterService:
         # i.e. when both stop-loss and rebuild are enabled.
         if not config.stop_loss_enabled or not config.rebuild_enabled:
             parameters.pop("rebuild_cooldown_seconds", None)
+            parameters.pop("cycle_rebuild_guard_enabled", None)
+            parameters.pop("cycle_rebuild_guard_stop_count", None)
+            parameters.pop("cycle_rebuild_guard_min_loss", None)
+            parameters.pop("cycle_rebuild_guard_recovery_pips", None)
+        elif not config.cycle_rebuild_guard_enabled:
+            parameters.pop("cycle_rebuild_guard_stop_count", None)
+            parameters.pop("cycle_rebuild_guard_min_loss", None)
+            parameters.pop("cycle_rebuild_guard_recovery_pips", None)
         if not config.warmup_enabled:
             for key in WARMUP_OPTIONAL_KEYS:
                 if key != "warmup_enabled":
