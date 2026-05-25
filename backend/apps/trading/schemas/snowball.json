@@ -1744,6 +1744,18 @@
       "group": "Risk Guards",
       "group_ja": "リスクゲート"
     },
+    "volatility_guard_cooldown_minutes": {
+      "type": "integer",
+      "title": "Cooldown Minutes",
+      "title_ja": "クールダウン（分）",
+      "description": "Keep the volatility guard target blocked for this many minutes after a high-volatility tick. Use 30-60 minutes to avoid immediate re-entry during sharp moves. Set 0 to disable cooldown.",
+      "description_ja": "高ボラティリティ判定後、この分数だけボラティリティガードの対象を停止し続けます。急変時の即時再開を避けるには30-60分を指定します。0でクールダウンなし。",
+      "default": 0,
+      "minimum": 0,
+      "dependsOn": { "field": "volatility_guard_enabled", "values": [true] },
+      "group": "Risk Guards",
+      "group_ja": "リスクゲート"
+    },
     "volatility_guard_max_pips": {
       "type": "number",
       "title": "Max Volatility (pips)",

@@ -46,6 +46,7 @@ RISK_GUARD_OPTIONAL_KEYS = (
     "volatility_guard_atr_period",
     "volatility_guard_baseline_period",
     "volatility_guard_candle_ema_period",
+    "volatility_guard_cooldown_minutes",
     "volatility_guard_max_pips",
     "volatility_guard_max_multiplier",
     "add_trend_guard_enabled",
@@ -242,6 +243,7 @@ class VolatilityGuardConfig:
     atr_period: int
     baseline_period: int
     candle_ema_period: int
+    cooldown_minutes: int
     max_pips: Decimal
     max_multiplier: Decimal
 
@@ -412,6 +414,7 @@ class SnowballStrategyConfig:
     volatility_guard_atr_period: int
     volatility_guard_baseline_period: int
     volatility_guard_candle_ema_period: int
+    volatility_guard_cooldown_minutes: int
     volatility_guard_max_pips: Decimal
     volatility_guard_max_multiplier: Decimal
     add_trend_guard_enabled: bool
@@ -624,6 +627,7 @@ class SnowballStrategyConfig:
             atr_period=self.volatility_guard_atr_period,
             baseline_period=self.volatility_guard_baseline_period,
             candle_ema_period=self.volatility_guard_candle_ema_period,
+            cooldown_minutes=self.volatility_guard_cooldown_minutes,
             max_pips=self.volatility_guard_max_pips,
             max_multiplier=self.volatility_guard_max_multiplier,
         )
@@ -865,6 +869,9 @@ class SnowballStrategyConfig:
                 ),
                 60,
             ),
+            volatility_guard_cooldown_minutes=_parse_int(
+                raw.get("volatility_guard_cooldown_minutes"), 0
+            ),
             volatility_guard_max_pips=_parse_decimal(raw.get("volatility_guard_max_pips"), "25"),
             volatility_guard_max_multiplier=_parse_decimal(
                 raw.get("volatility_guard_max_multiplier"), "3"
@@ -1074,6 +1081,7 @@ class SnowballStrategyConfig:
             "volatility_guard_atr_period": self.volatility_guard_atr_period,
             "volatility_guard_baseline_period": self.volatility_guard_baseline_period,
             "volatility_guard_candle_ema_period": self.volatility_guard_candle_ema_period,
+            "volatility_guard_cooldown_minutes": self.volatility_guard_cooldown_minutes,
             "volatility_guard_max_pips": str(self.volatility_guard_max_pips),
             "volatility_guard_max_multiplier": str(self.volatility_guard_max_multiplier),
             "add_trend_guard_enabled": self.add_trend_guard_enabled,
@@ -1190,6 +1198,8 @@ class SnowballStrategyConfig:
             raise ValueError("volatility_guard_baseline_period must be greater than 0")
         if self.volatility_guard_candle_ema_period <= 0:
             raise ValueError("volatility_guard_candle_ema_period must be greater than 0")
+        if self.volatility_guard_cooldown_minutes < 0:
+            raise ValueError("volatility_guard_cooldown_minutes must be greater than or equal to 0")
         if self.volatility_guard_max_pips <= 0:
             raise ValueError("volatility_guard_max_pips must be greater than 0")
         if self.volatility_guard_max_multiplier <= 0:

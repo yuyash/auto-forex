@@ -426,6 +426,7 @@ const SNOWBALL_RISK_GUARD_METRIC_KEYS = [
   'snowball_adaptive_trend_interval_multiplier',
   'snowball_volatility_guard_current_pips',
   'snowball_volatility_guard_baseline_current_pips',
+  'snowball_volatility_guard_cooldown_remaining_minutes',
   'snowball_trend_guard_deviation_pips',
   'snowball_trend_guard_slope_pips',
   'snowball_volatility_guard_source',
@@ -632,6 +633,15 @@ function SnowballRiskGuardSummary({ latest }: { latest: MetricPoint | null }) {
       ),
       suffix: ' pips',
       maximumFractionDigits: 1,
+    },
+    {
+      key: 'snowball_volatility_guard_cooldown_remaining_minutes',
+      value: numericMetric(
+        metrics,
+        'snowball_volatility_guard_cooldown_remaining_minutes'
+      ),
+      suffix: ' min',
+      maximumFractionDigits: 0,
     },
     {
       key: 'snowball_trend_guard_deviation_pips',

@@ -243,6 +243,7 @@ class TestSnowballStrategyClassMethods:
         assert "volatility_guard_target" not in defaults
         assert "volatility_guard_source" not in defaults
         assert "volatility_guard_candle_granularity" not in defaults
+        assert "volatility_guard_cooldown_minutes" not in defaults
         assert defaults["add_trend_guard_enabled"] is False
         assert "add_trend_candle_granularity" not in defaults
         assert "add_trend_ema_period" not in defaults
@@ -290,6 +291,7 @@ class TestSnowballStrategyClassMethods:
                 "volatility_guard_source": "candle_ema",
                 "volatility_guard_candle_granularity": "M5",
                 "volatility_guard_candle_ema_period": 30,
+                "volatility_guard_cooldown_minutes": 45,
                 "volatility_guard_atr_period": 14,
                 "add_trend_guard_enabled": True,
                 "add_trend_candle_granularity": "M15",
@@ -312,6 +314,7 @@ class TestSnowballStrategyClassMethods:
         assert result["volatility_guard_source"] == "candle_ema"
         assert result["volatility_guard_candle_granularity"] == "M5"
         assert result["volatility_guard_candle_ema_period"] == 30
+        assert result["volatility_guard_cooldown_minutes"] == 45
         assert "volatility_guard_atr_period" not in result
         assert result["add_trend_guard_enabled"] is True
         assert result["add_trend_candle_granularity"] == "M15"

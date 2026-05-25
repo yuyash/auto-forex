@@ -271,6 +271,7 @@ class SnowballStrategyState:
     warmup_phase: str = "normal"
     warmup_last_log_state: str = ""
     warmup_mid_history: list[str] = field(default_factory=list)
+    volatility_guard_cooldown_until: str | None = None
 
     def allocate_id(self) -> int:
         self.invalidate_entry_cache()
@@ -379,6 +380,7 @@ class SnowballStrategyState:
             "warmup_phase": self.warmup_phase,
             "warmup_last_log_state": self.warmup_last_log_state,
             "warmup_mid_history": list(self.warmup_mid_history),
+            "volatility_guard_cooldown_until": self.volatility_guard_cooldown_until,
         }
 
     @staticmethod
@@ -431,6 +433,9 @@ class SnowballStrategyState:
             warmup_last_log_state=SNOWBALL_STATE_PARSER.optional_str(data, "warmup_last_log_state")
             or "",
             warmup_mid_history=warmup_mid_history,
+            volatility_guard_cooldown_until=SNOWBALL_STATE_PARSER.optional_str(
+                data, "volatility_guard_cooldown_until"
+            ),
         )
 
     @classmethod

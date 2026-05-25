@@ -33,6 +33,7 @@ const SNOWBALL_METRIC_KEYS = [
   'snowball_adaptive_trend_interval_multiplier',
   'snowball_volatility_guard_current_pips',
   'snowball_volatility_guard_baseline_current_pips',
+  'snowball_volatility_guard_cooldown_remaining_minutes',
   'snowball_trend_guard_deviation_pips',
   'snowball_trend_guard_slope_pips',
   'snowball_volatility_guard_source',
