@@ -27,6 +27,8 @@ export interface UseTaskMetricsOptions {
   enabled?: boolean;
   /** Fetch the full chart series. Keep false outside the metrics tab. */
   fetchSeries?: boolean;
+  /** Metric keys needed by the current view. Reduces payload size. */
+  metricKeys?: string[];
   /** Polling interval in ms (0 = no polling) */
   pollingInterval?: number;
 }
@@ -85,6 +87,8 @@ const initialMetricsState: MetricsState = {
   error: null,
 };
 
+const MAX_RENDERED_METRIC_POINTS = 5000;
+
 function mergeMetricPoints(points: MetricPoint[]): MetricPoint[] {
   const deduped = new Map<number, MetricPoint>();
   for (const point of points) {
@@ -93,12 +97,24 @@ function mergeMetricPoints(points: MetricPoint[]): MetricPoint[] {
   return Array.from(deduped.values()).sort((a, b) => a.t - b.t);
 }
 
+function trimMetricPoints(points: MetricPoint[]): MetricPoint[] {
+  if (points.length <= MAX_RENDERED_METRIC_POINTS) return points;
+  return points.slice(points.length - MAX_RENDERED_METRIC_POINTS);
+}
+
+function timestampToSeconds(timestamp: string | undefined): number | null {
+  if (!timestamp) return null;
+  const ms = Date.parse(timestamp);
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : null;
+}
+
 function metricsReducer(
   state: MetricsState,
   action: MetricsAction
 ): MetricsState {
   switch (action.type) {
     case 'loading':
+      if (state.isLoading && state.error == null) return state;
       return { ...state, isLoading: true, error: null };
     case 'failed':
       return { ...state, isLoading: false, error: action.error };
@@ -120,8 +136,10 @@ function metricsReducer(
         consistencyWarnings: action.consistencyWarnings,
       };
     case 'clearSeries':
+      if (state.data.length === 0) return state;
       return { ...state, data: [] };
     case 'loaded':
+      if (!state.isLoading) return state;
       return { ...state, isLoading: false };
     default:
       return state;
@@ -137,6 +155,7 @@ export function useTaskMetrics({
   until,
   enabled = true,
   fetchSeries = true,
+  metricKeys,
   pollingInterval = 0,
 }: UseTaskMetricsOptions): UseTaskMetricsResult {
   const [state, dispatch] = useReducer(metricsReducer, initialMetricsState);
@@ -156,13 +175,16 @@ export function useTaskMetrics({
       if (inFlightRef.current) return;
       const requestSeq = ++requestSeqRef.current;
       inFlightRef.current = true;
-      dispatch({ type: 'loading' });
+      if (!incremental) {
+        dispatch({ type: 'loading' });
+      }
       try {
         if (!fetchSeries) {
           const latestPage = await fetchLatestMetrics({
             taskId,
             taskType,
             executionRunId,
+            metricKeys,
           });
           if (mountedRef.current && requestSeq === requestSeqRef.current) {
             dispatch({
@@ -178,6 +200,9 @@ export function useTaskMetrics({
 
         const effectiveSince =
           incremental && !since ? latestTimestampRef.current : since;
+        const previousLatestSeconds = timestampToSeconds(
+          latestTimestampRef.current
+        );
         const publishSeries = (
           points: MetricPoint[],
           pageMeta: Pick<
@@ -188,7 +213,14 @@ export function useTaskMetrics({
           if (!mountedRef.current || requestSeq !== requestSeqRef.current) {
             return;
           }
-          const nextData = mergeMetricPoints(points);
+          if (
+            incremental &&
+            previousLatestSeconds != null &&
+            !points.some((point) => point.t > previousLatestSeconds)
+          ) {
+            return;
+          }
+          const nextData = trimMetricPoints(mergeMetricPoints(points));
           const nextLatest =
             nextData.length > 0 ? nextData[nextData.length - 1] : null;
           dataRef.current = nextData;
@@ -211,6 +243,7 @@ export function useTaskMetrics({
           interval: interval >= 1 ? interval : undefined,
           since: effectiveSince,
           until,
+          metricKeys,
           pageSize: 500,
           maxPages: incremental ? 2 : 4,
           existingResults: incremental ? dataRef.current : undefined,
@@ -242,6 +275,7 @@ export function useTaskMetrics({
       until,
       enabled,
       fetchSeries,
+      metricKeys,
     ]
   );
 

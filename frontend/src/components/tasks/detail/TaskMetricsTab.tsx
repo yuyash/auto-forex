@@ -6,6 +6,7 @@
 
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -1135,6 +1136,59 @@ const LINE_CHART_TOP_MARGIN = 4;
 const LINE_CHART_BOTTOM_MARGIN = 22;
 const CHART_PANEL_PLOT_SELECTOR = '[data-chart-panel-plot="true"]';
 
+function DeferredMetricChart({
+  height,
+  children,
+}: {
+  height: number;
+  children: ReactNode;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const [shouldRender, setShouldRender] = useState(
+    () => typeof IntersectionObserver === 'undefined'
+  );
+
+  useEffect(() => {
+    if (shouldRender) return undefined;
+    const host = hostRef.current;
+    if (!host) return undefined;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (
+          entries.some(
+            (entry) => entry.isIntersecting || entry.intersectionRatio > 0
+          )
+        ) {
+          setShouldRender(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '720px 0px' }
+    );
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, [shouldRender]);
+
+  return (
+    <Box ref={hostRef} sx={{ minHeight: height }}>
+      {shouldRender ? (
+        children
+      ) : (
+        <Box
+          sx={{
+            height,
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: 1,
+            bgcolor: 'background.paper',
+          }}
+        />
+      )}
+    </Box>
+  );
+}
+
 function uniqueHtmlElements(
   candidates: Array<Element | HTMLElement | null | undefined>
 ): HTMLElement[] {
@@ -1933,16 +1987,18 @@ export function TaskMetricsTab({
                   borderRadius: 1,
                 }}
               >
-                <MetricsOhlcChart
-                  instrument={instrument!}
-                  startTime={startTime!}
-                  endTime={endTime ?? undefined}
-                  cardHeight={CHART_CARD_HEIGHT}
-                  currentTickTimestamp={currentTickTimestamp}
-                  currentTickPrice={currentTickPrice}
-                  refreshToken={ohlcRefreshToken}
-                  timezone={timezone}
-                />
+                <DeferredMetricChart height={CHART_CARD_HEIGHT}>
+                  <MetricsOhlcChart
+                    instrument={instrument!}
+                    startTime={startTime!}
+                    endTime={endTime ?? undefined}
+                    cardHeight={CHART_CARD_HEIGHT}
+                    currentTickTimestamp={currentTickTimestamp}
+                    currentTickPrice={currentTickPrice}
+                    refreshToken={ohlcRefreshToken}
+                    timezone={timezone}
+                  />
+                </DeferredMetricChart>
               </Grid>
             );
           }
@@ -1992,101 +2048,103 @@ export function TaskMetricsTab({
                   borderRadius: 1,
                 }}
               >
-                <ChartPanel
-                  title={t('metrics.period_return', {
-                    defaultValue: 'Period Return',
-                  })}
-                  valueLabel={formatValue(cd.lastValue, 'pct')}
-                  height={CHART_CARD_HEIGHT}
-                  headerPrefix={
-                    <DragIndicatorIcon
-                      sx={{
-                        fontSize: 16,
-                        color: 'text.disabled',
-                        cursor: 'grab',
-                        mr: spacingTokens.xxs,
+                <DeferredMetricChart height={CHART_CARD_HEIGHT}>
+                  <ChartPanel
+                    title={t('metrics.period_return', {
+                      defaultValue: 'Period Return',
+                    })}
+                    valueLabel={formatValue(cd.lastValue, 'pct')}
+                    height={CHART_CARD_HEIGHT}
+                    headerPrefix={
+                      <DragIndicatorIcon
+                        sx={{
+                          fontSize: 16,
+                          color: 'text.disabled',
+                          cursor: 'grab',
+                          mr: spacingTokens.xxs,
+                        }}
+                      />
+                    }
+                    headerActions={
+                      <ToggleButtonGroup
+                        exclusive
+                        size="small"
+                        value={chart.period}
+                        onChange={(_, nextPeriod: ReturnPeriod | null) => {
+                          if (nextPeriod) setSelectedReturnPeriod(nextPeriod);
+                        }}
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onClick={(event) => event.stopPropagation()}
+                        aria-label={t('metrics.period_return', {
+                          defaultValue: 'Period Return',
+                        })}
+                        sx={{
+                          '& .MuiToggleButton-root': {
+                            px: 0.75,
+                            py: 0.25,
+                            fontSize: '0.6875rem',
+                            lineHeight: 1.2,
+                          },
+                        }}
+                      >
+                        {availableReturnCharts.map((option) => (
+                          <ToggleButton
+                            key={option.period}
+                            value={option.period}
+                            aria-label={t(`metrics.${option.key}`, {
+                              defaultValue: option.key.replace(/_/g, ' '),
+                            })}
+                          >
+                            {t(RETURN_PERIOD_SHORT_LABEL_KEYS[option.period])}
+                          </ToggleButton>
+                        ))}
+                      </ToggleButtonGroup>
+                    }
+                  >
+                    <FillBarChart
+                      fallbackHeight={LINE_CHART_FALLBACK_HEIGHT}
+                      xAxis={[
+                        {
+                          data: cd.labels,
+                          scaleType: 'band' as const,
+                          tickLabelStyle: { fontSize: 10 },
+                        },
+                      ]}
+                      yAxis={[
+                        {
+                          position: 'right',
+                          width: yAxisWidth,
+                          valueFormatter: (v: number | null) =>
+                            v != null ? formatYLabel(v, 'pct') : '',
+                        },
+                      ]}
+                      series={[
+                        {
+                          data: cd.values,
+                          color: chart.color,
+                          label: t(`metrics.${chart.key}`, {
+                            defaultValue: chart.key.replace(/_/g, ' '),
+                          }),
+                          valueFormatter: (v: number | null) =>
+                            v != null ? formatValue(v, 'pct') : '',
+                        },
+                      ]}
+                      grid={{ horizontal: true }}
+                      margin={{
+                        left: LINE_CHART_LEFT_MARGIN,
+                        right: LINE_CHART_RIGHT_MARGIN,
+                        top: LINE_CHART_TOP_MARGIN,
+                        bottom: LINE_CHART_BOTTOM_MARGIN,
                       }}
-                    />
-                  }
-                  headerActions={
-                    <ToggleButtonGroup
-                      exclusive
-                      size="small"
-                      value={chart.period}
-                      onChange={(_, nextPeriod: ReturnPeriod | null) => {
-                        if (nextPeriod) setSelectedReturnPeriod(nextPeriod);
-                      }}
-                      onMouseDown={(event) => event.stopPropagation()}
-                      onClick={(event) => event.stopPropagation()}
-                      aria-label={t('metrics.period_return', {
-                        defaultValue: 'Period Return',
-                      })}
-                      sx={{
-                        '& .MuiToggleButton-root': {
-                          px: 0.75,
-                          py: 0.25,
-                          fontSize: '0.6875rem',
-                          lineHeight: 1.2,
+                      hideLegend
+                      slotProps={{
+                        axisTickLabel: {
+                          style: { fontSize: 10 },
                         },
                       }}
-                    >
-                      {availableReturnCharts.map((option) => (
-                        <ToggleButton
-                          key={option.period}
-                          value={option.period}
-                          aria-label={t(`metrics.${option.key}`, {
-                            defaultValue: option.key.replace(/_/g, ' '),
-                          })}
-                        >
-                          {t(RETURN_PERIOD_SHORT_LABEL_KEYS[option.period])}
-                        </ToggleButton>
-                      ))}
-                    </ToggleButtonGroup>
-                  }
-                >
-                  <FillBarChart
-                    fallbackHeight={LINE_CHART_FALLBACK_HEIGHT}
-                    xAxis={[
-                      {
-                        data: cd.labels,
-                        scaleType: 'band' as const,
-                        tickLabelStyle: { fontSize: 10 },
-                      },
-                    ]}
-                    yAxis={[
-                      {
-                        position: 'right',
-                        width: yAxisWidth,
-                        valueFormatter: (v: number | null) =>
-                          v != null ? formatYLabel(v, 'pct') : '',
-                      },
-                    ]}
-                    series={[
-                      {
-                        data: cd.values,
-                        color: chart.color,
-                        label: t(`metrics.${chart.key}`, {
-                          defaultValue: chart.key.replace(/_/g, ' '),
-                        }),
-                        valueFormatter: (v: number | null) =>
-                          v != null ? formatValue(v, 'pct') : '',
-                      },
-                    ]}
-                    grid={{ horizontal: true }}
-                    margin={{
-                      left: LINE_CHART_LEFT_MARGIN,
-                      right: LINE_CHART_RIGHT_MARGIN,
-                      top: LINE_CHART_TOP_MARGIN,
-                      bottom: LINE_CHART_BOTTOM_MARGIN,
-                    }}
-                    hideLegend
-                    slotProps={{
-                      axisTickLabel: {
-                        style: { fontSize: 10 },
-                      },
-                    }}
-                  />
-                </ChartPanel>
+                    />
+                  </ChartPanel>
+                </DeferredMetricChart>
               </Grid>
             );
           }
@@ -2137,106 +2195,108 @@ export function TaskMetricsTab({
                   borderRadius: 1,
                 }}
               >
-                <ChartPanel
-                  title={t('metrics.period_tp_sl_pnl', {
-                    defaultValue: 'TP/SL PnL',
-                  })}
-                  valueLabel={formatValue(
-                    cd.lastValue,
-                    'currency',
-                    valueCurrency
-                  )}
-                  height={CHART_CARD_HEIGHT}
-                  headerPrefix={
-                    <DragIndicatorIcon
-                      sx={{
-                        fontSize: 16,
-                        color: 'text.disabled',
-                        cursor: 'grab',
-                        mr: spacingTokens.xxs,
+                <DeferredMetricChart height={CHART_CARD_HEIGHT}>
+                  <ChartPanel
+                    title={t('metrics.period_tp_sl_pnl', {
+                      defaultValue: 'TP/SL PnL',
+                    })}
+                    valueLabel={formatValue(
+                      cd.lastValue,
+                      'currency',
+                      valueCurrency
+                    )}
+                    height={CHART_CARD_HEIGHT}
+                    headerPrefix={
+                      <DragIndicatorIcon
+                        sx={{
+                          fontSize: 16,
+                          color: 'text.disabled',
+                          cursor: 'grab',
+                          mr: spacingTokens.xxs,
+                        }}
+                      />
+                    }
+                    headerActions={
+                      <ToggleButtonGroup
+                        exclusive
+                        size="small"
+                        value={chart.period}
+                        onChange={(_, nextPeriod: ReturnPeriod | null) => {
+                          if (nextPeriod) setSelectedTpSlPeriod(nextPeriod);
+                        }}
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onClick={(event) => event.stopPropagation()}
+                        aria-label={t('metrics.period_tp_sl_pnl', {
+                          defaultValue: 'TP/SL PnL',
+                        })}
+                        sx={{
+                          '& .MuiToggleButton-root': {
+                            px: 0.75,
+                            py: 0.25,
+                            fontSize: '0.6875rem',
+                            lineHeight: 1.2,
+                          },
+                        }}
+                      >
+                        {availableTpSlPeriods.map((option) => (
+                          <ToggleButton
+                            key={option.period}
+                            value={option.period}
+                            aria-label={t(
+                              RETURN_PERIOD_SHORT_LABEL_KEYS[option.period]
+                            )}
+                          >
+                            {t(RETURN_PERIOD_SHORT_LABEL_KEYS[option.period])}
+                          </ToggleButton>
+                        ))}
+                      </ToggleButtonGroup>
+                    }
+                  >
+                    <FillBarChart
+                      fallbackHeight={LINE_CHART_FALLBACK_HEIGHT}
+                      xAxis={[
+                        {
+                          data: cd.labels,
+                          scaleType: 'band' as const,
+                          tickLabelStyle: { fontSize: 10 },
+                        },
+                      ]}
+                      yAxis={[
+                        {
+                          position: 'right',
+                          width: yAxisWidth,
+                          valueFormatter: (v: number | null) =>
+                            v != null ? formatYLabel(v, 'currency') : '',
+                        },
+                      ]}
+                      series={cd.series.map(({ metric, values }) => ({
+                        data: values,
+                        color: metric.color,
+                        stack: TP_SL_PERIOD_CHART_KEY,
+                        stackOffset: 'diverging' as const,
+                        label: t(`metrics.${metric.key}`, {
+                          defaultValue: metric.key.replace(/_/g, ' '),
+                        }),
+                        valueFormatter: (v: number | null) =>
+                          v != null
+                            ? formatValue(v, 'currency', valueCurrency)
+                            : '',
+                      }))}
+                      grid={{ horizontal: true }}
+                      margin={{
+                        left: LINE_CHART_LEFT_MARGIN,
+                        right: LINE_CHART_RIGHT_MARGIN,
+                        top: LINE_CHART_TOP_MARGIN,
+                        bottom: LINE_CHART_BOTTOM_MARGIN,
                       }}
-                    />
-                  }
-                  headerActions={
-                    <ToggleButtonGroup
-                      exclusive
-                      size="small"
-                      value={chart.period}
-                      onChange={(_, nextPeriod: ReturnPeriod | null) => {
-                        if (nextPeriod) setSelectedTpSlPeriod(nextPeriod);
-                      }}
-                      onMouseDown={(event) => event.stopPropagation()}
-                      onClick={(event) => event.stopPropagation()}
-                      aria-label={t('metrics.period_tp_sl_pnl', {
-                        defaultValue: 'TP/SL PnL',
-                      })}
-                      sx={{
-                        '& .MuiToggleButton-root': {
-                          px: 0.75,
-                          py: 0.25,
-                          fontSize: '0.6875rem',
-                          lineHeight: 1.2,
+                      slotProps={{
+                        axisTickLabel: {
+                          style: { fontSize: 10 },
                         },
                       }}
-                    >
-                      {availableTpSlPeriods.map((option) => (
-                        <ToggleButton
-                          key={option.period}
-                          value={option.period}
-                          aria-label={t(
-                            RETURN_PERIOD_SHORT_LABEL_KEYS[option.period]
-                          )}
-                        >
-                          {t(RETURN_PERIOD_SHORT_LABEL_KEYS[option.period])}
-                        </ToggleButton>
-                      ))}
-                    </ToggleButtonGroup>
-                  }
-                >
-                  <FillBarChart
-                    fallbackHeight={LINE_CHART_FALLBACK_HEIGHT}
-                    xAxis={[
-                      {
-                        data: cd.labels,
-                        scaleType: 'band' as const,
-                        tickLabelStyle: { fontSize: 10 },
-                      },
-                    ]}
-                    yAxis={[
-                      {
-                        position: 'right',
-                        width: yAxisWidth,
-                        valueFormatter: (v: number | null) =>
-                          v != null ? formatYLabel(v, 'currency') : '',
-                      },
-                    ]}
-                    series={cd.series.map(({ metric, values }) => ({
-                      data: values,
-                      color: metric.color,
-                      stack: TP_SL_PERIOD_CHART_KEY,
-                      stackOffset: 'diverging' as const,
-                      label: t(`metrics.${metric.key}`, {
-                        defaultValue: metric.key.replace(/_/g, ' '),
-                      }),
-                      valueFormatter: (v: number | null) =>
-                        v != null
-                          ? formatValue(v, 'currency', valueCurrency)
-                          : '',
-                    }))}
-                    grid={{ horizontal: true }}
-                    margin={{
-                      left: LINE_CHART_LEFT_MARGIN,
-                      right: LINE_CHART_RIGHT_MARGIN,
-                      top: LINE_CHART_TOP_MARGIN,
-                      bottom: LINE_CHART_BOTTOM_MARGIN,
-                    }}
-                    slotProps={{
-                      axisTickLabel: {
-                        style: { fontSize: 10 },
-                      },
-                    }}
-                  />
-                </ChartPanel>
+                    />
+                  </ChartPanel>
+                </DeferredMetricChart>
               </Grid>
             );
           }
@@ -2294,102 +2354,104 @@ export function TaskMetricsTab({
                   borderRadius: 1,
                 }}
               >
-                <ChartPanel
-                  title={t('metrics.period_position_activity', {
-                    defaultValue: 'Position Activity',
-                  })}
-                  valueLabel={formatValue(cd.lastValue, 'int')}
-                  height={CHART_CARD_HEIGHT}
-                  headerPrefix={
-                    <DragIndicatorIcon
-                      sx={{
-                        fontSize: 16,
-                        color: 'text.disabled',
-                        cursor: 'grab',
-                        mr: spacingTokens.xxs,
+                <DeferredMetricChart height={CHART_CARD_HEIGHT}>
+                  <ChartPanel
+                    title={t('metrics.period_position_activity', {
+                      defaultValue: 'Position Activity',
+                    })}
+                    valueLabel={formatValue(cd.lastValue, 'int')}
+                    height={CHART_CARD_HEIGHT}
+                    headerPrefix={
+                      <DragIndicatorIcon
+                        sx={{
+                          fontSize: 16,
+                          color: 'text.disabled',
+                          cursor: 'grab',
+                          mr: spacingTokens.xxs,
+                        }}
+                      />
+                    }
+                    headerActions={
+                      <ToggleButtonGroup
+                        exclusive
+                        size="small"
+                        value={chart.period}
+                        onChange={(_, nextPeriod: ReturnPeriod | null) => {
+                          if (nextPeriod) {
+                            setSelectedPositionActivityPeriod(nextPeriod);
+                          }
+                        }}
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onClick={(event) => event.stopPropagation()}
+                        aria-label={t('metrics.period_position_activity', {
+                          defaultValue: 'Position Activity',
+                        })}
+                        sx={{
+                          '& .MuiToggleButton-root': {
+                            px: 0.75,
+                            py: 0.25,
+                            fontSize: '0.6875rem',
+                            lineHeight: 1.2,
+                          },
+                        }}
+                      >
+                        {availablePositionActivityPeriods.map((option) => (
+                          <ToggleButton
+                            key={option.period}
+                            value={option.period}
+                            aria-label={t(
+                              RETURN_PERIOD_SHORT_LABEL_KEYS[option.period]
+                            )}
+                          >
+                            {t(RETURN_PERIOD_SHORT_LABEL_KEYS[option.period])}
+                          </ToggleButton>
+                        ))}
+                      </ToggleButtonGroup>
+                    }
+                  >
+                    <FillBarChart
+                      fallbackHeight={LINE_CHART_FALLBACK_HEIGHT}
+                      xAxis={[
+                        {
+                          data: cd.labels,
+                          scaleType: 'band' as const,
+                          tickLabelStyle: { fontSize: 10 },
+                        },
+                      ]}
+                      yAxis={[
+                        {
+                          position: 'right',
+                          width: yAxisWidth,
+                          valueFormatter: (v: number | null) =>
+                            v != null ? formatYLabel(v, 'int') : '',
+                        },
+                      ]}
+                      series={cd.series.map(({ metric, values }) => ({
+                        data: values,
+                        color: metric.color,
+                        stack: POSITION_ACTIVITY_PERIOD_CHART_KEY,
+                        stackOffset: 'diverging' as const,
+                        label: t(`metrics.${metric.key}`, {
+                          defaultValue: metric.key.replace(/_/g, ' '),
+                        }),
+                        valueFormatter: (v: number | null) =>
+                          v != null ? formatValue(v, 'int') : '',
+                      }))}
+                      grid={{ horizontal: true }}
+                      margin={{
+                        left: LINE_CHART_LEFT_MARGIN,
+                        right: LINE_CHART_RIGHT_MARGIN,
+                        top: LINE_CHART_TOP_MARGIN,
+                        bottom: LINE_CHART_BOTTOM_MARGIN,
                       }}
-                    />
-                  }
-                  headerActions={
-                    <ToggleButtonGroup
-                      exclusive
-                      size="small"
-                      value={chart.period}
-                      onChange={(_, nextPeriod: ReturnPeriod | null) => {
-                        if (nextPeriod) {
-                          setSelectedPositionActivityPeriod(nextPeriod);
-                        }
-                      }}
-                      onMouseDown={(event) => event.stopPropagation()}
-                      onClick={(event) => event.stopPropagation()}
-                      aria-label={t('metrics.period_position_activity', {
-                        defaultValue: 'Position Activity',
-                      })}
-                      sx={{
-                        '& .MuiToggleButton-root': {
-                          px: 0.75,
-                          py: 0.25,
-                          fontSize: '0.6875rem',
-                          lineHeight: 1.2,
+                      slotProps={{
+                        axisTickLabel: {
+                          style: { fontSize: 10 },
                         },
                       }}
-                    >
-                      {availablePositionActivityPeriods.map((option) => (
-                        <ToggleButton
-                          key={option.period}
-                          value={option.period}
-                          aria-label={t(
-                            RETURN_PERIOD_SHORT_LABEL_KEYS[option.period]
-                          )}
-                        >
-                          {t(RETURN_PERIOD_SHORT_LABEL_KEYS[option.period])}
-                        </ToggleButton>
-                      ))}
-                    </ToggleButtonGroup>
-                  }
-                >
-                  <FillBarChart
-                    fallbackHeight={LINE_CHART_FALLBACK_HEIGHT}
-                    xAxis={[
-                      {
-                        data: cd.labels,
-                        scaleType: 'band' as const,
-                        tickLabelStyle: { fontSize: 10 },
-                      },
-                    ]}
-                    yAxis={[
-                      {
-                        position: 'right',
-                        width: yAxisWidth,
-                        valueFormatter: (v: number | null) =>
-                          v != null ? formatYLabel(v, 'int') : '',
-                      },
-                    ]}
-                    series={cd.series.map(({ metric, values }) => ({
-                      data: values,
-                      color: metric.color,
-                      stack: POSITION_ACTIVITY_PERIOD_CHART_KEY,
-                      stackOffset: 'diverging' as const,
-                      label: t(`metrics.${metric.key}`, {
-                        defaultValue: metric.key.replace(/_/g, ' '),
-                      }),
-                      valueFormatter: (v: number | null) =>
-                        v != null ? formatValue(v, 'int') : '',
-                    }))}
-                    grid={{ horizontal: true }}
-                    margin={{
-                      left: LINE_CHART_LEFT_MARGIN,
-                      right: LINE_CHART_RIGHT_MARGIN,
-                      top: LINE_CHART_TOP_MARGIN,
-                      bottom: LINE_CHART_BOTTOM_MARGIN,
-                    }}
-                    slotProps={{
-                      axisTickLabel: {
-                        style: { fontSize: 10 },
-                      },
-                    }}
-                  />
-                </ChartPanel>
+                    />
+                  </ChartPanel>
+                </DeferredMetricChart>
               </Grid>
             );
           }
@@ -2432,113 +2494,119 @@ export function TaskMetricsTab({
                 borderRadius: 1,
               }}
             >
-              <ChartPanel
-                title={t(`metrics.${chart.key}`, {
-                  defaultValue: chart.key.replace(/_/g, ' '),
-                })}
-                valueLabel={formatValue(lastVal, chart.format, cd.lastCurrency)}
-                height={CHART_CARD_HEIGHT}
-                headerPrefix={
-                  <DragIndicatorIcon
-                    sx={{
-                      fontSize: 16,
-                      color: 'text.disabled',
-                      cursor: 'grab',
-                      mr: spacingTokens.xxs,
-                    }}
-                  />
-                }
-              >
-                <FillLineChart
-                  fallbackHeight={LINE_CHART_FALLBACK_HEIGHT}
-                  xAxis={[
-                    {
-                      data: cd.x,
-                      scaleType: 'time' as const,
-                      tickNumber: xTickCount,
-                      tickLabelStyle: { fontSize: 10 },
-                      valueFormatter: (
-                        v: Date,
-                        context: { location: string }
-                      ) => {
-                        if (context.location === 'tooltip') {
-                          return formatTooltipDate(
+              <DeferredMetricChart height={CHART_CARD_HEIGHT}>
+                <ChartPanel
+                  title={t(`metrics.${chart.key}`, {
+                    defaultValue: chart.key.replace(/_/g, ' '),
+                  })}
+                  valueLabel={formatValue(
+                    lastVal,
+                    chart.format,
+                    cd.lastCurrency
+                  )}
+                  height={CHART_CARD_HEIGHT}
+                  headerPrefix={
+                    <DragIndicatorIcon
+                      sx={{
+                        fontSize: 16,
+                        color: 'text.disabled',
+                        cursor: 'grab',
+                        mr: spacingTokens.xxs,
+                      }}
+                    />
+                  }
+                >
+                  <FillLineChart
+                    fallbackHeight={LINE_CHART_FALLBACK_HEIGHT}
+                    xAxis={[
+                      {
+                        data: cd.x,
+                        scaleType: 'time' as const,
+                        tickNumber: xTickCount,
+                        tickLabelStyle: { fontSize: 10 },
+                        valueFormatter: (
+                          v: Date,
+                          context: { location: string }
+                        ) => {
+                          if (context.location === 'tooltip') {
+                            return formatTooltipDate(
+                              v,
+                              timezone,
+                              settings.dateFormat
+                            );
+                          }
+                          return formatTickLabel(
                             v,
+                            rangeMs,
+                            effectiveInterval,
                             timezone,
                             settings.dateFormat
                           );
-                        }
-                        return formatTickLabel(
-                          v,
-                          rangeMs,
-                          effectiveInterval,
-                          timezone,
-                          settings.dateFormat
-                        );
+                        },
                       },
-                    },
-                  ]}
-                  yAxis={[
-                    {
-                      position: 'right',
-                      width: metricYAxisWidth,
-                      tickNumber: yTickCount,
-                      valueFormatter: (v: number | null) =>
-                        v != null ? formatYLabel(v, chart.format) : '',
-                    },
-                  ]}
-                  series={cd.series.map(
-                    ({ metric, y, currency: seriesCurrency }) => ({
-                      data: y,
-                      color: metric.color,
-                      label: t(`metrics.${metric.key}`, {
-                        defaultValue: metric.key.replace(/_/g, ' '),
-                      }),
-                      showMark: false,
-                      valueFormatter: (v: number | null) =>
-                        v != null
-                          ? formatValue(v, metric.format, seriesCurrency)
-                          : '',
-                    })
-                  )}
-                  axisHighlight={{ x: 'line', y: 'none' }}
-                  grid={{ vertical: true, horizontal: true }}
-                  margin={{
-                    left: LINE_CHART_LEFT_MARGIN,
-                    right: LINE_CHART_RIGHT_MARGIN,
-                    top: LINE_CHART_TOP_MARGIN,
-                    bottom: LINE_CHART_BOTTOM_MARGIN,
-                  }}
-                  hideLegend={cd.series.length <= 1}
-                  slotProps={{
-                    axisTickLabel: {
-                      style: { fontSize: 10 },
-                    },
-                  }}
-                >
-                  {showLossCutMarkers &&
-                    LOSS_CUT_OVERLAY_KEYS.has(chart.key) &&
-                    lossCutEvents?.map((event) => (
-                      <ChartsReferenceLine
-                        key={event.id}
-                        x={new Date(event.time * 1000)}
-                        lineStyle={{
-                          stroke: '#dc2626',
-                          strokeWidth: 1.5,
-                          strokeDasharray: '4 2',
-                          opacity: 0.7,
-                        }}
-                        label={`LC ${event.units.toLocaleString()}`}
-                        labelAlign="start"
-                        labelStyle={{
-                          fontSize: 9,
-                          fill: '#dc2626',
-                          fontWeight: 500,
-                        }}
-                      />
-                    ))}
-                </FillLineChart>
-              </ChartPanel>
+                    ]}
+                    yAxis={[
+                      {
+                        position: 'right',
+                        width: metricYAxisWidth,
+                        tickNumber: yTickCount,
+                        valueFormatter: (v: number | null) =>
+                          v != null ? formatYLabel(v, chart.format) : '',
+                      },
+                    ]}
+                    series={cd.series.map(
+                      ({ metric, y, currency: seriesCurrency }) => ({
+                        data: y,
+                        color: metric.color,
+                        label: t(`metrics.${metric.key}`, {
+                          defaultValue: metric.key.replace(/_/g, ' '),
+                        }),
+                        showMark: false,
+                        valueFormatter: (v: number | null) =>
+                          v != null
+                            ? formatValue(v, metric.format, seriesCurrency)
+                            : '',
+                      })
+                    )}
+                    axisHighlight={{ x: 'line', y: 'none' }}
+                    grid={{ vertical: true, horizontal: true }}
+                    margin={{
+                      left: LINE_CHART_LEFT_MARGIN,
+                      right: LINE_CHART_RIGHT_MARGIN,
+                      top: LINE_CHART_TOP_MARGIN,
+                      bottom: LINE_CHART_BOTTOM_MARGIN,
+                    }}
+                    hideLegend={cd.series.length <= 1}
+                    slotProps={{
+                      axisTickLabel: {
+                        style: { fontSize: 10 },
+                      },
+                    }}
+                  >
+                    {showLossCutMarkers &&
+                      LOSS_CUT_OVERLAY_KEYS.has(chart.key) &&
+                      lossCutEvents?.map((event) => (
+                        <ChartsReferenceLine
+                          key={event.id}
+                          x={new Date(event.time * 1000)}
+                          lineStyle={{
+                            stroke: '#dc2626',
+                            strokeWidth: 1.5,
+                            strokeDasharray: '4 2',
+                            opacity: 0.7,
+                          }}
+                          label={`LC ${event.units.toLocaleString()}`}
+                          labelAlign="start"
+                          labelStyle={{
+                            fontSize: 9,
+                            fill: '#dc2626',
+                            fontWeight: 500,
+                          }}
+                        />
+                      ))}
+                  </FillLineChart>
+                </ChartPanel>
+              </DeferredMetricChart>
             </Grid>
           );
         })}

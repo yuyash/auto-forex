@@ -75,6 +75,7 @@ import {
   usePeriodicTradeMetrics,
 } from '../../hooks/useStrategyData';
 import { computeAutoInterval } from '../../utils/autoGranularity';
+import { metricKeysForStrategy } from '../../utils/taskMetricKeys';
 import { useToast } from '../common';
 import { formatTaskActionError } from '../../utils/taskActionError';
 import { useTaskExecution } from '../../hooks/useTaskExecutions';
@@ -209,6 +210,10 @@ export const TradingTaskDetail: React.FC = () => {
   const metricsUntilIso = metricsUntil
     ? new Date(metricsUntil).toISOString()
     : undefined;
+  const metricKeys = useMemo(
+    () => metricKeysForStrategy(task?.strategy_type),
+    [task?.strategy_type]
+  );
 
   useEffect(() => {
     if (metricsUntil || task?.completed_at) return;
@@ -247,6 +252,7 @@ export const TradingTaskDetail: React.FC = () => {
     until: metricsUntilIso,
     enabled: !!taskId,
     fetchSeries: activeTabId === 'metrics',
+    metricKeys,
     pollingInterval:
       !isViewingHistorical && shouldPollTaskStatus(currentStatus) ? 30000 : 0,
   });
