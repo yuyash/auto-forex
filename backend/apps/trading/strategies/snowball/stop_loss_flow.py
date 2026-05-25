@@ -352,6 +352,7 @@ class StopLossCloseProcessor:
         )
 
         entry.lifecycle_stop_loss_count += 1
+        cycle.stop_loss_count += 1
         if strategy.config.rebuild_enabled:
             candidate.slot.close_for_stop_loss(
                 self.snapshot_factory.snapshot(
@@ -392,6 +393,8 @@ class StopLossRebuildPricePlanner:
         """Return a rebuild plan when the trigger price has been reached."""
         if pending.closed_at is not None and tick.timestamp <= pending.closed_at:
             return None
+        if self.cycle_rebuild_guard_blocks(strategy=strategy, tick=tick, cycle=cycle):
+            return None
         if not self.cooldown_elapsed(
             pending=pending,
             tick=tick,
@@ -423,6 +426,44 @@ class StopLossRebuildPricePlanner:
             trigger_price=trigger_price,
             close_price=close_price,
         )
+
+    def cycle_rebuild_guard_blocks(
+        self,
+        *,
+        strategy: StopLossFlowStrategy,
+        tick: Tick,
+        cycle: SnowballCycle,
+    ) -> bool:
+        """Return True when repeated stop-losses should pause cycle rebuilds."""
+        cfg = strategy.config
+        if not cfg.cycle_rebuild_guard_enabled:
+            return False
+        if cycle.stop_loss_count < cfg.cycle_rebuild_guard_stop_count:
+            return False
+
+        loss_threshold = -cfg.cycle_rebuild_guard_min_loss
+        if cycle.realized_pnl >= loss_threshold:
+            return False
+        if self.cycle_price_recovered(strategy=strategy, tick=tick, cycle=cycle):
+            return False
+        return True
+
+    def cycle_price_recovered(
+        self,
+        *,
+        strategy: StopLossFlowStrategy,
+        tick: Tick,
+        cycle: SnowballCycle,
+    ) -> bool:
+        """Return True when price has recovered to the cycle head or better."""
+        head_price, _head_id = cycle.effective_head()
+        if head_price is None:
+            return False
+        recovery = strategy.config.cycle_rebuild_guard_recovery_pips
+        offset = recovery * strategy.pip_size
+        if cycle.direction == Direction.LONG:
+            return tick.bid >= head_price + offset
+        return tick.ask <= head_price - offset
 
     def cooldown_elapsed(
         self,

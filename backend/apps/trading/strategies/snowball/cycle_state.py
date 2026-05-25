@@ -39,6 +39,7 @@ class SnowballCycle:
     # cycle.  Used for end-of-cycle sanity logging (a completed cycle is
     # expected to finish non-negative).  Denominated in account currency.
     realized_pnl: Decimal = field(default_factory=lambda: Decimal("0"))
+    stop_loss_count: int = 0
 
     # -- Status convenience --
 
@@ -187,6 +188,7 @@ class SnowballCycle:
             "trade_cycle_id": self.trade_cycle_id,
             "is_initial_position_seed": self.is_initial_position_seed,
             "realized_pnl": str(self.realized_pnl),
+            "stop_loss_count": self.stop_loss_count,
         }
 
     @staticmethod
@@ -226,6 +228,7 @@ class SnowballCycle:
             realized_pnl=SNOWBALL_STATE_PARSER.strict_decimal(
                 SNOWBALL_STATE_PARSER.require(data, "realized_pnl"), field_name="realized_pnl"
             ),
+            stop_loss_count=SNOWBALL_STATE_PARSER.optional_int(data, "stop_loss_count") or 0,
         )
 
 
