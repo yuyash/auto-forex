@@ -291,6 +291,153 @@ class TestSnowballRiskGuardPhase:
         assert context.allow_new_positions is False
         assert context.allow_rebuilds is False
         assert context.snowball_state.metrics["snowball_add_block_reason"] == "volatility"
+        assert context.snowball_state.metrics["snowball_rebuild_block_reason"] == "volatility"
+
+    def test_volatility_guard_can_block_new_positions_only(self) -> None:
+        context = self._context(
+            config_overrides={
+                "volatility_guard_enabled": True,
+                "volatility_guard_target": "new_positions",
+                "volatility_guard_source": "candle_ema",
+                "volatility_guard_candle_ema_period": 3,
+                "volatility_guard_max_pips": "10",
+            },
+            metrics=self._completed_candle_metrics(
+                prefix="snowball_volatility_guard",
+                open_price="155.00",
+                high="155.20",
+                low="155.00",
+                close="155.20",
+            ),
+            bid="155.50",
+            ask="155.52",
+        )
+
+        SnowballRiskGuardPhase().run(context)
+
+        assert context.allow_new_positions is False
+        assert context.allow_rebuilds is True
+        assert context.snowball_state.metrics["snowball_add_block_reason"] == "volatility"
+        assert context.snowball_state.metrics["snowball_rebuild_block_reason"] == ""
+
+    def test_volatility_guard_can_block_rebuilds_only(self) -> None:
+        context = self._context(
+            config_overrides={
+                "volatility_guard_enabled": True,
+                "volatility_guard_target": "rebuilds",
+                "volatility_guard_source": "candle_ema",
+                "volatility_guard_candle_ema_period": 3,
+                "volatility_guard_max_pips": "10",
+            },
+            metrics=self._completed_candle_metrics(
+                prefix="snowball_volatility_guard",
+                open_price="155.00",
+                high="155.20",
+                low="155.00",
+                close="155.20",
+            ),
+            bid="155.50",
+            ask="155.52",
+        )
+
+        SnowballRiskGuardPhase().run(context)
+
+        assert context.allow_new_positions is True
+        assert context.allow_rebuilds is False
+        assert context.snowball_state.metrics["snowball_add_block_reason"] == ""
+        assert context.snowball_state.metrics["snowball_rebuild_block_reason"] == "volatility"
+
+    def test_volatility_guard_cooldown_starts_after_breach(self) -> None:
+        context = self._context(
+            config_overrides={
+                "volatility_guard_enabled": True,
+                "volatility_guard_target": "new_positions",
+                "volatility_guard_source": "candle_ema",
+                "volatility_guard_candle_ema_period": 3,
+                "volatility_guard_cooldown_minutes": 30,
+                "volatility_guard_max_pips": "10",
+            },
+            metrics=self._completed_candle_metrics(
+                prefix="snowball_volatility_guard",
+                open_price="155.00",
+                high="155.20",
+                low="155.00",
+                close="155.20",
+            ),
+            bid="155.50",
+            ask="155.52",
+            timestamp=datetime(2026, 5, 8, 0, 1, tzinfo=UTC),
+        )
+
+        SnowballRiskGuardPhase().run(context)
+
+        assert context.allow_new_positions is False
+        assert context.allow_rebuilds is True
+        assert context.snowball_state.volatility_guard_cooldown_until == "2026-05-08T00:31:00+00:00"
+        assert (
+            context.snowball_state.metrics["snowball_volatility_guard_cooldown_until"]
+            == "2026-05-08T00:31:00+00:00"
+        )
+        assert (
+            context.snowball_state.metrics["snowball_volatility_guard_cooldown_remaining_minutes"]
+            == "30"
+        )
+
+    def test_volatility_guard_cooldown_keeps_target_blocked_after_volatility_normalizes(
+        self,
+    ) -> None:
+        context = self._context(
+            config_overrides={
+                "volatility_guard_enabled": True,
+                "volatility_guard_target": "new_positions",
+                "volatility_guard_source": "candle_ema",
+                "volatility_guard_candle_ema_period": 3,
+                "volatility_guard_cooldown_minutes": 30,
+                "volatility_guard_max_pips": "10",
+            },
+            metrics={"snowball_volatility_guard_candle_ema_pips": "0"},
+            timestamp=datetime(2026, 5, 8, 0, 10, tzinfo=UTC),
+        )
+        context.snowball_state.volatility_guard_cooldown_until = "2026-05-08T00:31:00+00:00"
+
+        SnowballRiskGuardPhase().run(context)
+
+        assert context.allow_new_positions is False
+        assert context.allow_rebuilds is True
+        assert context.snowball_state.metrics["snowball_add_block_reason"] == "volatility"
+        assert context.snowball_state.metrics["snowball_rebuild_block_reason"] == ""
+        assert (
+            context.snowball_state.metrics["snowball_volatility_guard_cooldown_remaining_minutes"]
+            == "21"
+        )
+
+    def test_volatility_guard_cooldown_clears_after_elapsed(self) -> None:
+        context = self._context(
+            config_overrides={
+                "volatility_guard_enabled": True,
+                "volatility_guard_target": "new_positions",
+                "volatility_guard_source": "candle_ema",
+                "volatility_guard_candle_ema_period": 3,
+                "volatility_guard_cooldown_minutes": 30,
+                "volatility_guard_max_pips": "10",
+            },
+            metrics={"snowball_volatility_guard_candle_ema_pips": "0"},
+            timestamp=datetime(2026, 5, 8, 0, 31, tzinfo=UTC),
+        )
+        context.snowball_state.volatility_guard_cooldown_until = "2026-05-08T00:31:00+00:00"
+
+        SnowballRiskGuardPhase().run(context)
+
+        assert context.allow_new_positions is True
+        assert context.allow_rebuilds is True
+        assert context.snowball_state.volatility_guard_cooldown_until is None
+        assert context.snowball_state.metrics["snowball_add_block_reason"] == ""
+        assert context.snowball_state.metrics["snowball_rebuild_block_reason"] == ""
+        assert context.snowball_state.metrics["snowball_volatility_guard_cooldown_until"] == ""
+        assert (
+            context.snowball_state.metrics["snowball_volatility_guard_cooldown_remaining_minutes"]
+            == "0"
+        )
 
     def test_trend_guard_blocks_only_adverse_direction_adds(self) -> None:
         context = self._context(
@@ -353,6 +500,51 @@ class TestSnowballRiskGuardPhase:
         )
         assert getattr(context.strategy, "_snowball_adaptive_trend_interval_multiplier") == (
             Decimal("1.05")
+        )
+
+    def test_adaptive_intervals_allow_contraction_to_min_multiplier(self) -> None:
+        context = self._context(
+            config_overrides={
+                "adaptive_counter_interval_enabled": True,
+                "adaptive_counter_interval_source": "candle_ema",
+                "adaptive_counter_interval_candle_ema_period": 3,
+                "adaptive_counter_interval_reference_pips": "10",
+                "adaptive_counter_interval_min_multiplier": "0.5",
+                "adaptive_counter_interval_max_multiplier": "2.5",
+                "adaptive_trend_interval_enabled": True,
+                "adaptive_trend_interval_source": "candle_ema",
+                "adaptive_trend_interval_candle_ema_period": 3,
+                "adaptive_trend_interval_reference_pips": "20",
+                "adaptive_trend_interval_min_multiplier": "0.5",
+                "adaptive_trend_interval_max_multiplier": "2.5",
+            },
+            metrics={
+                **self._completed_candle_metrics(
+                    prefix="snowball_adaptive_counter_interval",
+                    open_price="155.00",
+                    high="155.05",
+                    low="155.00",
+                    close="155.05",
+                ),
+                **self._completed_candle_metrics(
+                    prefix="snowball_adaptive_trend_interval",
+                    open_price="155.00",
+                    high="155.05",
+                    low="155.00",
+                    close="155.05",
+                ),
+            },
+            bid="155.30",
+            ask="155.32",
+        )
+
+        SnowballRiskGuardPhase().run(context)
+
+        assert getattr(context.strategy, "_snowball_adaptive_counter_interval_multiplier") == (
+            Decimal("0.5")
+        )
+        assert getattr(context.strategy, "_snowball_adaptive_trend_interval_multiplier") == (
+            Decimal("0.5")
         )
 
 

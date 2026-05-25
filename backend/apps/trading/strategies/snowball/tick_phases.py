@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
 
@@ -419,19 +419,21 @@ class SnowballRiskGuardPhase:
             if cfg.add_margin_guard_scope == "adds_and_rebuilds":
                 rebuild_block_reasons.append("margin")
 
-        if cfg.volatility_guard_enabled and self._volatility_exceeded(
-            context,
-            prefix="snowball_volatility_guard",
-            source=cfg.volatility_guard_source,
-            candle_granularity=cfg.volatility_guard_candle_granularity,
-            atr_period=cfg.volatility_guard_atr_period,
-            baseline_period=cfg.volatility_guard_baseline_period,
-            candle_ema_period=cfg.volatility_guard_candle_ema_period,
-            max_pips=cfg.volatility_guard_max_pips,
-            max_multiplier=cfg.volatility_guard_max_multiplier,
-        ):
-            block_reasons.append("volatility")
-            rebuild_block_reasons.append("volatility")
+        volatility_block_active = False
+        if cfg.volatility_guard_enabled:
+            volatility_block_active = self._volatility_guard_block_active(context)
+        else:
+            context.snowball_state.volatility_guard_cooldown_until = None
+            self._write_volatility_cooldown_metrics(context, None)
+
+        if volatility_block_active:
+            if cfg.volatility_guard_target in {
+                "new_positions",
+                "new_positions_and_rebuilds",
+            }:
+                block_reasons.append("volatility")
+            if cfg.volatility_guard_target in {"rebuilds", "new_positions_and_rebuilds"}:
+                rebuild_block_reasons.append("volatility")
 
         if block_reasons:
             context.allow_new_positions = False
@@ -452,6 +454,80 @@ class SnowballRiskGuardPhase:
         else:
             context.set_metric("snowball_trend_blocked_directions", "")
         return NOOP_PHASE_OUTCOME
+
+    def _volatility_guard_block_active(self, context: SnowballTickContext) -> bool:
+        cfg = context.strategy.config
+        exceeded = self._volatility_exceeded(
+            context,
+            prefix="snowball_volatility_guard",
+            source=cfg.volatility_guard_source,
+            candle_granularity=cfg.volatility_guard_candle_granularity,
+            atr_period=cfg.volatility_guard_atr_period,
+            baseline_period=cfg.volatility_guard_baseline_period,
+            candle_ema_period=cfg.volatility_guard_candle_ema_period,
+            max_pips=cfg.volatility_guard_max_pips,
+            max_multiplier=cfg.volatility_guard_max_multiplier,
+        )
+        now = self._aware_datetime(context.tick.timestamp)
+        cooldown_until = self._parse_datetime(
+            context.snowball_state.volatility_guard_cooldown_until
+        )
+        if exceeded:
+            cooldown_until = self._extend_volatility_cooldown(context, now)
+            self._write_volatility_cooldown_metrics(context, cooldown_until)
+            return True
+        if cooldown_until is not None and now < cooldown_until:
+            self._write_volatility_cooldown_metrics(context, cooldown_until)
+            return True
+        context.snowball_state.volatility_guard_cooldown_until = None
+        self._write_volatility_cooldown_metrics(context, None)
+        return False
+
+    def _extend_volatility_cooldown(
+        self,
+        context: SnowballTickContext,
+        now: datetime,
+    ) -> datetime | None:
+        cooldown_minutes = context.strategy.config.volatility_guard_cooldown_minutes
+        if cooldown_minutes <= 0:
+            context.snowball_state.volatility_guard_cooldown_until = None
+            return None
+        cooldown_until = now + timedelta(minutes=cooldown_minutes)
+        context.snowball_state.volatility_guard_cooldown_until = cooldown_until.isoformat()
+        return cooldown_until
+
+    def _write_volatility_cooldown_metrics(
+        self,
+        context: SnowballTickContext,
+        cooldown_until: datetime | None,
+    ) -> None:
+        if cooldown_until is None:
+            context.set_metric("snowball_volatility_guard_cooldown_until", "")
+            context.set_metric("snowball_volatility_guard_cooldown_remaining_minutes", 0)
+            return
+        now = self._aware_datetime(context.tick.timestamp)
+        remaining_seconds = max(0, int((cooldown_until - now).total_seconds()))
+        remaining_minutes = (remaining_seconds + 59) // 60
+        context.set_metric(
+            "snowball_volatility_guard_cooldown_until",
+            cooldown_until.isoformat(),
+        )
+        context.set_metric(
+            "snowball_volatility_guard_cooldown_remaining_minutes",
+            remaining_minutes,
+        )
+
+    def _parse_datetime(self, value: str | None) -> datetime | None:
+        if not value:
+            return None
+        raw = value[:-1] + "+00:00" if value.endswith("Z") else value
+        try:
+            return self._aware_datetime(datetime.fromisoformat(raw))
+        except ValueError:
+            return None
+
+    def _aware_datetime(self, value: datetime) -> datetime:
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
     def _reset_runtime_multipliers(self, context: SnowballTickContext) -> None:
         setattr(context.strategy, "_snowball_adaptive_counter_interval_multiplier", Decimal("1"))

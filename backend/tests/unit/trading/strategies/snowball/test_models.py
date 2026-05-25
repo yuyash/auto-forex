@@ -53,7 +53,9 @@ class TestSnowballStrategyConfig:
         assert cfg.add_margin_guard_max_pct == Decimal("65")
         assert cfg.add_margin_guard_scope == "adds_only"
         assert cfg.volatility_guard_enabled is False
+        assert cfg.volatility_guard_target == "new_positions_and_rebuilds"
         assert cfg.volatility_guard_source == "atr"
+        assert cfg.volatility_guard_cooldown_minutes == 0
         assert cfg.add_trend_guard_enabled is False
         assert cfg.add_trend_max_opposite_deviation_pips == Decimal("50")
         assert cfg.adaptive_counter_interval_enabled is False
@@ -104,9 +106,11 @@ class TestSnowballStrategyConfig:
         assert cfg.rebuild.refill_up_to == 2
         assert cfg.risk_limits.stop_loss_enabled is True
         assert cfg.margin_add_guard.scope == "adds_only"
+        assert cfg.volatility_guard.target == "new_positions_and_rebuilds"
         assert cfg.volatility_guard.source == "atr"
         assert cfg.volatility_guard.candle_granularity == "M1"
         assert cfg.volatility_guard.candle_ema_period == 60
+        assert cfg.volatility_guard.cooldown_minutes == 0
         assert cfg.trend_add_guard.candle_granularity == "M1"
         assert cfg.trend_add_guard.ema_period == 200
         assert cfg.adaptive_counter_interval.candle_granularity == "M1"
@@ -305,6 +309,22 @@ class TestSnowballStrategyConfig:
                 "warmup_required_tp_closes": 2,
             }
         ).validate()
+
+    def test_validate_volatility_guard_controls(self):
+        SnowballStrategyConfig.from_dict(
+            {
+                "volatility_guard_enabled": True,
+                "volatility_guard_cooldown_minutes": 60,
+            }
+        ).validate()
+
+        with pytest.raises(ValueError, match="volatility_guard_cooldown_minutes"):
+            SnowballStrategyConfig.from_dict(
+                {
+                    "volatility_guard_enabled": True,
+                    "volatility_guard_cooldown_minutes": -1,
+                }
+            ).validate()
 
     def test_validate_rebuild_entry_price_mode(self):
         with pytest.raises(ValueError, match="rebuild_entry_price_mode"):
@@ -892,6 +912,7 @@ class TestSnowballStrategyState:
         assert ss.protection_level == ProtectionLevel.NORMAL
         assert ss.initialised is False
         assert ss.cycles == []
+        assert ss.volatility_guard_cooldown_until is None
 
     def test_to_dict_roundtrip(self):
         cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
@@ -904,12 +925,14 @@ class TestSnowballStrategyState:
             initialised=True,
             cycles=[cycle],
             protection_level=ProtectionLevel.SHRINK,
+            volatility_guard_cooldown_until="2026-05-08T00:31:00+00:00",
         )
         d = ss.to_dict()
         ss2 = SnowballStrategyState.from_dict(d)
         assert ss2.initialised is True
         assert len(ss2.cycles) == 1
         assert ss2.protection_level == ProtectionLevel.SHRINK
+        assert ss2.volatility_guard_cooldown_until == "2026-05-08T00:31:00+00:00"
 
     def test_from_strategy_state_none(self):
         ss = SnowballStrategyState.from_strategy_state(None)

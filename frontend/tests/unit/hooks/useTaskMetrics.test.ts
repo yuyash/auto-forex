@@ -151,6 +151,7 @@ describe('useTaskMetrics', () => {
       taskId: '42',
       taskType: TaskType.TRADING,
       executionRunId: undefined,
+      metricKeys: undefined,
     });
     expect(mockFetchPaginatedMetrics).not.toHaveBeenCalled();
   });
@@ -222,5 +223,87 @@ describe('useTaskMetrics', () => {
         existingResults: [{ t: 100, metrics: { current_balance: 100 } }],
       })
     );
+  });
+
+  it('passes metric key filters through latest and series requests', async () => {
+    mockFetchLatestMetrics.mockResolvedValueOnce({
+      data_source: 'latest',
+      resume_cursor_timestamp: null,
+      consistency_warnings: [],
+      result: { t: 10, metrics: { current_balance: 100 } },
+    });
+    mockFetchPaginatedMetrics.mockResolvedValueOnce({
+      count: 1,
+      next: null,
+      previous: null,
+      data_source: 'aggregate',
+      resume_cursor_timestamp: null,
+      consistency_warnings: [],
+      results: [{ t: 10, metrics: { current_balance: 100 } }],
+    });
+
+    const metricKeys = ['current_balance', 'total_pnl'];
+    const { rerender } = renderHook(
+      ({ fetchSeries }) =>
+        useTaskMetrics({
+          taskId: '42',
+          taskType: TaskType.TRADING,
+          fetchSeries,
+          metricKeys,
+        }),
+      { initialProps: { fetchSeries: false } }
+    );
+
+    await waitFor(() => expect(mockFetchLatestMetrics).toHaveBeenCalled());
+    expect(mockFetchLatestMetrics).toHaveBeenCalledWith(
+      expect.objectContaining({ metricKeys })
+    );
+
+    rerender({ fetchSeries: true });
+
+    await waitFor(() => expect(mockFetchPaginatedMetrics).toHaveBeenCalled());
+    expect(mockFetchPaginatedMetrics).toHaveBeenCalledWith(
+      expect.objectContaining({ metricKeys })
+    );
+  });
+
+  it('ignores incremental polling responses without a newer timestamp', async () => {
+    mockFetchPaginatedMetrics
+      .mockResolvedValueOnce({
+        count: 1,
+        next: null,
+        previous: null,
+        data_source: 'aggregate',
+        resume_cursor_timestamp: null,
+        consistency_warnings: [],
+        results: [{ t: 100, metrics: { current_balance: 100 } }],
+      })
+      .mockResolvedValueOnce({
+        count: 1,
+        next: null,
+        previous: null,
+        data_source: 'aggregate',
+        resume_cursor_timestamp: null,
+        consistency_warnings: [],
+        results: [{ t: 100, metrics: { current_balance: 999 } }],
+      });
+
+    const { result, unmount } = renderHook(() =>
+      useTaskMetrics({
+        taskId: '42',
+        taskType: TaskType.BACKTEST,
+        pollingInterval: 10,
+      })
+    );
+
+    await waitFor(() => expect(result.current.latest?.t).toBe(100));
+    await waitFor(() =>
+      expect(
+        mockFetchPaginatedMetrics.mock.calls.length
+      ).toBeGreaterThanOrEqual(2)
+    );
+    unmount();
+
+    expect(result.current.latest?.metrics.current_balance).toBe(100);
   });
 });

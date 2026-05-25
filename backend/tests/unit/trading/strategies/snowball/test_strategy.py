@@ -183,6 +183,14 @@ class TestSnowballStrategyProperties:
         assert s.counter_interval_pips(1) == Decimal("60.0")
         assert s.trend_take_profit_pips() == Decimal("75.0")
 
+    def test_runtime_adaptive_interval_helpers_allow_contraction(self):
+        s = _strategy({"m_pips": "50", "n_pips_head": "30", "round_step_pips": "0.1"})
+        s._snowball_adaptive_counter_interval_multiplier = Decimal("0.5")
+        s._snowball_adaptive_trend_interval_multiplier = Decimal("0.6")
+
+        assert s.counter_interval_pips(1) == Decimal("15.0")
+        assert s.trend_take_profit_pips() == Decimal("30.0")
+
 
 # ===================================================================
 # parse_config / normalize / defaults / validate
@@ -232,8 +240,10 @@ class TestSnowballStrategyClassMethods:
         assert defaults["add_margin_guard_enabled"] is False
         assert "add_margin_guard_max_pct" not in defaults
         assert defaults["volatility_guard_enabled"] is False
+        assert "volatility_guard_target" not in defaults
         assert "volatility_guard_source" not in defaults
         assert "volatility_guard_candle_granularity" not in defaults
+        assert "volatility_guard_cooldown_minutes" not in defaults
         assert defaults["add_trend_guard_enabled"] is False
         assert "add_trend_candle_granularity" not in defaults
         assert "add_trend_ema_period" not in defaults
@@ -277,9 +287,11 @@ class TestSnowballStrategyClassMethods:
                 "add_margin_guard_max_pct": "68",
                 "add_margin_guard_scope": "adds_and_rebuilds",
                 "volatility_guard_enabled": True,
+                "volatility_guard_target": "rebuilds",
                 "volatility_guard_source": "candle_ema",
                 "volatility_guard_candle_granularity": "M5",
                 "volatility_guard_candle_ema_period": 30,
+                "volatility_guard_cooldown_minutes": 45,
                 "volatility_guard_atr_period": 14,
                 "add_trend_guard_enabled": True,
                 "add_trend_candle_granularity": "M15",
@@ -298,9 +310,11 @@ class TestSnowballStrategyClassMethods:
         assert result["add_margin_guard_max_pct"] == "68"
         assert result["add_margin_guard_scope"] == "adds_and_rebuilds"
         assert result["volatility_guard_enabled"] is True
+        assert result["volatility_guard_target"] == "rebuilds"
         assert result["volatility_guard_source"] == "candle_ema"
         assert result["volatility_guard_candle_granularity"] == "M5"
         assert result["volatility_guard_candle_ema_period"] == 30
+        assert result["volatility_guard_cooldown_minutes"] == 45
         assert "volatility_guard_atr_period" not in result
         assert result["add_trend_guard_enabled"] is True
         assert result["add_trend_candle_granularity"] == "M15"
@@ -1442,7 +1456,7 @@ class TestSnowballRebuildTakeProfitModes:
 
         assert plan is not None
 
-    def test_cycle_rebuild_guard_resumes_when_price_recovers_to_head_plus_buffer(self):
+    def test_cycle_rebuild_guard_resumes_when_pending_trigger_recovers_before_cycle_head(self):
         strategy = _strategy(
             {
                 "stop_loss_enabled": True,
@@ -1452,13 +1466,25 @@ class TestSnowballRebuildTakeProfitModes:
                 "cycle_rebuild_guard_recovery_pips": "5",
             }
         )
+        head = Entry(
+            entry_id=1,
+            step=1,
+            direction=Direction.LONG,
+            entry_price=Decimal("145.000"),
+            close_price=Decimal("145.200"),
+            units=2000,
+            opened_at=datetime(2026, 1, 1, tzinfo=UTC),
+            role="initial",
+            layer_number=1,
+            retracement_count=0,
+        )
         pending = self._make_pending_rebuild(
             direction=Direction.LONG,
             entry_price=Decimal("144.547"),
             close_price=Decimal("144.697"),
         )
-        slot = Slot(index=0, pending_rebuild=pending)
-        layer = Layer(layer_number=1, slots=[slot])
+        slot = Slot(index=1, pending_rebuild=pending)
+        layer = Layer(layer_number=1, slots=[Slot(index=0, entry=head), slot])
         cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
         cycle.stop_loss_count = 2
         cycle.realized_pnl = Decimal("-1")

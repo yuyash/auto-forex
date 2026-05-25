@@ -1290,8 +1290,8 @@
       "type": "number",
       "title": "Cycle Rebuild Guard Recovery (pips)",
       "title_ja": "再建ガード復旧幅（pips）",
-      "description": "Additional favorable pips beyond the cycle head price required to resume rebuilds while the cycle PnL is still negative. 0 resumes when price returns to the cycle head or better.",
-      "description_ja": "サイクル損益がまだマイナスでも再建を再開するために必要な、サイクル基準価格から利益方向への追加 pips 数です。0 の場合、価格がサイクル基準価格以上に回復したら再開します。",
+      "description": "Additional favorable pips beyond each pending slot's effective rebuild trigger required to resume that slot while the cycle PnL is still negative. 0 resumes when that pending rebuild would normally trigger.",
+      "description_ja": "サイクル損益がまだマイナスでも対象スロットの再建を再開するために必要な、各 pending slot の有効な再建トリガーから利益方向への追加 pips 数です。0 の場合、その pending rebuild が通常どおり発動できる価格に戻ったら再開します。",
       "default": 0,
       "minimum": 0,
       "dependsOn": {
@@ -1616,11 +1616,33 @@
     },
     "volatility_guard_enabled": {
       "type": "boolean",
-      "title": "Stop Adds By Volatility",
-      "title_ja": "ボラティリティで追加停止",
-      "description": "Block new additions and stop-loss rebuilds when volatility exceeds the configured absolute or relative threshold.",
-      "description_ja": "ボラティリティが絶対しきい値または通常時倍率を超えたときに、新規追加とロスカット後再建を停止します。",
+      "title": "Stop By Volatility",
+      "title_ja": "ボラティリティで停止",
+      "description": "Block the configured target when volatility exceeds the configured absolute or relative threshold.",
+      "description_ja": "ボラティリティが絶対しきい値または通常時倍率を超えたときに、設定した対象を停止します。",
       "default": false,
+      "group": "Risk Guards",
+      "group_ja": "リスクゲート"
+    },
+    "volatility_guard_target": {
+      "type": "string",
+      "title": "Volatility Guard Target",
+      "title_ja": "ボラティリティガードの対象",
+      "description": "Choose whether the volatility gate stops new positions, stop-loss rebuilds, or both.",
+      "description_ja": "ボラティリティゲートで新規ポジション、ロスカット後の再建、または両方のどれを止めるかを選択します。",
+      "enum": ["new_positions", "rebuilds", "new_positions_and_rebuilds"],
+      "enum_labels": {
+        "new_positions": "New Positions",
+        "rebuilds": "Rebuilds",
+        "new_positions_and_rebuilds": "New Positions And Rebuilds"
+      },
+      "enum_labels_ja": {
+        "new_positions": "新規ポジション",
+        "rebuilds": "再建",
+        "new_positions_and_rebuilds": "新規ポジションと再建"
+      },
+      "default": "new_positions_and_rebuilds",
+      "dependsOn": { "field": "volatility_guard_enabled", "values": [true] },
       "group": "Risk Guards",
       "group_ja": "リスクゲート"
     },
@@ -1718,6 +1740,18 @@
       "description_ja": "倍率しきい値の基準にする通常時ボラティリティEMAのサンプリング数。",
       "default": 96,
       "minimum": 1,
+      "dependsOn": { "field": "volatility_guard_enabled", "values": [true] },
+      "group": "Risk Guards",
+      "group_ja": "リスクゲート"
+    },
+    "volatility_guard_cooldown_minutes": {
+      "type": "integer",
+      "title": "Cooldown Minutes",
+      "title_ja": "クールダウン（分）",
+      "description": "Keep the volatility guard target blocked for this many minutes after a high-volatility tick. Use 30-60 minutes to avoid immediate re-entry during sharp moves. Set 0 to disable cooldown.",
+      "description_ja": "高ボラティリティ判定後、この分数だけボラティリティガードの対象を停止し続けます。急変時の即時再開を避けるには30-60分を指定します。0でクールダウンなし。",
+      "default": 0,
+      "minimum": 0,
       "dependsOn": { "field": "volatility_guard_enabled", "values": [true] },
       "group": "Risk Guards",
       "group_ja": "リスクゲート"

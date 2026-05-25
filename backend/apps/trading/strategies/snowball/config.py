@@ -40,11 +40,13 @@ RISK_GUARD_OPTIONAL_KEYS = (
     "add_margin_guard_max_pct",
     "add_margin_guard_scope",
     "volatility_guard_enabled",
+    "volatility_guard_target",
     "volatility_guard_source",
     "volatility_guard_candle_granularity",
     "volatility_guard_atr_period",
     "volatility_guard_baseline_period",
     "volatility_guard_candle_ema_period",
+    "volatility_guard_cooldown_minutes",
     "volatility_guard_max_pips",
     "volatility_guard_max_multiplier",
     "add_trend_guard_enabled",
@@ -77,6 +79,7 @@ RISK_GUARD_OPTIONAL_KEYS = (
 )
 
 RISK_GUARD_SCOPES = {"adds_only", "adds_and_rebuilds"}
+VOLATILITY_GUARD_TARGETS = {"new_positions", "rebuilds", "new_positions_and_rebuilds"}
 VOLATILITY_SOURCES = {"atr", "candle_ema"}
 CANDLE_GRANULARITIES = {
     "S5",
@@ -234,11 +237,13 @@ class VolatilityGuardConfig:
     """Volatility-based add/rebuild gate settings."""
 
     enabled: bool
+    target: str
     source: str
     candle_granularity: str
     atr_period: int
     baseline_period: int
     candle_ema_period: int
+    cooldown_minutes: int
     max_pips: Decimal
     max_multiplier: Decimal
 
@@ -403,11 +408,13 @@ class SnowballStrategyConfig:
     add_margin_guard_max_pct: Decimal
     add_margin_guard_scope: str
     volatility_guard_enabled: bool
+    volatility_guard_target: str
     volatility_guard_source: str
     volatility_guard_candle_granularity: str
     volatility_guard_atr_period: int
     volatility_guard_baseline_period: int
     volatility_guard_candle_ema_period: int
+    volatility_guard_cooldown_minutes: int
     volatility_guard_max_pips: Decimal
     volatility_guard_max_multiplier: Decimal
     add_trend_guard_enabled: bool
@@ -614,11 +621,13 @@ class SnowballStrategyConfig:
     def volatility_guard(self) -> VolatilityGuardConfig:
         return VolatilityGuardConfig(
             enabled=self.volatility_guard_enabled,
+            target=self.volatility_guard_target,
             source=self.volatility_guard_source,
             candle_granularity=self.volatility_guard_candle_granularity,
             atr_period=self.volatility_guard_atr_period,
             baseline_period=self.volatility_guard_baseline_period,
             candle_ema_period=self.volatility_guard_candle_ema_period,
+            cooldown_minutes=self.volatility_guard_cooldown_minutes,
             max_pips=self.volatility_guard_max_pips,
             max_multiplier=self.volatility_guard_max_multiplier,
         )
@@ -842,6 +851,9 @@ class SnowballStrategyConfig:
                 raw.get("add_margin_guard_scope"), "adds_only"
             ).lower(),
             volatility_guard_enabled=_parse_bool(raw.get("volatility_guard_enabled"), False),
+            volatility_guard_target=_parse_str(
+                raw.get("volatility_guard_target"), "new_positions_and_rebuilds"
+            ).lower(),
             volatility_guard_source=_parse_volatility_source(raw.get("volatility_guard_source")),
             volatility_guard_candle_granularity=_parse_candle_granularity(
                 raw.get("volatility_guard_candle_granularity"), "M1"
@@ -856,6 +868,9 @@ class SnowballStrategyConfig:
                     raw.get("volatility_guard_tick_ema_period"),
                 ),
                 60,
+            ),
+            volatility_guard_cooldown_minutes=_parse_int(
+                raw.get("volatility_guard_cooldown_minutes"), 0
             ),
             volatility_guard_max_pips=_parse_decimal(raw.get("volatility_guard_max_pips"), "25"),
             volatility_guard_max_multiplier=_parse_decimal(
@@ -1060,11 +1075,13 @@ class SnowballStrategyConfig:
             "add_margin_guard_max_pct": str(self.add_margin_guard_max_pct),
             "add_margin_guard_scope": self.add_margin_guard_scope,
             "volatility_guard_enabled": self.volatility_guard_enabled,
+            "volatility_guard_target": self.volatility_guard_target,
             "volatility_guard_source": self.volatility_guard_source,
             "volatility_guard_candle_granularity": self.volatility_guard_candle_granularity,
             "volatility_guard_atr_period": self.volatility_guard_atr_period,
             "volatility_guard_baseline_period": self.volatility_guard_baseline_period,
             "volatility_guard_candle_ema_period": self.volatility_guard_candle_ema_period,
+            "volatility_guard_cooldown_minutes": self.volatility_guard_cooldown_minutes,
             "volatility_guard_max_pips": str(self.volatility_guard_max_pips),
             "volatility_guard_max_multiplier": str(self.volatility_guard_max_multiplier),
             "add_trend_guard_enabled": self.add_trend_guard_enabled,
@@ -1168,6 +1185,11 @@ class SnowballStrategyConfig:
             raise ValueError("add_margin_guard_scope must be 'adds_only' or 'adds_and_rebuilds'")
         if self.volatility_guard_source not in VOLATILITY_SOURCES:
             raise ValueError("volatility_guard_source must be 'atr' or 'candle_ema'")
+        if self.volatility_guard_target not in VOLATILITY_GUARD_TARGETS:
+            raise ValueError(
+                "volatility_guard_target must be one of 'new_positions', 'rebuilds', "
+                "or 'new_positions_and_rebuilds'"
+            )
         if self.volatility_guard_candle_granularity not in CANDLE_GRANULARITIES:
             raise ValueError("volatility_guard_candle_granularity is not supported")
         if self.volatility_guard_atr_period <= 0:
@@ -1176,6 +1198,8 @@ class SnowballStrategyConfig:
             raise ValueError("volatility_guard_baseline_period must be greater than 0")
         if self.volatility_guard_candle_ema_period <= 0:
             raise ValueError("volatility_guard_candle_ema_period must be greater than 0")
+        if self.volatility_guard_cooldown_minutes < 0:
+            raise ValueError("volatility_guard_cooldown_minutes must be greater than or equal to 0")
         if self.volatility_guard_max_pips <= 0:
             raise ValueError("volatility_guard_max_pips must be greater than 0")
         if self.volatility_guard_max_multiplier <= 0:

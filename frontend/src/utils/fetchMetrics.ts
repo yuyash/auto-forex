@@ -165,12 +165,16 @@ export async function fetchLatestMetrics(opts: {
   taskId: string;
   taskType: TaskType;
   executionRunId?: string;
+  metricKeys?: string[];
 }): Promise<LatestMetricsResponse> {
   const body = await api.get<Partial<LatestMetricsResponse>>(
     `${buildTaskPrefix(opts.taskType)}/${opts.taskId}/strategy/metrics/latest/`,
     {
       ...(opts.executionRunId != null
         ? { execution_id: String(opts.executionRunId) }
+        : {}),
+      ...(opts.metricKeys?.length
+        ? { metric_keys: opts.metricKeys.join(',') }
         : {}),
     }
   );

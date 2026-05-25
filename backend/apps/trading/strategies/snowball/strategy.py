@@ -259,14 +259,14 @@ class SnowballStrategy(Strategy):
         )
 
     def counter_interval_pips(self, step: int) -> Decimal:
-        """Return the runtime counter-side interval after adaptive widening."""
+        """Return the runtime counter-side interval after adaptive adjustment."""
         base = self.calculator.counter_interval_pips(step)
-        multiplier = max(Decimal("1"), self._snowball_adaptive_counter_interval_multiplier)
+        multiplier = self._snowball_adaptive_counter_interval_multiplier
         return round_to_step(base * multiplier, self.config.round_step_pips)
 
     def trend_take_profit_pips(self) -> Decimal:
         """Return the runtime trend-side take-profit distance."""
-        multiplier = max(Decimal("1"), self._snowball_adaptive_trend_interval_multiplier)
+        multiplier = self._snowball_adaptive_trend_interval_multiplier
         return round_to_step(self.config.m_pips * multiplier, self.config.round_step_pips)
 
     # ------------------------------------------------------------------
