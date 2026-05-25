@@ -40,6 +40,7 @@ RISK_GUARD_OPTIONAL_KEYS = (
     "add_margin_guard_max_pct",
     "add_margin_guard_scope",
     "volatility_guard_enabled",
+    "volatility_guard_target",
     "volatility_guard_source",
     "volatility_guard_candle_granularity",
     "volatility_guard_atr_period",
@@ -77,6 +78,7 @@ RISK_GUARD_OPTIONAL_KEYS = (
 )
 
 RISK_GUARD_SCOPES = {"adds_only", "adds_and_rebuilds"}
+VOLATILITY_GUARD_TARGETS = {"new_positions", "rebuilds", "new_positions_and_rebuilds"}
 VOLATILITY_SOURCES = {"atr", "candle_ema"}
 CANDLE_GRANULARITIES = {
     "S5",
@@ -234,6 +236,7 @@ class VolatilityGuardConfig:
     """Volatility-based add/rebuild gate settings."""
 
     enabled: bool
+    target: str
     source: str
     candle_granularity: str
     atr_period: int
@@ -403,6 +406,7 @@ class SnowballStrategyConfig:
     add_margin_guard_max_pct: Decimal
     add_margin_guard_scope: str
     volatility_guard_enabled: bool
+    volatility_guard_target: str
     volatility_guard_source: str
     volatility_guard_candle_granularity: str
     volatility_guard_atr_period: int
@@ -614,6 +618,7 @@ class SnowballStrategyConfig:
     def volatility_guard(self) -> VolatilityGuardConfig:
         return VolatilityGuardConfig(
             enabled=self.volatility_guard_enabled,
+            target=self.volatility_guard_target,
             source=self.volatility_guard_source,
             candle_granularity=self.volatility_guard_candle_granularity,
             atr_period=self.volatility_guard_atr_period,
@@ -842,6 +847,9 @@ class SnowballStrategyConfig:
                 raw.get("add_margin_guard_scope"), "adds_only"
             ).lower(),
             volatility_guard_enabled=_parse_bool(raw.get("volatility_guard_enabled"), False),
+            volatility_guard_target=_parse_str(
+                raw.get("volatility_guard_target"), "new_positions_and_rebuilds"
+            ).lower(),
             volatility_guard_source=_parse_volatility_source(raw.get("volatility_guard_source")),
             volatility_guard_candle_granularity=_parse_candle_granularity(
                 raw.get("volatility_guard_candle_granularity"), "M1"
@@ -1060,6 +1068,7 @@ class SnowballStrategyConfig:
             "add_margin_guard_max_pct": str(self.add_margin_guard_max_pct),
             "add_margin_guard_scope": self.add_margin_guard_scope,
             "volatility_guard_enabled": self.volatility_guard_enabled,
+            "volatility_guard_target": self.volatility_guard_target,
             "volatility_guard_source": self.volatility_guard_source,
             "volatility_guard_candle_granularity": self.volatility_guard_candle_granularity,
             "volatility_guard_atr_period": self.volatility_guard_atr_period,
@@ -1168,6 +1177,11 @@ class SnowballStrategyConfig:
             raise ValueError("add_margin_guard_scope must be 'adds_only' or 'adds_and_rebuilds'")
         if self.volatility_guard_source not in VOLATILITY_SOURCES:
             raise ValueError("volatility_guard_source must be 'atr' or 'candle_ema'")
+        if self.volatility_guard_target not in VOLATILITY_GUARD_TARGETS:
+            raise ValueError(
+                "volatility_guard_target must be one of 'new_positions', 'rebuilds', "
+                "or 'new_positions_and_rebuilds'"
+            )
         if self.volatility_guard_candle_granularity not in CANDLE_GRANULARITIES:
             raise ValueError("volatility_guard_candle_granularity is not supported")
         if self.volatility_guard_atr_period <= 0:

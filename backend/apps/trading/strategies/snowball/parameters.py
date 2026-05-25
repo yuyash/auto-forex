@@ -92,6 +92,7 @@ class SnowballParameterService:
                 parameters.pop(key, None)
         if not config.volatility_guard_enabled:
             for key in (
+                "volatility_guard_target",
                 "volatility_guard_source",
                 "volatility_guard_candle_granularity",
                 "volatility_guard_atr_period",

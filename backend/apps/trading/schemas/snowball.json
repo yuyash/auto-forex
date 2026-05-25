@@ -1616,11 +1616,33 @@
     },
     "volatility_guard_enabled": {
       "type": "boolean",
-      "title": "Stop Adds By Volatility",
-      "title_ja": "ボラティリティで追加停止",
-      "description": "Block new additions and stop-loss rebuilds when volatility exceeds the configured absolute or relative threshold.",
-      "description_ja": "ボラティリティが絶対しきい値または通常時倍率を超えたときに、新規追加とロスカット後再建を停止します。",
+      "title": "Stop By Volatility",
+      "title_ja": "ボラティリティで停止",
+      "description": "Block the configured target when volatility exceeds the configured absolute or relative threshold.",
+      "description_ja": "ボラティリティが絶対しきい値または通常時倍率を超えたときに、設定した対象を停止します。",
       "default": false,
+      "group": "Risk Guards",
+      "group_ja": "リスクゲート"
+    },
+    "volatility_guard_target": {
+      "type": "string",
+      "title": "Volatility Guard Target",
+      "title_ja": "ボラティリティガードの対象",
+      "description": "Choose whether the volatility gate stops new positions, stop-loss rebuilds, or both.",
+      "description_ja": "ボラティリティゲートで新規ポジション、ロスカット後の再建、または両方のどれを止めるかを選択します。",
+      "enum": ["new_positions", "rebuilds", "new_positions_and_rebuilds"],
+      "enum_labels": {
+        "new_positions": "New Positions",
+        "rebuilds": "Rebuilds",
+        "new_positions_and_rebuilds": "New Positions And Rebuilds"
+      },
+      "enum_labels_ja": {
+        "new_positions": "新規ポジション",
+        "rebuilds": "再建",
+        "new_positions_and_rebuilds": "新規ポジションと再建"
+      },
+      "default": "new_positions_and_rebuilds",
+      "dependsOn": { "field": "volatility_guard_enabled", "values": [true] },
       "group": "Risk Guards",
       "group_ja": "リスクゲート"
     },

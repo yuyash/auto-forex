@@ -53,6 +53,7 @@ class TestSnowballStrategyConfig:
         assert cfg.add_margin_guard_max_pct == Decimal("65")
         assert cfg.add_margin_guard_scope == "adds_only"
         assert cfg.volatility_guard_enabled is False
+        assert cfg.volatility_guard_target == "new_positions_and_rebuilds"
         assert cfg.volatility_guard_source == "atr"
         assert cfg.add_trend_guard_enabled is False
         assert cfg.add_trend_max_opposite_deviation_pips == Decimal("50")
@@ -104,6 +105,7 @@ class TestSnowballStrategyConfig:
         assert cfg.rebuild.refill_up_to == 2
         assert cfg.risk_limits.stop_loss_enabled is True
         assert cfg.margin_add_guard.scope == "adds_only"
+        assert cfg.volatility_guard.target == "new_positions_and_rebuilds"
         assert cfg.volatility_guard.source == "atr"
         assert cfg.volatility_guard.candle_granularity == "M1"
         assert cfg.volatility_guard.candle_ema_period == 60

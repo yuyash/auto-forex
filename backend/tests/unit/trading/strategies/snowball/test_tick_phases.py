@@ -291,6 +291,61 @@ class TestSnowballRiskGuardPhase:
         assert context.allow_new_positions is False
         assert context.allow_rebuilds is False
         assert context.snowball_state.metrics["snowball_add_block_reason"] == "volatility"
+        assert context.snowball_state.metrics["snowball_rebuild_block_reason"] == "volatility"
+
+    def test_volatility_guard_can_block_new_positions_only(self) -> None:
+        context = self._context(
+            config_overrides={
+                "volatility_guard_enabled": True,
+                "volatility_guard_target": "new_positions",
+                "volatility_guard_source": "candle_ema",
+                "volatility_guard_candle_ema_period": 3,
+                "volatility_guard_max_pips": "10",
+            },
+            metrics=self._completed_candle_metrics(
+                prefix="snowball_volatility_guard",
+                open_price="155.00",
+                high="155.20",
+                low="155.00",
+                close="155.20",
+            ),
+            bid="155.50",
+            ask="155.52",
+        )
+
+        SnowballRiskGuardPhase().run(context)
+
+        assert context.allow_new_positions is False
+        assert context.allow_rebuilds is True
+        assert context.snowball_state.metrics["snowball_add_block_reason"] == "volatility"
+        assert context.snowball_state.metrics["snowball_rebuild_block_reason"] == ""
+
+    def test_volatility_guard_can_block_rebuilds_only(self) -> None:
+        context = self._context(
+            config_overrides={
+                "volatility_guard_enabled": True,
+                "volatility_guard_target": "rebuilds",
+                "volatility_guard_source": "candle_ema",
+                "volatility_guard_candle_ema_period": 3,
+                "volatility_guard_max_pips": "10",
+            },
+            metrics=self._completed_candle_metrics(
+                prefix="snowball_volatility_guard",
+                open_price="155.00",
+                high="155.20",
+                low="155.00",
+                close="155.20",
+            ),
+            bid="155.50",
+            ask="155.52",
+        )
+
+        SnowballRiskGuardPhase().run(context)
+
+        assert context.allow_new_positions is True
+        assert context.allow_rebuilds is False
+        assert context.snowball_state.metrics["snowball_add_block_reason"] == ""
+        assert context.snowball_state.metrics["snowball_rebuild_block_reason"] == "volatility"
 
     def test_trend_guard_blocks_only_adverse_direction_adds(self) -> None:
         context = self._context(

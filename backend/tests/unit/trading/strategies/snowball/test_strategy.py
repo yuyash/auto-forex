@@ -240,6 +240,7 @@ class TestSnowballStrategyClassMethods:
         assert defaults["add_margin_guard_enabled"] is False
         assert "add_margin_guard_max_pct" not in defaults
         assert defaults["volatility_guard_enabled"] is False
+        assert "volatility_guard_target" not in defaults
         assert "volatility_guard_source" not in defaults
         assert "volatility_guard_candle_granularity" not in defaults
         assert defaults["add_trend_guard_enabled"] is False
@@ -285,6 +286,7 @@ class TestSnowballStrategyClassMethods:
                 "add_margin_guard_max_pct": "68",
                 "add_margin_guard_scope": "adds_and_rebuilds",
                 "volatility_guard_enabled": True,
+                "volatility_guard_target": "rebuilds",
                 "volatility_guard_source": "candle_ema",
                 "volatility_guard_candle_granularity": "M5",
                 "volatility_guard_candle_ema_period": 30,
@@ -306,6 +308,7 @@ class TestSnowballStrategyClassMethods:
         assert result["add_margin_guard_max_pct"] == "68"
         assert result["add_margin_guard_scope"] == "adds_and_rebuilds"
         assert result["volatility_guard_enabled"] is True
+        assert result["volatility_guard_target"] == "rebuilds"
         assert result["volatility_guard_source"] == "candle_ema"
         assert result["volatility_guard_candle_granularity"] == "M5"
         assert result["volatility_guard_candle_ema_period"] == 30

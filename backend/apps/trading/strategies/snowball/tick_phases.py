@@ -430,8 +430,13 @@ class SnowballRiskGuardPhase:
             max_pips=cfg.volatility_guard_max_pips,
             max_multiplier=cfg.volatility_guard_max_multiplier,
         ):
-            block_reasons.append("volatility")
-            rebuild_block_reasons.append("volatility")
+            if cfg.volatility_guard_target in {
+                "new_positions",
+                "new_positions_and_rebuilds",
+            }:
+                block_reasons.append("volatility")
+            if cfg.volatility_guard_target in {"rebuilds", "new_positions_and_rebuilds"}:
+                rebuild_block_reasons.append("volatility")
 
         if block_reasons:
             context.allow_new_positions = False
