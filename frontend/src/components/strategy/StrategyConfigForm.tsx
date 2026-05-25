@@ -51,12 +51,53 @@ interface ValidationErrors {
   [key: string]: string;
 }
 
+type NumericFieldType = 'number' | 'integer';
+
+const DECIMAL_NUMBER_PATTERN =
+  /^-?(?:(?:\d+\.?\d*)|(?:\.\d+))(?:[eE][+-]?\d+)?$/;
+const INTEGER_NUMBER_PATTERN = /^-?\d+$/;
+
 const cloneDefaultValue = (value: unknown): unknown => {
   if (Array.isArray(value)) return [...value];
   if (value && typeof value === 'object') {
     return { ...(value as Record<string, unknown>) };
   }
   return value;
+};
+
+const formatNumericInputValue = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string' || typeof value === 'number') {
+    return String(value);
+  }
+  return '';
+};
+
+const parseNumericInputValue = (
+  raw: string,
+  fieldType: NumericFieldType
+): number | string => {
+  if (raw === '') return '';
+
+  if (fieldType === 'integer') {
+    if (INTEGER_NUMBER_PATTERN.test(raw)) {
+      return Number.parseInt(raw, 10);
+    }
+
+    if (DECIMAL_NUMBER_PATTERN.test(raw)) {
+      const numeric = Number(raw);
+      return Number.isInteger(numeric) ? numeric : raw;
+    }
+
+    return raw;
+  }
+
+  if (!DECIMAL_NUMBER_PATTERN.test(raw)) {
+    return raw;
+  }
+
+  const numeric = Number(raw);
+  return Number.isFinite(numeric) ? numeric : raw;
 };
 
 const comparisonPasses = (
@@ -143,6 +184,29 @@ const StrategyConfigForm = ({
   const [jsonDraftErrors, setJsonDraftErrors] = useState<
     Record<string, string>
   >({});
+  const [numericDrafts, setNumericDrafts] = useState<Record<string, string>>(
+    {}
+  );
+
+  const getNumericDraftKey = (fieldName: string, index?: number): string =>
+    index === undefined ? fieldName : `${fieldName}.${index}`;
+
+  const setNumericDraft = (key: string, value: string) => {
+    setNumericDrafts((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const clearNumericDraft = (key: string) => {
+    setNumericDrafts((prev) => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    setNumericDrafts({});
+  }, [configSchema]);
 
   useEffect(() => {
     if (!configSchema.properties) {
@@ -273,7 +337,7 @@ const StrategyConfigForm = ({
         if (fieldSchema.type === 'number' || fieldSchema.type === 'integer') {
           const numValue = Number(value);
 
-          if (isNaN(numValue)) {
+          if (!Number.isFinite(numValue)) {
             errors[fieldName] = t('validation.invalidNumber', {
               defaultValue: 'Must be a valid number',
             });
@@ -357,6 +421,37 @@ const StrategyConfigForm = ({
             if (hasEmpty) {
               errors[fieldName] = t('validation.allItemsRequired', {
                 defaultValue: 'All values must be filled in',
+              });
+              return;
+            }
+
+            const numericValues = value.map((item) => Number(item));
+            if (numericValues.some((item) => !Number.isFinite(item))) {
+              errors[fieldName] = t('validation.invalidNumber', {
+                defaultValue: 'Must be a valid number',
+              });
+              return;
+            }
+
+            const itemMinimum = fieldSchema.items.minimum;
+            if (
+              itemMinimum !== undefined &&
+              numericValues.some((item) => item < itemMinimum)
+            ) {
+              errors[fieldName] = t('validation.minimum', {
+                defaultValue: `Must be at least ${itemMinimum}`,
+                min: itemMinimum,
+              });
+            }
+
+            const itemMaximum = fieldSchema.items.maximum;
+            if (
+              itemMaximum !== undefined &&
+              numericValues.some((item) => item > itemMaximum)
+            ) {
+              errors[fieldName] = t('validation.maximum', {
+                defaultValue: `Must be at most ${itemMaximum}`,
+                max: itemMaximum,
               });
             }
           }
@@ -454,6 +549,7 @@ const StrategyConfigForm = ({
   };
 
   const handlePresetApply = (preset: ConfigPreset) => {
+    setNumericDrafts({});
     onChange({
       ...config,
       ...preset.parameters,
@@ -698,6 +794,10 @@ const StrategyConfigForm = ({
 
     // Number field
     if (fieldSchema.type === 'number' || fieldSchema.type === 'integer') {
+      const draftKey = getNumericDraftKey(fieldName);
+      const inputValue =
+        numericDrafts[draftKey] ?? formatNumericInputValue(value);
+
       return (
         <TextField
           key={fieldName}
@@ -705,14 +805,16 @@ const StrategyConfigForm = ({
           label={labelNode}
           type="text"
           inputMode="decimal"
-          value={value}
+          value={inputValue}
           onChange={(e) => {
-            const numValue =
-              fieldSchema.type === 'integer'
-                ? parseInt(e.target.value, 10)
-                : parseFloat(e.target.value);
-            handleFieldChange(fieldName, isNaN(numValue) ? '' : numValue);
+            const raw = e.target.value;
+            setNumericDraft(draftKey, raw);
+            handleFieldChange(
+              fieldName,
+              parseNumericInputValue(raw, fieldSchema.type as NumericFieldType)
+            );
           }}
+          onBlur={() => clearNumericDraft(draftKey)}
           helperText={renderAutoBaseUnitsHelper(
             fieldName,
             error || localized(fieldSchema, 'description')
@@ -764,6 +866,16 @@ const StrategyConfigForm = ({
                 {Array.from({ length: stepCount }, (_, i) => {
                   const stepLabel = labelTpl.replace('{index}', String(i + 1));
                   const stepValue = currentArray[i] ?? '';
+                  const draftKey = getNumericDraftKey(fieldName, i);
+                  const inputValue =
+                    numericDrafts[draftKey] ??
+                    formatNumericInputValue(stepValue);
+                  const numericStepValue = Number(stepValue);
+                  const stepValueBelowMin =
+                    itemMin !== undefined &&
+                    Number.isFinite(numericStepValue) &&
+                    numericStepValue < itemMin;
+
                   return (
                     <TextField
                       key={`${fieldName}_${i}`}
@@ -771,32 +883,21 @@ const StrategyConfigForm = ({
                       type="text"
                       inputMode="decimal"
                       size="small"
-                      value={stepValue}
+                      value={inputValue}
                       onChange={(e) => {
                         const raw = e.target.value;
                         const next = [...currentArray];
                         // Ensure array is exactly stepCount long
                         while (next.length < stepCount) next.push('');
-                        // Allow empty string so user can fully clear the field
-                        if (raw === '') {
-                          next[i] = '';
-                        } else {
-                          const parsed = parseFloat(raw);
-                          next[i] = isNaN(parsed) ? '' : parsed;
-                        }
+                        setNumericDraft(draftKey, raw);
+                        next[i] = parseNumericInputValue(raw, 'number');
                         handleFieldChange(fieldName, next.slice(0, stepCount));
                       }}
+                      onBlur={() => clearNumericDraft(draftKey)}
                       disabled={fieldDisabled}
-                      error={
-                        !!error ||
-                        (itemMin !== undefined &&
-                          typeof stepValue === 'number' &&
-                          stepValue < itemMin)
-                      }
+                      error={!!error || stepValueBelowMin}
                       helperText={
-                        itemMin !== undefined &&
-                        typeof stepValue === 'number' &&
-                        stepValue < itemMin
+                        stepValueBelowMin
                           ? t('validation.minimum', {
                               defaultValue: `Must be at least ${itemMin}`,
                               min: itemMin,
