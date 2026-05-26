@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.2](https://github.com/yuyash/auto-forex-web-service/compare/frontend-v2.12.1...frontend-v2.12.2) (2026-05-25)
+
+
+### Bug Fixes
+
+* **strategy:** resume rebuild guard at pending trigger ([#820](https://github.com/yuyash/auto-forex-web-service/issues/820)) ([78d0e20](https://github.com/yuyash/auto-forex-web-service/commit/78d0e20fbfe482170393754f624cbee9039a51dc))
+
 ## [2.12.1](https://github.com/yuyash/auto-forex-web-service/compare/frontend-v2.12.0...frontend-v2.12.1) (2026-05-24)
 
 

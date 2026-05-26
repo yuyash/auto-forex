@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.11.0](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.10.1...backend-v2.11.0) (2026-05-25)
+
+
+### Features
+
+* **strategy:** add cycle rebuild guard ([#818](https://github.com/yuyash/auto-forex-web-service/issues/818)) ([41b4114](https://github.com/yuyash/auto-forex-web-service/commit/41b411429917cdf17e22966d8160977871164703))
+
+
+### Bug Fixes
+
+* **strategy:** resume rebuild guard at pending trigger ([#820](https://github.com/yuyash/auto-forex-web-service/issues/820)) ([78d0e20](https://github.com/yuyash/auto-forex-web-service/commit/78d0e20fbfe482170393754f624cbee9039a51dc))
+
 ## [2.10.1](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.10.0...backend-v2.10.1) (2026-05-24)
 
 
