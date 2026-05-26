@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.0](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.11.0...backend-v2.12.0) (2026-05-26)
+
+
+### Features
+
+* **strategy:** add warmup max r setting ([#821](https://github.com/yuyash/auto-forex-web-service/issues/821)) ([e286a1a](https://github.com/yuyash/auto-forex-web-service/commit/e286a1ada17af991834b9ce86b0f9102a4f215ed))
+
 ## [2.11.0](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.10.1...backend-v2.11.0) (2026-05-25)
 
 
