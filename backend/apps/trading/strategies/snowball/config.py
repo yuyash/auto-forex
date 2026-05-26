@@ -28,6 +28,7 @@ WARMUP_OPTIONAL_KEYS = (
     "warmup_gate_max_trend_pips",
     "warmup_position_limit_enabled",
     "warmup_max_positions",
+    "warmup_max_r",
     "warmup_rebuild_limit_enabled",
     "warmup_max_rebuilds_per_tick",
     "warmup_completion_mode",
@@ -216,6 +217,7 @@ class WarmupConfig:
     gate_max_trend_pips: Decimal
     position_limit_enabled: bool
     max_positions: int
+    max_r: int
     rebuild_limit_enabled: bool
     max_rebuilds_per_tick: int
     completion_mode: str
@@ -397,6 +399,7 @@ class SnowballStrategyConfig:
     warmup_gate_max_trend_pips: Decimal
     warmup_position_limit_enabled: bool
     warmup_max_positions: int
+    warmup_max_r: int
     warmup_rebuild_limit_enabled: bool
     warmup_max_rebuilds_per_tick: int
     warmup_completion_mode: str
@@ -602,6 +605,7 @@ class SnowballStrategyConfig:
             gate_max_trend_pips=self.warmup_gate_max_trend_pips,
             position_limit_enabled=self.warmup_position_limit_enabled,
             max_positions=self.warmup_max_positions,
+            max_r=self.warmup_max_r,
             rebuild_limit_enabled=self.warmup_rebuild_limit_enabled,
             max_rebuilds_per_tick=self.warmup_max_rebuilds_per_tick,
             completion_mode=self.warmup_completion_mode,
@@ -836,6 +840,7 @@ class SnowballStrategyConfig:
                 raw.get("warmup_position_limit_enabled", True), True
             ),
             warmup_max_positions=_parse_int(raw.get("warmup_max_positions", 4), 4),
+            warmup_max_r=_parse_int(raw.get("warmup_max_r", raw.get("r_max", 7)), 7),
             warmup_rebuild_limit_enabled=_parse_bool(
                 raw.get("warmup_rebuild_limit_enabled", True), True
             ),
@@ -1066,6 +1071,7 @@ class SnowballStrategyConfig:
             "warmup_gate_max_trend_pips": str(self.warmup_gate_max_trend_pips),
             "warmup_position_limit_enabled": self.warmup_position_limit_enabled,
             "warmup_max_positions": self.warmup_max_positions,
+            "warmup_max_r": self.warmup_max_r,
             "warmup_rebuild_limit_enabled": self.warmup_rebuild_limit_enabled,
             "warmup_max_rebuilds_per_tick": self.warmup_max_rebuilds_per_tick,
             "warmup_completion_mode": self.warmup_completion_mode,
@@ -1163,6 +1169,8 @@ class SnowballStrategyConfig:
             raise ValueError("warmup_gate_max_trend_pips must be greater than 0")
         if self.warmup_max_positions <= 0:
             raise ValueError("warmup_max_positions must be greater than 0")
+        if self.warmup_max_r < 0:
+            raise ValueError("warmup_max_r must be greater than or equal to 0")
         if self.warmup_max_rebuilds_per_tick < 0:
             raise ValueError("warmup_max_rebuilds_per_tick must be greater than or equal to 0")
         if self.warmup_completion_mode not in {

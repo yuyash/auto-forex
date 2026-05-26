@@ -219,6 +219,7 @@ class SnowballTickContext:
     allow_new_positions: bool = True
     allow_rebuilds: bool = True
     new_position_limit: int | None = None
+    max_retracement_count: int | None = None
     rebuild_limit_per_tick: int | None = None
     blocked_counter_add_directions: set[Direction] = field(default_factory=set)
     warmup_decision: SnowballWarmupDecision | None = None
@@ -371,6 +372,7 @@ class SnowballWarmupPhase:
         context.allow_new_positions = decision.allow_new_positions
         context.allow_rebuilds = decision.allow_new_positions
         context.new_position_limit = decision.new_position_limit
+        context.max_retracement_count = decision.max_retracement_count
         context.rebuild_limit_per_tick = decision.rebuild_limit_per_tick
         current_base_units = context.strategy.config.warmup_scaled_base_units(
             context.snowball_state.account_balance,
@@ -799,6 +801,7 @@ class SnowballActiveCyclePhase:
             allow_new_positions=context.allow_new_positions,
             allow_rebuilds=context.allow_rebuilds,
             new_position_limit=context.new_position_limit,
+            max_retracement_count=context.max_retracement_count,
             rebuild_limit_per_tick=context.rebuild_limit_per_tick,
             blocked_counter_add_directions=context.blocked_counter_add_directions,
         )

@@ -25,6 +25,7 @@ class SnowballWarmupDecision:
     unit_ratio_pct: Decimal
     allow_new_positions: bool
     new_position_limit: int | None = None
+    max_retracement_count: int | None = None
     rebuild_limit_per_tick: int | None = None
     block_reason: str = ""
 
@@ -103,6 +104,7 @@ class SnowballWarmupPolicy:
         new_position_limit = (
             max(1, config.warmup_max_positions) if config.warmup_position_limit_enabled else None
         )
+        max_retracement_count = min(config.r_max, max(0, config.warmup_max_r))
         rebuild_limit = (
             max(0, config.warmup_max_rebuilds_per_tick)
             if config.warmup_rebuild_limit_enabled
@@ -115,6 +117,7 @@ class SnowballWarmupPolicy:
             unit_ratio_pct=unit_ratio_pct,
             progress_pct=progress_pct,
             block_reason=block_reason,
+            max_retracement_count=max_retracement_count,
             elapsed_minutes=elapsed_minutes,
         )
         self._log_if_changed(
@@ -124,6 +127,7 @@ class SnowballWarmupPolicy:
                 unit_ratio_pct=unit_ratio_pct,
                 allow_new_positions=allow_new_positions,
                 new_position_limit=new_position_limit,
+                max_retracement_count=max_retracement_count,
                 rebuild_limit_per_tick=rebuild_limit,
                 block_reason=block_reason,
             ),
@@ -134,6 +138,7 @@ class SnowballWarmupPolicy:
             unit_ratio_pct=unit_ratio_pct,
             allow_new_positions=allow_new_positions,
             new_position_limit=new_position_limit,
+            max_retracement_count=max_retracement_count,
             rebuild_limit_per_tick=rebuild_limit,
             block_reason=block_reason,
         )
@@ -308,12 +313,16 @@ class SnowballWarmupPolicy:
         unit_ratio_pct: Decimal,
         progress_pct: Decimal,
         block_reason: str,
+        max_retracement_count: int | None = None,
         elapsed_minutes: int | None = None,
     ) -> None:
         state.metrics["warmup_status"] = status
         state.metrics["warmup_unit_ratio_pct"] = str(unit_ratio_pct)
         state.metrics["warmup_progress_pct"] = str(progress_pct)
         state.metrics["warmup_block_reason"] = block_reason
+        state.metrics["warmup_max_r"] = (
+            "" if max_retracement_count is None else str(max_retracement_count)
+        )
         state.metrics["warmup_tick_count"] = str(state.warmup_tick_count)
         state.metrics["warmup_tp_closes"] = str(state.warmup_tp_closes)
         if elapsed_minutes is not None:
@@ -328,7 +337,8 @@ class SnowballWarmupPolicy:
     ) -> None:
         log_state = (
             f"{decision.block_reason}|{decision.unit_ratio_pct}|"
-            f"{decision.new_position_limit}|{decision.rebuild_limit_per_tick}"
+            f"{decision.new_position_limit}|{decision.max_retracement_count}|"
+            f"{decision.rebuild_limit_per_tick}"
         )
         if state.warmup_last_log_state == log_state:
             return
@@ -345,10 +355,11 @@ class SnowballWarmupPolicy:
             logger.info(
                 "Snowball warmup active; new entries allowed "
                 "(open_positions=%d, max_positions=%s, unit_ratio_pct=%s, "
-                "rebuild_limit_per_tick=%s)",
+                "max_r=%s, rebuild_limit_per_tick=%s)",
                 open_positions,
                 decision.new_position_limit,
                 decision.unit_ratio_pct,
+                decision.max_retracement_count,
                 decision.rebuild_limit_per_tick,
             )
 

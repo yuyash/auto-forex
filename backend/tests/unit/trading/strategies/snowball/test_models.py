@@ -47,6 +47,7 @@ class TestSnowballStrategyConfig:
         assert cfg.warmup_start_gate_enabled is True
         assert cfg.warmup_gate_spread_enabled is True
         assert cfg.warmup_position_limit_enabled is True
+        assert cfg.warmup_max_r == 7
         assert cfg.warmup_rebuild_limit_enabled is True
         assert cfg.warmup_completion_mode == "duration"
         assert cfg.add_margin_guard_enabled is False
@@ -301,9 +302,13 @@ class TestSnowballStrategyConfig:
         with pytest.raises(ValueError, match="warmup_completion_mode"):
             SnowballStrategyConfig.from_dict({"warmup_completion_mode": "unknown"}).validate()
 
+        with pytest.raises(ValueError, match="warmup_max_r"):
+            SnowballStrategyConfig.from_dict({"warmup_max_r": -1}).validate()
+
         SnowballStrategyConfig.from_dict(
             {
                 "warmup_enabled": True,
+                "warmup_max_r": 1,
                 "warmup_completion_mode": "duration_or_tp_closes",
                 "warmup_min_elapsed_minutes": 60,
                 "warmup_required_tp_closes": 2,
@@ -504,6 +509,7 @@ class TestSnowballStrategyConfig:
 
         assert cfg.warmup_enabled is False
         assert cfg.warmup_completion_mode == "duration"
+        assert cfg.warmup_max_r == cfg.r_max
 
 
 class TestStopLossClosedEntry:

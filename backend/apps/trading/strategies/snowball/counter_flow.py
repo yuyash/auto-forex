@@ -926,6 +926,7 @@ class SnowballCounterAddProcessor:
             list[StrategyEvent],
         ],
         assign_configured_stop_loss: Callable[[Entry, int], None],
+        max_retracement_count: int | None = None,
     ) -> list[StrategyEvent]:
         """Add a new counter entry if adverse distance threshold is met."""
         if cycle.completed:
@@ -951,6 +952,8 @@ class SnowballCounterAddProcessor:
 
         slot = layer.next_available_counter_slot()
         if slot is None:
+            return []
+        if max_retracement_count is not None and slot.index > max_retracement_count:
             return []
         if not self.slot_selector.head_losing(
             strategy=strategy,
