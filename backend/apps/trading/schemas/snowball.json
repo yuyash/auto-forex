@@ -285,6 +285,18 @@
       "group": "Warmup",
       "group_ja": "ウォームアップ"
     },
+    "warmup_max_r": {
+      "type": "integer",
+      "title": "Max Warmup R",
+      "title_ja": "ウォームアップ中の最大R",
+      "description": "Maximum retracement slot index that can be opened or rebuilt while warmup is active. For example, 1 allows R0 and R1 only.",
+      "description_ja": "ウォームアップ中に新規追加または再建できる最大R段数。たとえば1にするとR0とR1のみ許可します。",
+      "default": 7,
+      "minimum": 0,
+      "dependsOn": { "field": "warmup_enabled", "values": [true] },
+      "group": "Warmup",
+      "group_ja": "ウォームアップ"
+    },
     "warmup_rebuild_limit_enabled": {
       "type": "boolean",
       "title": "Limit Warmup Rebuilds",

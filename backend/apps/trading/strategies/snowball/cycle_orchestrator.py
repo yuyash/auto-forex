@@ -34,6 +34,7 @@ class CycleOrchestratorStrategy(Protocol):
         cycle: SnowballCycle,
         *,
         max_rebuilds: int | None = None,
+        max_retracement_count: int | None = None,
     ) -> list[StrategyEvent]: ...
 
     def _process_cycle_counter_closes(
@@ -64,6 +65,8 @@ class CycleOrchestratorStrategy(Protocol):
         ss: SnowballStrategyState,
         tick: Tick,
         cycle: SnowballCycle,
+        *,
+        max_retracement_count: int | None = None,
     ) -> list[StrategyEvent]: ...
 
     def _validate_grid_ordering(self, cycle: SnowballCycle) -> None: ...
@@ -137,6 +140,7 @@ class SnowballActiveCycleProcessor:
         allow_new_positions: bool,
         allow_rebuilds: bool,
         new_position_limit: int | None = None,
+        max_retracement_count: int | None = None,
         rebuild_limit_per_tick: int | None = None,
         blocked_counter_add_directions: set[Direction] | None = None,
     ) -> CycleProcessingResult:
@@ -154,6 +158,7 @@ class SnowballActiveCycleProcessor:
                 allow_new_positions=allow_new_positions,
                 allow_rebuilds=allow_rebuilds,
                 new_position_limit=new_position_limit,
+                max_retracement_count=max_retracement_count,
                 rebuild_limit_per_tick=remaining_rebuild_limit,
                 blocked_counter_add_directions=blocked_counter_add_directions,
                 trace=trace,
@@ -196,6 +201,7 @@ class SnowballActiveCycleProcessor:
         allow_new_positions: bool,
         allow_rebuilds: bool,
         new_position_limit: int | None,
+        max_retracement_count: int | None,
         rebuild_limit_per_tick: int | None,
         blocked_counter_add_directions: set[Direction],
         trace: SnowballDecisionTrace | DisabledSnowballDecisionTrace,
@@ -215,6 +221,7 @@ class SnowballActiveCycleProcessor:
                         new_position_limit,
                         remaining_rebuild_limit,
                     ),
+                    max_retracement_count=max_retracement_count,
                 )
                 rebuild_count += len(rebuild_events)
                 remaining_rebuild_limit = self._consume_rebuild_limit(
@@ -303,6 +310,7 @@ class SnowballActiveCycleProcessor:
                     new_position_limit,
                     remaining_rebuild_limit,
                 ),
+                max_retracement_count=max_retracement_count,
             )
             rebuild_count += len(rebuild_events)
             remaining_rebuild_limit = self._consume_rebuild_limit(
@@ -359,7 +367,12 @@ class SnowballActiveCycleProcessor:
                 for _ in range(max_iterations):
                     if not self._can_open_new_position(ss, new_position_limit):
                         break
-                    add_events = strategy._process_cycle_counter_adds(ss, tick, cycle)
+                    add_events = strategy._process_cycle_counter_adds(
+                        ss,
+                        tick,
+                        cycle,
+                        max_retracement_count=max_retracement_count,
+                    )
                     if not add_events:
                         break
                     opened_new_position = True

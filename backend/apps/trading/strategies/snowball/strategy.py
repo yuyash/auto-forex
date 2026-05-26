@@ -800,6 +800,8 @@ class SnowballStrategy(Strategy):
         ss: SnowballStrategyState,
         tick: Tick,
         cycle: SnowballCycle,
+        *,
+        max_retracement_count: int | None = None,
     ) -> list[StrategyEvent]:
         return self.counter_add_processor.process(
             self,
@@ -808,6 +810,7 @@ class SnowballStrategy(Strategy):
             cycle,
             open_layer_initial=self._open_layer_initial,
             assign_configured_stop_loss=self._assign_configured_stop_loss,
+            max_retracement_count=max_retracement_count,
         )
 
     def _format_counter_add_description(
@@ -1109,6 +1112,7 @@ class SnowballStrategy(Strategy):
         cycle: SnowballCycle,
         *,
         max_rebuilds: int | None = None,
+        max_retracement_count: int | None = None,
     ) -> list[StrategyEvent]:
         return self.stop_loss_rebuild_processor.process(
             self,
@@ -1116,6 +1120,7 @@ class SnowballStrategy(Strategy):
             tick,
             cycle,
             max_rebuilds=max_rebuilds,
+            max_retracement_count=max_retracement_count,
         )
 
     # ------------------------------------------------------------------

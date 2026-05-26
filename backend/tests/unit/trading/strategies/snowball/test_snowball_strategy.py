@@ -392,6 +392,53 @@ class TestSnowballWarmup:
         assert len(rebuilds) == 1
         assert len(pending_slots) == 1
 
+    def test_warmup_max_r_blocks_rebuilds_above_limit(self):
+        s = _strategy(
+            stop_loss_enabled=True,
+            rebuild_enabled=True,
+            warmup_enabled=True,
+            warmup_start_gate_enabled=False,
+            warmup_position_limit_enabled=False,
+            warmup_rebuild_limit_enabled=False,
+            warmup_max_r=1,
+        )
+        snowball_state = SnowballStrategyState(
+            initialised=True,
+            warmup_started_at=T0.isoformat(),
+            warmup_phase="warmup",
+        )
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        layer = Layer.create(1, 3, 1000, 2)
+        for index in (1, 2):
+            layer.slot_at(index).pending_rebuild = StopLossClosedEntry(
+                entry_price=Decimal("149.50"),
+                close_price=Decimal("150.00"),
+                units=1000 * (index + 1),
+                direction=Direction.LONG,
+                role="counter",
+                layer_number=1,
+                retracement_count=index,
+                step=index + 1,
+                cycle_id=1,
+            )
+        cycle.add_layer(layer)
+        snowball_state.cycles.append(cycle)
+        state = DummyState(strategy_state=snowball_state.to_dict())
+
+        result = s.on_tick(tick=_tick(T0 + timedelta(seconds=1), "149.50", "149.52"), state=state)
+
+        rebuilds = [
+            event
+            for event in result.events
+            if getattr(getattr(event, "event_type", None), "value", "") == "rebuild_position"
+        ]
+        persisted = SnowballStrategyState.from_strategy_state(state.strategy_state)
+        layer = persisted.active_cycles()[0].current_layer
+        assert [event.retracement_count for event in rebuilds] == [1]
+        assert layer is not None
+        assert layer.slot_at(1).pending_rebuild is None
+        assert layer.slot_at(2).pending_rebuild is not None
+
 
 # ==================================================================
 # 2. Counter adds
@@ -410,6 +457,63 @@ class TestCounterAdds:
         assert len(opens) >= 1
         # Should be at R1 (index 1)
         assert any(e.retracement_count == 1 for e in opens)
+
+    def test_warmup_max_r_blocks_counter_add_above_limit(self):
+        s = _strategy(
+            warmup_enabled=True,
+            warmup_start_gate_enabled=False,
+            warmup_position_limit_enabled=False,
+            warmup_max_r=1,
+        )
+        snowball_state = SnowballStrategyState(
+            initialised=True,
+            warmup_started_at=T0.isoformat(),
+            warmup_phase="warmup",
+        )
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.SHORT)
+        layer = Layer.create(1, 3, 1000, 2)
+        layer.slot_at(0).fill(
+            Entry(
+                entry_id=1,
+                step=1,
+                direction=Direction.SHORT,
+                entry_price=Decimal("150.00"),
+                close_price=Decimal("149.50"),
+                units=1000,
+                opened_at=T0,
+                role="initial",
+                layer_number=1,
+                retracement_count=0,
+                root_entry_id=1,
+            )
+        )
+        layer.slot_at(1).fill(
+            Entry(
+                entry_id=2,
+                step=2,
+                direction=Direction.SHORT,
+                entry_price=Decimal("150.30"),
+                close_price=Decimal("150.05"),
+                units=2000,
+                opened_at=T0,
+                role="counter",
+                layer_number=1,
+                retracement_count=1,
+                root_entry_id=1,
+                parent_entry_id=1,
+            )
+        )
+        cycle.add_layer(layer)
+        snowball_state.cycles.append(cycle)
+        state = DummyState(strategy_state=snowball_state.to_dict())
+
+        result = s.on_tick(tick=_tick(T0 + timedelta(seconds=1), "150.62", "150.64"), state=state)
+
+        assert not any(event.retracement_count == 2 for event in _open_events(result))
+        persisted = SnowballStrategyState.from_strategy_state(state.strategy_state)
+        layer = persisted.active_cycles()[0].current_layer
+        assert layer is not None
+        assert layer.slot_at(2).entry is None
 
     def test_weighted_avg_counter_add_does_not_double_count_live_r0(self):
         s = _strategy(counter_tp_mode="weighted_avg", interval_mode="constant", n_pips_head="30")

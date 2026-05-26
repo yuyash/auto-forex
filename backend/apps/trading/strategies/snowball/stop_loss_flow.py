@@ -789,6 +789,7 @@ class StopLossRebuildProcessor:
         cycle: SnowballCycle,
         *,
         max_rebuilds: int | None = None,
+        max_retracement_count: int | None = None,
     ) -> list[StrategyEvent]:
         """Rebuild all pending slots that have reached their trigger price."""
         if not strategy.config.stop_loss_enabled or not strategy.config.rebuild_enabled:
@@ -804,6 +805,11 @@ class StopLossRebuildProcessor:
                     break
                 pending = slot.pending_rebuild
                 if pending is None:
+                    continue
+                if (
+                    max_retracement_count is not None
+                    and pending.retracement_count > max_retracement_count
+                ):
                     continue
                 plan = self.price_planner.plan(
                     strategy=strategy,

@@ -237,6 +237,7 @@ class TestSnowballStrategyClassMethods:
         assert defaults["warmup_enabled"] is False
         assert "warmup_initial_unit_ratio_pct" not in defaults
         assert "warmup_max_positions" not in defaults
+        assert "warmup_max_r" not in defaults
         assert defaults["add_margin_guard_enabled"] is False
         assert "add_margin_guard_max_pct" not in defaults
         assert defaults["volatility_guard_enabled"] is False
@@ -261,6 +262,7 @@ class TestSnowballStrategyClassMethods:
                 "warmup_initial_unit_ratio_pct": "40",
                 "warmup_start_gate_enabled": False,
                 "warmup_position_limit_enabled": False,
+                "warmup_max_r": 1,
                 "warmup_rebuild_limit_enabled": False,
                 "warmup_completion_mode": "tp_closes",
                 "warmup_required_tp_closes": 2,
@@ -274,6 +276,7 @@ class TestSnowballStrategyClassMethods:
         assert "warmup_gate_max_spread_pips" not in result
         assert result["warmup_position_limit_enabled"] is False
         assert "warmup_max_positions" not in result
+        assert result["warmup_max_r"] == 1
         assert result["warmup_rebuild_limit_enabled"] is False
         assert "warmup_max_rebuilds_per_tick" not in result
         assert result["warmup_completion_mode"] == "tp_closes"
