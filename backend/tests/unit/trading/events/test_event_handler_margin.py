@@ -36,6 +36,7 @@ class TestEventHandlerMarginPartialClose:
         order_service = MagicMock()
         order_service.task = SimpleNamespace(id=uuid4(), execution_id=uuid4())
         order_service.task_type = TaskType.TRADING
+        order_service.dry_run = False
 
         handler = EventHandler(order_service=order_service, instrument="USD_JPY")
         p1 = _position(units=1000, layer_index=1)
@@ -47,7 +48,8 @@ class TestEventHandlerMarginPartialClose:
 
         close_calls: list[int | None] = []
 
-        def _close(position, units=None, tick_timestamp=None):
+        def _close(position, units=None, override_price=None, tick_timestamp=None):
+            _ = override_price
             close_calls.append(units)
             remaining = abs(position.units) - (units or abs(position.units))
             position.is_open = remaining > 0

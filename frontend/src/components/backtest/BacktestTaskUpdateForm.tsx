@@ -243,18 +243,7 @@ const backtestTaskUpdateSchema = z
       .positive('Pip size must be greater than zero')
       .optional(),
     instrument: z.string().min(1, 'Instrument is required'),
-    tick_granularity: z.enum([
-      'tick',
-      '1s',
-      '10s',
-      '15s',
-      '30s',
-      '1m',
-      '5m',
-      '15m',
-      '30m',
-      '1h',
-    ]),
+    tick_granularity: z.enum(['tick']),
     tick_window_value_mode: z.enum(['first', 'last', 'average', 'median']),
     sell_at_completion: z.boolean().optional().default(false),
     hedging_enabled: z.boolean().optional().default(true),
@@ -948,18 +937,7 @@ export default function BacktestTaskUpdateForm({
                   labelId="backtest-update-tick-granularity-label"
                   label={t('backtest:form.tickGranularity')}
                 >
-                  {[
-                    'tick',
-                    '1s',
-                    '10s',
-                    '15s',
-                    '30s',
-                    '1m',
-                    '5m',
-                    '15m',
-                    '30m',
-                    '1h',
-                  ].map((option) => (
+                  {['tick'].map((option) => (
                     <MenuItem key={option} value={option}>
                       {t(`backtest:form.tickGranularityOptions.${option}`)}
                     </MenuItem>

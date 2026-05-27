@@ -12,7 +12,7 @@ const baseBacktestTask = {
   account_currency: 'JPY',
   display_currency: 'USD',
   instrument: 'USD_JPY',
-  tick_granularity: '1m',
+  tick_granularity: 'tick',
   tick_window_value_mode: 'last',
 };
 

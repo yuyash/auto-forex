@@ -139,6 +139,23 @@ class TestDirectBacktestTickDataSource:
 
         source.close()
 
+    def test_iter_rejects_aggregated_granularity(self):
+        import pytest
+
+        from apps.trading.tasks.source import DirectBacktestTickDataSource
+
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+        source = DirectBacktestTickDataSource(
+            request_id="task-1",
+            instrument="USD_JPY",
+            start_dt=now,
+            end_dt=now,
+            tick_granularity="1m",
+        )
+
+        with pytest.raises(ValueError, match="raw tick replay"):
+            list(source)
+
 
 class TestRedisTickDataSourceInit:
     """Tests for RedisTickDataSource.__init__."""
