@@ -52,6 +52,53 @@ _INTERVAL_SECONDS_BY_GRANULARITY: dict[str, int] = {
 }
 
 
+def iter_raw_backtest_ticks(
+    *,
+    instrument: str,
+    start_dt: datetime,
+    end_dt: datetime,
+    batch_size: int,
+) -> Iterator[BacktestTickRow]:
+    """Yield raw backtest tick rows using bounded keyset queries.
+
+    A multi-year raw tick replay can contain tens of millions of rows.  Avoid a
+    single long-lived ``SELECT`` cursor for the full period; each query fetches
+    at most ``batch_size`` rows and resumes after the last timestamp returned.
+    """
+    page_size = max(int(batch_size), 1)
+    last_timestamp: datetime | None = None
+
+    while True:
+        filters = {
+            "instrument": str(instrument),
+            "timestamp__lte": end_dt,
+        }
+        if last_timestamp is None:
+            filters["timestamp__gte"] = start_dt
+        else:
+            filters["timestamp__gt"] = last_timestamp
+
+        rows = list(
+            TickData.objects.filter(**filters)
+            .order_by("timestamp")
+            .values_list("timestamp", "bid", "ask", "mid")[:page_size]
+        )
+        if not rows:
+            return
+
+        for timestamp, bid, ask, mid in rows:
+            last_timestamp = timestamp
+            yield BacktestTickRow(
+                timestamp=timestamp,
+                bid=Decimal(str(bid)),
+                ask=Decimal(str(ask)),
+                mid=Decimal(str(mid)),
+            )
+
+        if len(rows) < page_size:
+            return
+
+
 def iter_aggregated_backtest_ticks(
     *,
     instrument: str,

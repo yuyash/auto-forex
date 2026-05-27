@@ -610,24 +610,15 @@ class DirectBacktestTickDataSource(TickDataSource):
         end_dt: datetime,
         batch_size: int,
     ) -> Any:
-        from django.db import connection
+        from apps.market.services.backtest_ticks import iter_raw_backtest_ticks
 
-        from apps.market.models import TickData
-
-        quote = connection.ops.quote_name
-        quoted_table = quote(TickData._meta.db_table)
-        query = (
-            f"SELECT {quote('timestamp')}, {quote('bid')}, {quote('ask')}, {quote('mid')} "  # nosec B608
-            f"FROM {quoted_table} "  # nosec B608
-            f"WHERE {quote('instrument')} = %s "  # nosec B608
-            f"AND {quote('timestamp')} >= %s "  # nosec B608
-            f"AND {quote('timestamp')} <= %s "  # nosec B608
-            f"ORDER BY {quote('timestamp')} ASC"  # nosec B608
-        )
-        with connection.cursor() as cursor:
-            cursor.execute(query, [str(instrument), start_dt, end_dt])
-            while rows := cursor.fetchmany(batch_size):
-                yield from rows
+        for row in iter_raw_backtest_ticks(
+            instrument=instrument,
+            start_dt=start_dt,
+            end_dt=end_dt,
+            batch_size=batch_size,
+        ):
+            yield (row.timestamp, row.bid, row.ask, row.mid)
 
     @staticmethod
     def _iter_aggregated_ticks(
