@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.1](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.0...backend-v2.12.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* **trading:** resolve snowball cycle ids after live fills ([#823](https://github.com/yuyash/auto-forex-web-service/issues/823)) ([54cbd12](https://github.com/yuyash/auto-forex-web-service/commit/54cbd121b89dd8af8ffee4f2fa24d44c3585f9b0))
+
 ## [2.12.0](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.11.0...backend-v2.12.0) (2026-05-26)
 
 
