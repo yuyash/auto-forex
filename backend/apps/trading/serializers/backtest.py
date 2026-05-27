@@ -550,6 +550,15 @@ class BacktestTaskCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"tick_granularity": f"Unsupported tick granularity: {tick_granularity}"}
             )
+        if tick_granularity != BacktestTask.TickGranularity.TICK:
+            raise serializers.ValidationError(
+                {
+                    "tick_granularity": (
+                        "Backtests must use raw tick replay. Aggregated replay can create "
+                        "synthetic prices and fills that could not occur in live trading."
+                    )
+                }
+            )
 
         valid_modes = {choice for choice, _ in BacktestTask.TickWindowValueMode.choices}
         if tick_window_value_mode not in valid_modes:

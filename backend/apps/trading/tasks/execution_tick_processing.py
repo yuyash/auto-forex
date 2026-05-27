@@ -75,6 +75,7 @@ class ExecutionTickProcessor:
         loop.state = result.state
         if live_tick_delivery is not None:
             executor._merge_live_tick_delivery_state(loop.state, live_tick_delivery)
+        self._attach_tick_snapshot(result.events, tick)
         events: list[Any] = executor.save_events(result.events)
 
         if executor.task_type == TaskType.TRADING and events:
@@ -97,6 +98,17 @@ class ExecutionTickProcessor:
 
         executor._record_processed_tick(loop, tick)
         return False
+
+    @staticmethod
+    def _attach_tick_snapshot(events: list[Any], tick) -> None:
+        """Persist executable tick prices on events before order handling."""
+        for event in events:
+            if getattr(event, "tick_bid", None) is None:
+                event.tick_bid = Decimal(str(tick.bid))
+            if getattr(event, "tick_ask", None) is None:
+                event.tick_ask = Decimal(str(tick.ask))
+            if getattr(event, "tick_mid", None) is None:
+                event.tick_mid = Decimal(str(tick.mid))
 
     def _skip_resume_duplicate_tick(
         self,

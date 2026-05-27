@@ -119,14 +119,14 @@ describe('task update mutations', () => {
       buildBacktestTask({
         config_id: 'config-2',
         config_name: 'Original Config',
-        tick_granularity: '10s',
+        tick_granularity: 'tick',
       }) as never
     );
     vi.mocked(backtestTasksApi.get).mockResolvedValueOnce(
       buildBacktestTask({
         config_id: 'config-2',
         config_name: 'Updated Config',
-        tick_granularity: '1m',
+        tick_granularity: 'tick',
       }) as never
     );
 
@@ -135,7 +135,7 @@ describe('task update mutations', () => {
     await act(async () => {
       await result.current.mutate({
         id: 'task-2',
-        data: { config: 'config-2', tick_granularity: '1m' },
+        data: { config: 'config-2', tick_granularity: 'tick' },
       });
     });
 
@@ -148,7 +148,7 @@ describe('task update mutations', () => {
       ).toEqual(
         expect.objectContaining({
           config_name: 'Updated Config',
-          tick_granularity: '1m',
+          tick_granularity: 'tick',
         })
       );
     });

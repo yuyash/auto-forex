@@ -33,7 +33,7 @@ class TestOandaService:
         # Should have service classes
         assert len(classes) > 0
 
-    def test_close_position_dry_run_without_account(self):
+    def test_close_position_dry_run_without_account_with_override_price(self):
         """Dry-run close_position should not require API client/account."""
         service = OandaService(account=None, dry_run=True)
         position = Position(
@@ -46,10 +46,26 @@ class TestOandaService:
             account_id="DRY-RUN",
         )
 
-        result = service.close_position(position)
+        result = service.close_position(position, override_price=Decimal("150.01"))
 
         assert result is not None
         assert result.instrument == "USD_JPY"
+        assert result.price == Decimal("150.01")
+
+    def test_close_position_dry_run_requires_override_price(self):
+        service = OandaService(account=None, dry_run=True)
+        position = Position(
+            instrument="USD_JPY",
+            direction=OrderDirection.LONG,
+            units=Decimal("1000"),
+            average_price=Decimal("150.00"),
+            unrealized_pnl=Decimal("0"),
+            trade_ids=[],
+            account_id="DRY-RUN",
+        )
+
+        with pytest.raises(OandaAPIError):
+            service.close_position(position)
 
     @pytest.mark.contract
     def test_execute_with_retry_retries_rate_limit_then_returns_success(self):

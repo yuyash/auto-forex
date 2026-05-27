@@ -10,6 +10,7 @@ from apps.market.models import OandaAccounts
 from apps.market.services.oanda_types import (
     MarketOrder,
     MarketOrderRequest,
+    OandaAPIError,
     OrderDirection,
     OrderState,
     OrderType,
@@ -35,34 +36,18 @@ class OandaDryRunSimulator:
         override_price: Decimal | None = None,
     ) -> MarketOrder:
         """Simulate market order execution for dry-run mode."""
-        from apps.market.models import TickData as TickDataModel
-
         self.order_counter += 1
         order_id = f"DRY-{self.order_counter}"
         trade_id = f"DRY-TRADE-{self.order_counter}"
         now = datetime.now(UTC)
 
-        # Use override price if provided (e.g. from strategy event entry_price)
+        # Dry-run fills must be supplied by the execution tick.  Falling back
+        # to the database's latest tick would mix wall-clock state into a
+        # historical simulation and can create impossible fills.
         if override_price is not None:
             fill_price = override_price
         else:
-            # Get latest tick data for the instrument to simulate fill price
-            try:
-                latest_tick = (
-                    TickDataModel.objects.filter(instrument=request.instrument)
-                    .order_by("-timestamp")
-                    .first()
-                )
-                if latest_tick:
-                    # Use bid for sells, ask for buys
-                    fill_price = (
-                        latest_tick.ask if direction == OrderDirection.LONG else latest_tick.bid
-                    )
-                else:
-                    # Fallback to a reasonable default if no tick data
-                    fill_price = Decimal("1.0000")
-            except Exception:
-                fill_price = Decimal("1.0000")
+            raise OandaAPIError("Dry-run market order requires an explicit override_price")
 
         # Update dry-run position tracking
         position_key = f"{request.instrument}_{direction.value}"
@@ -124,34 +109,17 @@ class OandaDryRunSimulator:
         override_price: Decimal | None = None,
     ) -> MarketOrder:
         """Simulate position close for dry-run mode."""
-        from apps.market.models import TickData as TickDataModel
-
         self.order_counter += 1
         order_id = f"DRY-CLOSE-{self.order_counter}"
         now = datetime.now(UTC)
 
-        # Use override price if provided (e.g. from strategy event exit_price)
+        # Dry-run closes must be supplied by the execution tick.  Falling back
+        # to the database's latest tick would mix wall-clock state into a
+        # historical simulation and can create impossible fills.
         if override_price is not None:
             close_price = override_price
         else:
-            # Get latest tick data for close price
-            try:
-                latest_tick = (
-                    TickDataModel.objects.filter(instrument=position.instrument)
-                    .order_by("-timestamp")
-                    .first()
-                )
-                if latest_tick:
-                    # Use opposite side for closing: bid for long close, ask for short close
-                    close_price = (
-                        latest_tick.bid
-                        if position.direction == OrderDirection.LONG
-                        else latest_tick.ask
-                    )
-                else:
-                    close_price = Decimal("1.0000")
-            except Exception:
-                close_price = Decimal("1.0000")
+            raise OandaAPIError("Dry-run position close requires an explicit override_price")
 
         # Determine closed units even when the position is not tracked locally.
         close_units = position.units if units is None else min(units, position.units)

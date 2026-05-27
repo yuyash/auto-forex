@@ -998,6 +998,7 @@ class SnowballStrategy(Strategy):
         evt = SNOWBALL_EVENTS.entry_open_event(
             layer_entry,
             timestamp=tick.timestamp,
+            execution_price=market_price,
             planned_exit_price_formula=formula,
             description=(
                 f"Layer initial entry ({direction.value.upper()}) | "

@@ -281,7 +281,7 @@ class TestBacktestTaskCreateSerializer:
         assert not serializer.is_valid()
         assert "initial_balance" in serializer.errors
 
-    def test_update_keeps_created_status_when_replay_settings_change_before_first_run(self):
+    def test_update_rejects_aggregated_tick_granularity_before_first_run(self):
         user = UserFactory()
         now = datetime.now(timezone.utc)
         TickData.objects.create(
@@ -317,13 +317,10 @@ class TestBacktestTaskCreateSerializer:
             partial=True,
         )
 
-        assert serializer.is_valid(), serializer.errors
-        updated = serializer.save()
+        assert not serializer.is_valid()
+        assert "tick_granularity" in serializer.errors
 
-        assert updated.tick_granularity == "1m"
-        assert updated.status == TaskStatus.CREATED
-
-    def test_update_forces_restart_only_when_replay_settings_change_after_execution(self):
+    def test_update_rejects_aggregated_tick_granularity_after_execution(self):
         user = UserFactory()
         now = datetime.now(timezone.utc)
         TickData.objects.create(
@@ -359,12 +356,8 @@ class TestBacktestTaskCreateSerializer:
             partial=True,
         )
 
-        assert serializer.is_valid(), serializer.errors
-        updated = serializer.save()
-
-        assert updated.tick_granularity == "1m"
-        assert updated.tick_window_value_mode == "average"
-        assert updated.status == TaskStatus.STOPPED
+        assert not serializer.is_valid()
+        assert "tick_granularity" in serializer.errors
 
 
 @pytest.mark.django_db

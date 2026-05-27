@@ -1332,18 +1332,7 @@ export default function BacktestTaskForm({
                         labelId="backtest-tick-granularity-label"
                         label={t('backtest:form.tickGranularity')}
                       >
-                        {[
-                          'tick',
-                          '1s',
-                          '10s',
-                          '15s',
-                          '30s',
-                          '1m',
-                          '5m',
-                          '15m',
-                          '30m',
-                          '1h',
-                        ].map((value) => (
+                        {['tick'].map((value) => (
                           <MenuItem key={value} value={value}>
                             {t(`backtest:form.tickGranularityOptions.${value}`)}
                           </MenuItem>

@@ -792,16 +792,34 @@ class EventHandler:
             OrderServiceError: If order execution fails
         """
         direction = Direction(event.direction)
+        override_price = self._required_dry_run_price(
+            event.price if event.price else None,
+            event=event,
+            action="open position",
+        )
+        planned_entry_price = self._event_planned_entry_price(event)
+        planned_fill_delta = self._open_fill_delta(
+            planned_entry_price=planned_entry_price,
+            execution_price=override_price,
+        )
+        planned_exit_price = self._shift_optional_price(
+            event.planned_exit_price,
+            planned_fill_delta,
+        )
+        stop_loss_price = self._shift_optional_price(
+            getattr(event, "stop_loss_price", None),
+            planned_fill_delta,
+        )
         position, order = self.order_service.open_position(
             instrument=self.instrument,
             units=event.units,
             direction=direction,
             layer_index=event.layer_number,
             merge_with_existing=event.merge_with_existing,
-            override_price=event.price if event.price else None,
+            override_price=override_price,
             tick_timestamp=event.timestamp,
             retracement_count=event.retracement_count,
-            planned_exit_price=event.planned_exit_price,
+            planned_exit_price=planned_exit_price,
             planned_exit_price_formula=getattr(event, "planned_exit_price_formula", None),
         )
 
@@ -814,9 +832,8 @@ class EventHandler:
             position.save(update_fields=["adverse_pips"])
 
         # Persist stop-loss price on the position
-        sl_price = getattr(event, "stop_loss_price", None)
-        if sl_price is not None:
-            position.stop_loss_price = sl_price
+        if stop_loss_price is not None:
+            position.stop_loss_price = stop_loss_price
             position.save(update_fields=["stop_loss_price"])
 
         self._mark_replay_records(position, order)
@@ -902,6 +919,34 @@ class EventHandler:
         )
 
         return position
+
+    @staticmethod
+    def _event_planned_entry_price(event: OpenPositionEvent) -> Decimal | None:
+        planned_entry_price = getattr(event, "planned_entry_price", None)
+        if planned_entry_price is not None:
+            return Decimal(str(planned_entry_price))
+        event_price = getattr(event, "price", None)
+        if event_price:
+            return Decimal(str(event_price))
+        return None
+
+    @staticmethod
+    def _open_fill_delta(
+        *,
+        planned_entry_price: Decimal | None,
+        execution_price: Decimal | None,
+    ) -> Decimal:
+        if planned_entry_price is None or execution_price is None:
+            return Decimal("0")
+        return Decimal(str(execution_price)) - Decimal(str(planned_entry_price))
+
+    @staticmethod
+    def _shift_optional_price(price: Decimal | None, delta: Decimal) -> Decimal | None:
+        if price is None:
+            return None
+        if delta == 0:
+            return Decimal(str(price))
+        return Decimal(str(price)) + delta
 
     def _resolve_cycle_id_for_close(
         self,
@@ -1116,6 +1161,7 @@ class EventHandler:
             layer_number=event.layer_number,
             direction=event.direction,
             price=event.price,
+            planned_entry_price=getattr(event, "planned_entry_price", None),
             units=event.units,
             retracement_count=event.retracement_count,
             entry_id=event.entry_id,
@@ -1258,7 +1304,11 @@ class EventHandler:
         Raises:
             OrderServiceError: If order execution fails
         """
-        override_price = event.exit_price if event.exit_price else None
+        override_price = self._required_dry_run_price(
+            event.exit_price if event.exit_price else None,
+            event=event,
+            action="close position",
+        )
         total_requested = event.units if event.units > 0 else None
         remaining = total_requested
         realized_delta_total = Decimal("0")
@@ -1451,6 +1501,55 @@ class EventHandler:
             return override_price
         return Decimal("0")
 
+    def _required_dry_run_price(
+        self,
+        price: Decimal | None,
+        *,
+        event: StrategyEvent,
+        action: str,
+    ) -> Decimal | None:
+        """Require strategy-provided executable prices for simulated orders."""
+        if not self.order_service.dry_run:
+            return price
+        if price is not None:
+            return price
+        event_type = self._event_type_key(event)
+        raise OrderServiceError(
+            f"Backtest cannot {action} without an executable tick-side price "
+            f"(event_type={event_type})."
+        )
+
+    def _event_entry_side_price(
+        self,
+        event: StrategyEvent,
+        direction: Direction | str,
+    ) -> Decimal | None:
+        if not self.order_service.dry_run:
+            return None
+        bid, ask = self._event_tick_bid_ask(event)
+        return ask if Direction(direction) == Direction.LONG else bid
+
+    def _event_exit_side_price(
+        self,
+        event: StrategyEvent,
+        direction: Direction | str,
+    ) -> Decimal | None:
+        if not self.order_service.dry_run:
+            return None
+        bid, ask = self._event_tick_bid_ask(event)
+        return bid if Direction(direction) == Direction.LONG else ask
+
+    def _event_tick_bid_ask(self, event: StrategyEvent) -> tuple[Decimal, Decimal]:
+        bid = getattr(event, "tick_bid", None)
+        ask = getattr(event, "tick_ask", None)
+        if bid is not None and ask is not None:
+            return Decimal(str(bid)), Decimal(str(ask))
+        event_type = self._event_type_key(event)
+        raise OrderServiceError(
+            "Backtest risk event is missing executable tick bid/ask prices "
+            f"(event_type={event_type})."
+        )
+
     @staticmethod
     def _new_affected_refs() -> dict[str, set[str]]:
         return {
@@ -1539,9 +1638,11 @@ class EventHandler:
         for position in self._ordered_positions_for_margin_close():
             if not position.is_open:
                 continue
+            override_price = self._event_exit_side_price(event, position.direction)
             try:
                 closed, realized_delta, close_order = self.order_service.close_position(
                     position,
+                    override_price=override_price,
                     tick_timestamp=event.timestamp,
                 )
                 closed_positions.append(closed)
@@ -1549,7 +1650,11 @@ class EventHandler:
                 realized_delta_total += realized_delta
 
                 # Quote-currency PnL
-                exit_px = closed.exit_price or Decimal("0")
+                exit_px = self._close_fill_price(
+                    close_order=close_order,
+                    closed_position=closed,
+                    override_price=override_price,
+                )
                 entry_px = Decimal(str(position.entry_price))
                 q_delta = exit_px - entry_px
                 if position.direction == "short":
@@ -1559,7 +1664,7 @@ class EventHandler:
                     direction=Direction(position.direction),
                     units=abs(position.units),
                     instrument=position.instrument,
-                    price=Decimal(str(closed.exit_price or position.entry_price)),
+                    price=exit_px,
                     execution_method=str(event.event_type.value),
                     timestamp=self._trade_execution_timestamp(
                         fallback_timestamp=event.timestamp,
@@ -1583,7 +1688,7 @@ class EventHandler:
                     "POSITION_CLOSED: %s %s (volatility lock) exit @ %s, pnl=%s (reason=%s)",
                     position.direction,
                     position.instrument,
-                    closed.exit_price,
+                    exit_px,
                     realized_delta,
                     event.reason,
                     extra={
@@ -1594,7 +1699,7 @@ class EventHandler:
                         "instrument": position.instrument,
                         "units_closed": abs(position.units),
                         "entry_price": str(position.entry_price),
-                        "exit_price": str(closed.exit_price),
+                        "exit_price": str(exit_px),
                         "entry_time": str(position.entry_time),
                         "exit_time": str(closed.exit_time),
                         "realized_pnl": str(realized_delta),
@@ -1647,6 +1752,7 @@ class EventHandler:
             layer_index = int(instr.get("layer_index", 0))
             if units <= 0:
                 continue
+            override_price = self._event_entry_side_price(event, direction)
             try:
                 hedged, _order = self.order_service.open_position(
                     instrument=self.instrument,
@@ -1654,6 +1760,7 @@ class EventHandler:
                     direction=direction,
                     layer_index=layer_index,
                     merge_with_existing=False,
+                    override_price=override_price,
                     tick_timestamp=event.timestamp,
                 )
                 self._cache_position(layer_index, hedged)
@@ -1742,13 +1849,16 @@ class EventHandler:
                 break
             if not position.is_open:
                 continue
+            override_price = self._event_exit_side_price(event, position.direction)
             try:
                 units_to_close = None
                 if remaining_units is not None:
                     units_to_close = min(abs(position.units), remaining_units)
+                closed_units = units_to_close or abs(position.units)
                 closed, realized_delta, close_order = self.order_service.close_position(
                     position,
                     units=units_to_close,
+                    override_price=override_price,
                     tick_timestamp=event.timestamp,
                 )
                 closed_positions.append(closed)
@@ -1756,9 +1866,12 @@ class EventHandler:
                 realized_delta_total += realized_delta
 
                 # Quote-currency PnL
-                exit_px = closed.exit_price or Decimal("0")
+                exit_px = self._close_fill_price(
+                    close_order=close_order,
+                    closed_position=closed,
+                    override_price=override_price,
+                )
                 entry_px = Decimal(str(position.entry_price))
-                closed_units = units_to_close or abs(position.units)
                 q_delta = exit_px - entry_px
                 if position.direction == "short":
                     q_delta = -q_delta
@@ -1767,7 +1880,7 @@ class EventHandler:
                     direction=Direction(position.direction),
                     units=units_to_close or abs(position.units),
                     instrument=position.instrument,
-                    price=Decimal(str(closed.exit_price or position.entry_price)),
+                    price=exit_px,
                     execution_method=str(event.event_type.value),
                     timestamp=self._trade_execution_timestamp(
                         fallback_timestamp=event.timestamp,
@@ -1797,7 +1910,7 @@ class EventHandler:
                     "POSITION_CLOSED: %s %s (margin protection) exit @ %s, pnl=%s (reason=%s)",
                     position.direction,
                     position.instrument,
-                    closed.exit_price,
+                    exit_px,
                     realized_delta,
                     event.reason,
                     extra={
@@ -1808,7 +1921,7 @@ class EventHandler:
                         "instrument": position.instrument,
                         "units_closed": units_to_close or abs(position.units),
                         "entry_price": str(position.entry_price),
-                        "exit_price": str(closed.exit_price),
+                        "exit_price": str(exit_px),
                         "entry_time": str(position.entry_time),
                         "exit_time": str(closed.exit_time) if closed.exit_time else None,
                         "realized_pnl": str(realized_delta),

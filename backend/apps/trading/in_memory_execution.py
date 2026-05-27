@@ -13,6 +13,7 @@ from django.utils import timezone
 from apps.market.services.oanda import (
     MarketOrder as OandaMarketOrder,
     MarketOrderRequest,
+    OandaAPIError,
     OpenTrade,
     OrderDirection,
     OrderState,
@@ -64,13 +65,15 @@ class InMemoryBrokerGateway:
         self.order_counter += 1
         direction = OrderDirection.LONG if request.units >= 0 else OrderDirection.SHORT
         now = datetime.now(UTC)
+        if override_price is None:
+            raise OandaAPIError("In-memory market order requires an explicit override_price")
         return OandaMarketOrder(
             order_id=f"MEM-{self.order_counter}",
             instrument=str(request.instrument),
             order_type=OandaOrderType.MARKET,
             direction=direction,
             units=abs(request.units),
-            price=override_price if override_price is not None else Decimal("1.0000"),
+            price=override_price,
             state=OrderState.FILLED,
             time_in_force="FOK",
             create_time=now,
@@ -109,13 +112,15 @@ class InMemoryBrokerGateway:
     ) -> OandaMarketOrder:
         self.order_counter += 1
         now = datetime.now(UTC)
+        if override_price is None:
+            raise OandaAPIError("In-memory position close requires an explicit override_price")
         return OandaMarketOrder(
             order_id=f"MEM-CLOSE-{self.order_counter}",
             instrument=position.instrument,
             order_type=OandaOrderType.MARKET,
             direction=position.direction,
             units=position.units if units is None else min(units, position.units),
-            price=override_price if override_price is not None else position.average_price,
+            price=override_price,
             state=OrderState.FILLED,
             time_in_force="FOK",
             create_time=now,

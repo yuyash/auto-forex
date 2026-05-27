@@ -585,6 +585,75 @@ class TestSnowballCycleTp:
 
         assert [event.event_type for event in next_tick_events] == [EventType.CLOSE_POSITION]
 
+    @pytest.mark.parametrize(
+        ("direction", "entry_price", "close_price", "bid", "ask", "expected_event_price"),
+        [
+            (
+                Direction.LONG,
+                Decimal("144.547"),
+                Decimal("144.697"),
+                "144.700",
+                "144.720",
+                Decimal("144.720"),
+            ),
+            (
+                Direction.SHORT,
+                Decimal("157.397"),
+                Decimal("157.247"),
+                "157.100",
+                "157.200",
+                Decimal("157.100"),
+            ),
+        ],
+    )
+    def test_rebuild_order_price_uses_tick_side_when_trigger_overshot(
+        self,
+        direction: Direction,
+        entry_price: Decimal,
+        close_price: Decimal,
+        bid: str,
+        ask: str,
+        expected_event_price: Decimal,
+    ):
+        strategy = _strategy(
+            {
+                "stop_loss_enabled": True,
+                "rebuild_enabled": True,
+                "rebuild_take_profit_mode": "same",
+            }
+        )
+        state = SnowballStrategyState()
+        cycle = SnowballCycle(cycle_id=1, direction=direction)
+        layer = Layer.create(1, 3, 1000, 2)
+        opened_at = datetime(2026, 1, 1, tzinfo=UTC)
+        layer.slot_at(0).pending_rebuild = StopLossClosedEntry(
+            entry_price=entry_price,
+            close_price=close_price,
+            units=1500,
+            direction=direction,
+            role="initial",
+            layer_number=1,
+            retracement_count=0,
+            step=1,
+            cycle_id=1,
+            closed_at=opened_at - timedelta(seconds=1),
+        )
+        cycle.add_layer(layer)
+        state.cycles.append(cycle)
+
+        events = strategy._process_stop_loss_rebuilds(
+            state,
+            _make_tick(opened_at, bid, ask),
+            cycle,
+        )
+
+        rebuilt_r0 = layer.slot_at(0).entry
+        assert len(events) == 1
+        assert rebuilt_r0 is not None
+        assert rebuilt_r0.entry_price == entry_price
+        assert events[0].planned_entry_price == entry_price
+        assert events[0].price == expected_event_price
+
     def test_head_tp_waits_when_counter_target_is_not_hit(self):
         strategy = _strategy({"m_pips": "15"})
         state = SnowballStrategyState()

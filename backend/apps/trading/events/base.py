@@ -82,6 +82,9 @@ class StrategyEvent(ABC):
     actual_exit_price: Decimal | None = None
     validation_tolerance_pips: Decimal | None = None
     margin_ratio: Decimal | None = None
+    tick_bid: Decimal | None = None
+    tick_ask: Decimal | None = None
+    tick_mid: Decimal | None = None
 
     @property
     def category(self) -> str:
@@ -150,6 +153,12 @@ class StrategyEvent(ABC):
             result["actual_exit_price"] = str(self.actual_exit_price)
         if self.validation_tolerance_pips is not None:
             result["validation_tolerance_pips"] = str(self.validation_tolerance_pips)
+        if self.tick_bid is not None:
+            result["tick_bid"] = str(self.tick_bid)
+        if self.tick_ask is not None:
+            result["tick_ask"] = str(self.tick_ask)
+        if self.tick_mid is not None:
+            result["tick_mid"] = str(self.tick_mid)
         return result
 
     @classmethod
@@ -531,6 +540,7 @@ class OpenPositionEvent(StrategyEvent):
     layer_number: int = 1
     direction: str = ""
     price: Decimal = Decimal("0")
+    planned_entry_price: Decimal | None = None
     units: int = 0
     entry_time: datetime | None = None
     retracement_count: int = 0
@@ -578,6 +588,8 @@ class OpenPositionEvent(StrategyEvent):
                 "retracement_count": self.retracement_count,
             }
         )
+        if self.planned_entry_price is not None:
+            result["planned_entry_price"] = str(self.planned_entry_price)
         if self.entry_id is not None:
             result["entry_id"] = self.entry_id
         if self.strategy_event_type:
@@ -604,6 +616,7 @@ class OpenPositionEvent(StrategyEvent):
             layer_number=int(event_dict.get("layer_number", 1)),
             direction=str(event_dict.get("direction", "")),
             price=parse_decimal(event_dict.get("price", "0")),
+            planned_entry_price=parse_optional_decimal(event_dict.get("planned_entry_price")),
             units=int(event_dict.get("units", 0)),
             entry_time=parse_datetime(event_dict.get("entry_time")),
             retracement_count=int(event_dict.get("retracement_count", 0)),
@@ -634,6 +647,7 @@ class RebuildPositionEvent(StrategyEvent):
     layer_number: int = 1
     direction: str = ""
     price: Decimal = Decimal("0")
+    planned_entry_price: Decimal | None = None
     units: int = 0
     retracement_count: int = 0
     entry_id: int | None = None
@@ -681,6 +695,8 @@ class RebuildPositionEvent(StrategyEvent):
                 "retracement_count": self.retracement_count,
             }
         )
+        if self.planned_entry_price is not None:
+            result["planned_entry_price"] = str(self.planned_entry_price)
         if self.entry_id is not None:
             result["entry_id"] = self.entry_id
         if self.strategy_event_type:
@@ -705,6 +721,7 @@ class RebuildPositionEvent(StrategyEvent):
             layer_number=int(event_dict.get("layer_number", 1)),
             direction=str(event_dict.get("direction", "")),
             price=parse_decimal(event_dict.get("price", "0")),
+            planned_entry_price=parse_optional_decimal(event_dict.get("planned_entry_price")),
             units=int(event_dict.get("units", 0)),
             retracement_count=int(event_dict.get("retracement_count", 0)),
             entry_id=event_dict.get("entry_id"),
@@ -1033,13 +1050,17 @@ class VolatilityLockEvent(StrategyEvent):
 
     @classmethod
     def from_dict(cls, event_dict: dict[str, Any]) -> "VolatilityLockEvent":
-        return cls(
+        inst = cls(
             event_type=EventType.VOLATILITY_LOCK,
             timestamp=parse_datetime(event_dict.get("timestamp")),
             reason=str(event_dict.get("reason", "")),
             atr_value=parse_optional_decimal(event_dict.get("atr_value")),
             threshold=parse_optional_decimal(event_dict.get("threshold")),
         )
+        inst.tick_bid = parse_optional_decimal(event_dict.get("tick_bid"))
+        inst.tick_ask = parse_optional_decimal(event_dict.get("tick_ask"))
+        inst.tick_mid = parse_optional_decimal(event_dict.get("tick_mid"))
+        return inst
 
 
 @register_event(EventType.VOLATILITY_HEDGE_NEUTRALIZE)
@@ -1101,7 +1122,7 @@ class VolatilityHedgeNeutralizeEvent(StrategyEvent):
 
     @classmethod
     def from_dict(cls, event_dict: dict[str, Any]) -> "VolatilityHedgeNeutralizeEvent":
-        return cls(
+        inst = cls(
             event_type=EventType.VOLATILITY_HEDGE_NEUTRALIZE,
             timestamp=parse_datetime(event_dict.get("timestamp")),
             reason=str(event_dict.get("reason", "")),
@@ -1109,6 +1130,10 @@ class VolatilityHedgeNeutralizeEvent(StrategyEvent):
             threshold=parse_optional_decimal(event_dict.get("threshold")),
             hedge_instructions=list(event_dict.get("hedge_instructions", [])),
         )
+        inst.tick_bid = parse_optional_decimal(event_dict.get("tick_bid"))
+        inst.tick_ask = parse_optional_decimal(event_dict.get("tick_ask"))
+        inst.tick_mid = parse_optional_decimal(event_dict.get("tick_mid"))
+        return inst
 
 
 @register_event(EventType.MARGIN_PROTECTION)
@@ -1193,7 +1218,7 @@ class MarginProtectionEvent(StrategyEvent):
 
     @classmethod
     def from_dict(cls, event_dict: dict[str, Any]) -> "MarginProtectionEvent":
-        return cls(
+        inst = cls(
             event_type=EventType.MARGIN_PROTECTION,
             timestamp=parse_datetime(event_dict.get("timestamp")),
             reason=str(event_dict.get("reason", "")),
@@ -1202,6 +1227,10 @@ class MarginProtectionEvent(StrategyEvent):
             positions_closed=event_dict.get("positions_closed"),
             units_to_close=event_dict.get("units_to_close"),
         )
+        inst.tick_bid = parse_optional_decimal(event_dict.get("tick_bid"))
+        inst.tick_ask = parse_optional_decimal(event_dict.get("tick_ask"))
+        inst.tick_mid = parse_optional_decimal(event_dict.get("tick_mid"))
+        return inst
 
 
 @dataclass

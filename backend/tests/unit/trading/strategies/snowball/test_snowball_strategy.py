@@ -951,8 +951,12 @@ class TestCounterAdds:
         assert isinstance(open_event, OpenPositionEvent)
         assert open_event.layer_number == 2
         assert open_event.retracement_count == 0
-        # For SHORT the entry is tick.bid-side; snapped anchor = 101.210 + 16 pips.
-        assert open_event.price == Decimal("101.370")
+        layer_entry = cycle.grid.layers[-1].slot_at(0).entry
+        assert layer_entry is not None
+        # The state keeps the snapped anchor; the order event must fill at tick.bid.
+        assert layer_entry.entry_price == Decimal("101.370")
+        assert open_event.planned_entry_price == Decimal("101.370")
+        assert open_event.price == Decimal("101.420")
         # TP = anchor - m_pips * pip_size (SHORT) = 101.370 - 0.50 = 100.870
         assert open_event.planned_exit_price == Decimal("100.870")
 
@@ -1012,8 +1016,12 @@ class TestCounterAdds:
         assert isinstance(open_event, OpenPositionEvent)
         assert open_event.layer_number == 2
         assert open_event.retracement_count == 0
-        # anchor = 100.000 - 16 pips = 99.840
-        assert open_event.price == Decimal("99.840")
+        layer_entry = cycle.grid.layers[-1].slot_at(0).entry
+        assert layer_entry is not None
+        # The state keeps the snapped anchor; the order event must fill at tick.ask.
+        assert layer_entry.entry_price == Decimal("99.840")
+        assert open_event.planned_entry_price == Decimal("99.840")
+        assert open_event.price == Decimal("99.792")
         # TP = anchor + m_pips = 99.840 + 0.50 = 100.340
         assert open_event.planned_exit_price == Decimal("100.340")
 
@@ -1093,7 +1101,11 @@ class TestCounterAdds:
         assert isinstance(open_event, OpenPositionEvent)
         assert open_event.layer_number == 2
         # anchor = 101.210 + 16 pips = 101.370 regardless of current tick
-        assert open_event.price == Decimal("101.370")
+        layer_entry = cycle.grid.layers[-1].slot_at(0).entry
+        assert layer_entry is not None
+        assert layer_entry.entry_price == Decimal("101.370")
+        assert open_event.planned_entry_price == Decimal("101.370")
+        assert open_event.price == Decimal("101.500")
 
 
 # ==================================================================

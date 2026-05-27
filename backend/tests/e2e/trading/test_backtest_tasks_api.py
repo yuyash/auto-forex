@@ -21,7 +21,7 @@ def _create_backtest(client, config_id, name):
             "end_time": "2026-01-02T21:59:58Z",
             "initial_balance": "10000.00",
             "data_source": "postgresql",
-            "tick_granularity": "1m",
+            "tick_granularity": "tick",
         },
         format="json",
     )

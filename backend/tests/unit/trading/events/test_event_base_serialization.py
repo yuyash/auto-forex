@@ -402,11 +402,17 @@ class TestVolatilityLockEventSerialization:
             atr_value=Decimal("0.25"),
             threshold=Decimal("0.20"),
         )
+        event.tick_bid = Decimal("1.1000")
+        event.tick_ask = Decimal("1.1002")
+        event.tick_mid = Decimal("1.1001")
         d = event.to_dict()
         assert d["event_type"] == "volatility_lock"
         assert d["reason"] == "ATR exceeded threshold"
         assert d["atr_value"] == "0.25"
         assert d["threshold"] == "0.20"
+        assert d["tick_bid"] == "1.1000"
+        assert d["tick_ask"] == "1.1002"
+        assert d["tick_mid"] == "1.1001"
 
     def test_to_dict_no_optionals(self):
         event = VolatilityLockEvent(
@@ -424,10 +430,16 @@ class TestVolatilityLockEventSerialization:
             "reason": "ATR exceeded",
             "atr_value": "0.25",
             "threshold": "0.20",
+            "tick_bid": "1.1000",
+            "tick_ask": "1.1002",
+            "tick_mid": "1.1001",
         }
         event = VolatilityLockEvent.from_dict(d)
         assert event.atr_value == Decimal("0.25")
         assert event.threshold == Decimal("0.20")
+        assert event.tick_bid == Decimal("1.1000")
+        assert event.tick_ask == Decimal("1.1002")
+        assert event.tick_mid == Decimal("1.1001")
 
     def test_roundtrip(self):
         original = VolatilityLockEvent(
@@ -466,11 +478,15 @@ class TestVolatilityHedgeNeutralizeEventSerialization:
             threshold=Decimal("0.25"),
             hedge_instructions=instructions,
         )
+        event.tick_bid = Decimal("1.1000")
+        event.tick_ask = Decimal("1.1002")
         d = event.to_dict()
         assert d["event_type"] == "volatility_hedge_neutralize"
         assert d["reason"] == "Neutralize positions"
         assert d["atr_value"] == "0.30"
         assert d["hedge_instructions"] == instructions
+        assert d["tick_bid"] == "1.1000"
+        assert d["tick_ask"] == "1.1002"
 
     def test_from_dict(self):
         instructions = [
@@ -483,11 +499,15 @@ class TestVolatilityHedgeNeutralizeEventSerialization:
             "atr_value": "0.30",
             "threshold": "0.25",
             "hedge_instructions": instructions,
+            "tick_bid": "1.1000",
+            "tick_ask": "1.1002",
         }
         event = VolatilityHedgeNeutralizeEvent.from_dict(d)
         assert event.atr_value == Decimal("0.30")
         assert len(event.hedge_instructions) == 1
         assert event.hedge_instructions[0]["direction"] == "short"
+        assert event.tick_bid == Decimal("1.1000")
+        assert event.tick_ask == Decimal("1.1002")
 
     def test_roundtrip(self):
         instructions = [{"direction": "long", "units": 500, "layer_index": 1, "source_entry_id": 2}]
@@ -530,6 +550,8 @@ class TestMarginProtectionEventSerialization:
             positions_closed=2,
             units_to_close=500,
         )
+        event.tick_bid = Decimal("1.1000")
+        event.tick_ask = Decimal("1.1002")
         d = event.to_dict()
         assert d["event_type"] == "margin_protection"
         assert d["reason"] == "Margin threshold exceeded"
@@ -537,6 +559,8 @@ class TestMarginProtectionEventSerialization:
         assert d["threshold"] == "0.10"
         assert d["positions_closed"] == 2
         assert d["units_to_close"] == 500
+        assert d["tick_bid"] == "1.1000"
+        assert d["tick_ask"] == "1.1002"
 
     def test_to_dict_no_optionals(self):
         event = MarginProtectionEvent(
@@ -558,12 +582,16 @@ class TestMarginProtectionEventSerialization:
             "threshold": "0.10",
             "positions_closed": 2,
             "units_to_close": 500,
+            "tick_bid": "1.1000",
+            "tick_ask": "1.1002",
         }
         event = MarginProtectionEvent.from_dict(d)
         assert event.current_margin == Decimal("0.05")
         assert event.threshold == Decimal("0.10")
         assert event.positions_closed == 2
         assert event.units_to_close == 500
+        assert event.tick_bid == Decimal("1.1000")
+        assert event.tick_ask == Decimal("1.1002")
 
     def test_roundtrip(self):
         original = MarginProtectionEvent(

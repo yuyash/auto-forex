@@ -204,6 +204,35 @@ class TestHandleOpenPosition:
         call_kwargs = svc.open_position.call_args
         assert call_kwargs.kwargs.get("retracement_count") == 3
 
+    def test_shifts_planned_exit_and_stop_loss_from_planned_entry_to_fill_price(self):
+        svc = _make_order_service()
+        position = _make_position()
+        position.save = MagicMock()
+        order = MagicMock(fill_price=Decimal("144.720"))
+        svc.open_position.return_value = (position, order)
+
+        handler = EventHandler(order_service=svc, instrument="USD_JPY")
+        handler._record_trade = MagicMock()
+
+        event = OpenPositionEvent(
+            event_type=EventType.OPEN_POSITION,
+            layer_number=1,
+            direction="long",
+            units=1500,
+            price=Decimal("144.720"),
+            planned_entry_price=Decimal("144.547"),
+            planned_exit_price=Decimal("144.697"),
+            stop_loss_price=Decimal("144.197"),
+        )
+
+        handler.handle_open_position(event)
+
+        call_kwargs = svc.open_position.call_args.kwargs
+        assert call_kwargs["override_price"] == Decimal("144.720")
+        assert call_kwargs["planned_exit_price"] == Decimal("144.870")
+        assert position.stop_loss_price == Decimal("144.370")
+        position.save.assert_called_with(update_fields=["stop_loss_price"])
+
 
 class TestHandleClosePosition:
     """Tests for handle_close_position."""
@@ -650,6 +679,58 @@ class TestHandleVolatilityLock:
         result = handler.handle_volatility_lock(event)
         assert result[0] == Decimal("5.00")
 
+    def test_dry_run_closes_with_tick_side_prices(self):
+        svc = _make_order_service(task_type=TaskType.BACKTEST)
+        svc.dry_run = True
+        long_position = _make_position(units=1000, layer_index=1, direction="long")
+        short_position = _make_position(units=500, layer_index=2, direction="short")
+        closed_long = _make_position(units=1000, is_open=False, layer_index=1, direction="long")
+        closed_long.exit_price = Decimal("1.09980")
+        closed_short = _make_position(units=500, is_open=False, layer_index=2, direction="short")
+        closed_short.exit_price = Decimal("1.10020")
+        svc.close_position.side_effect = [
+            (closed_long, Decimal("-0.20"), MagicMock(fill_price=Decimal("1.09980"))),
+            (closed_short, Decimal("-0.10"), MagicMock(fill_price=Decimal("1.10020"))),
+        ]
+
+        handler = EventHandler(order_service=svc, instrument="EUR_USD")
+        handler._ordered_positions_for_margin_close = MagicMock(
+            return_value=[long_position, short_position]
+        )
+        handler._prune_closed_position = MagicMock()
+        handler._record_trade = MagicMock()
+
+        event = VolatilityLockEvent(
+            event_type=EventType.VOLATILITY_LOCK,
+            reason="test",
+        )
+        event.tick_bid = Decimal("1.09980")
+        event.tick_ask = Decimal("1.10020")
+
+        handler.handle_volatility_lock(event)
+
+        assert svc.close_position.call_args_list[0].kwargs["override_price"] == Decimal("1.09980")
+        assert svc.close_position.call_args_list[1].kwargs["override_price"] == Decimal("1.10020")
+
+    def test_dry_run_requires_tick_prices(self):
+        from apps.trading.order import OrderServiceError
+
+        svc = _make_order_service(task_type=TaskType.BACKTEST)
+        svc.dry_run = True
+        position = _make_position(units=1000, layer_index=1)
+
+        handler = EventHandler(order_service=svc, instrument="EUR_USD")
+        handler._ordered_positions_for_margin_close = MagicMock(return_value=[position])
+
+        event = VolatilityLockEvent(
+            event_type=EventType.VOLATILITY_LOCK,
+            reason="test",
+        )
+
+        with pytest.raises(OrderServiceError):
+            handler.handle_volatility_lock(event)
+        svc.close_position.assert_not_called()
+
 
 class TestHandleVolatilityHedgeNeutralize:
     """Tests for handle_volatility_hedge_neutralize."""
@@ -673,6 +754,30 @@ class TestHandleVolatilityHedgeNeutralize:
 
         assert result == Decimal("0")
         svc.open_position.assert_called_once()
+
+    def test_dry_run_opens_hedges_with_tick_side_prices(self):
+        svc = _make_order_service(task_type=TaskType.BACKTEST)
+        svc.dry_run = True
+        hedged = _make_position()
+        svc.open_position.return_value = (hedged, MagicMock())
+
+        handler = EventHandler(order_service=svc, instrument="EUR_USD")
+
+        event = VolatilityHedgeNeutralizeEvent(
+            event_type=EventType.VOLATILITY_HEDGE_NEUTRALIZE,
+            reason="hedge",
+            hedge_instructions=[
+                {"direction": "long", "units": 1000, "layer_index": 1},
+                {"direction": "short", "units": 500, "layer_index": 2},
+            ],
+        )
+        event.tick_bid = Decimal("1.09980")
+        event.tick_ask = Decimal("1.10020")
+
+        handler.handle_volatility_hedge_neutralize(event)
+
+        assert svc.open_position.call_args_list[0].kwargs["override_price"] == Decimal("1.10020")
+        assert svc.open_position.call_args_list[1].kwargs["override_price"] == Decimal("1.09980")
 
     def test_skips_zero_units(self):
         svc = _make_order_service()
@@ -722,7 +827,8 @@ class TestHandleMarginProtection:
 
         close_calls = []
 
-        def _close(position, units=None, tick_timestamp=None):
+        def _close(position, units=None, override_price=None, tick_timestamp=None):
+            _ = override_price
             close_calls.append(units)
             closed = _make_position(
                 units=position.units, is_open=False, layer_index=position.layer_index
@@ -746,6 +852,31 @@ class TestHandleMarginProtection:
         handler.handle_margin_protection(event)
 
         assert close_calls == [1000, 200]
+
+    def test_partial_close_quote_pnl_uses_order_fill_price(self):
+        svc = _make_order_service()
+        position = _make_position(units=1000, layer_index=1, direction="long")
+        position.exit_price = None
+        close_order = MagicMock(fill_price=Decimal("1.10500"))
+        svc.close_position.return_value = (position, Decimal("5.00"), close_order)
+
+        handler = EventHandler(order_service=svc, instrument="EUR_USD")
+        handler._ordered_positions_for_margin_close = MagicMock(return_value=[position])
+        handler._prune_closed_position = MagicMock()
+        handler._record_trade = MagicMock()
+
+        event = MarginProtectionEvent(
+            event_type=EventType.MARGIN_PROTECTION,
+            reason="margin call",
+            units_to_close=500,
+        )
+
+        realized_account, realized_quote = handler.handle_margin_protection(event)
+
+        assert realized_account == Decimal("5.00")
+        assert realized_quote == Decimal("2.50000")
+        handler._record_trade.assert_called_once()
+        assert handler._record_trade.call_args.kwargs["price"] == Decimal("1.10500")
 
 
 class TestGetOpenPositions:

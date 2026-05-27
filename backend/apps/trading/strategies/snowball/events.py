@@ -49,15 +49,18 @@ class SnowballEventFactory:
         entry: Entry,
         *,
         timestamp,
+        execution_price: Decimal | None = None,
         planned_exit_price_formula: str | None = None,
         description: str = "",
     ) -> OpenPositionEvent:
+        event_price = execution_price if execution_price is not None else entry.entry_price
         event = OpenPositionEvent(
             event_type=EventType.OPEN_POSITION,
             timestamp=timestamp,
             layer_number=entry.layer_number,
             direction=entry.direction.value,
-            price=entry.entry_price,
+            price=event_price,
+            planned_entry_price=entry.entry_price if execution_price is not None else None,
             units=entry.units,
             entry_id=entry.entry_id,
             retracement_count=entry.retracement_count,
@@ -75,15 +78,18 @@ class SnowballEventFactory:
         entry: Entry,
         *,
         timestamp,
+        execution_price: Decimal | None = None,
         original_position_id: str | None = None,
         description: str = "",
     ) -> RebuildPositionEvent:
+        event_price = execution_price if execution_price is not None else entry.entry_price
         event = RebuildPositionEvent(
             event_type=EventType.REBUILD_POSITION,
             timestamp=timestamp,
             layer_number=entry.layer_number,
             direction=entry.direction.value,
-            price=entry.entry_price,
+            price=event_price,
+            planned_entry_price=entry.entry_price if execution_price is not None else None,
             units=entry.units,
             entry_id=entry.entry_id,
             retracement_count=entry.retracement_count,

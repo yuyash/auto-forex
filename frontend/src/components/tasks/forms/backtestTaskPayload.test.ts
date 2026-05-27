@@ -17,7 +17,7 @@ const baseFormData = {
   commission_per_trade: 1.25,
   pip_size: 0.01,
   instrument: 'USD_JPY',
-  tick_granularity: '1m',
+  tick_granularity: 'tick',
   tick_window_value_mode: 'last',
   sell_at_completion: true,
   hedging_enabled: false,

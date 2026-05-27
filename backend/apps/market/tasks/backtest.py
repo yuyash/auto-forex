@@ -423,6 +423,12 @@ class BacktestTickPublisherRunner:
             f"[PUBLISHER:PUBLISH] Query created, starting iteration - request_id={request_id}"
         )
 
+        if tick_granularity != "tick":
+            raise ValueError(
+                "Backtest execution requires raw tick replay. Aggregated tick granularity "
+                f"({tick_granularity}) can produce synthetic or out-of-order fills."
+            )
+
         tick_filter = BacktestTickQualityFilter(
             request_id=request_id,
             instrument=instrument,
@@ -437,25 +443,12 @@ class BacktestTickPublisherRunner:
             candle_filter_tolerance_pips=oanda_candle_filter_tolerance_pips,
         )
 
-        if tick_granularity == "tick":
-            rows_iter = self._iter_raw_ticks(
-                instrument=instrument,
-                start_dt=start_dt,
-                end_dt=end_dt,
-                batch_size=batch_size,
-            )
-        else:
-            rows_iter = self._iter_aggregated_ticks(
-                instrument=instrument,
-                start_dt=start_dt,
-                end_dt=end_dt,
-                granularity=tick_granularity,
-                mode=tick_window_value_mode,
-                batch_size=batch_size,
-                pip_size=pip_size,
-                range_warning_pips=bar_range_warning_pips,
-                request_id=request_id,
-            )
+        rows_iter = self._iter_raw_ticks(
+            instrument=instrument,
+            start_dt=start_dt,
+            end_dt=end_dt,
+            batch_size=batch_size,
+        )
 
         for row in rows_iter:
             # Check stop signal before every tick.  The service and executor

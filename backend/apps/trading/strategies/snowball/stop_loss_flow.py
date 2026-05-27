@@ -745,6 +745,7 @@ class StopLossRebuildEntryFactory:
         return SNOWBALL_EVENTS.entry_rebuild_event(
             entry,
             timestamp=tick.timestamp,
+            execution_price=self._entry_side_price(entry.direction, tick),
             original_position_id=pending.position_id,
             description=(
                 f"Stop-loss rebuild ({pending.direction.value.upper()}) | "
@@ -753,6 +754,10 @@ class StopLossRebuildEntryFactory:
                 f"{entry_note}{stop_loss_note}"
             ),
         )
+
+    @staticmethod
+    def _entry_side_price(direction: Direction, tick: Tick) -> Decimal:
+        return tick.ask if direction == Direction.LONG else tick.bid
 
     def log_rebuild(self, pending: StopLossClosedEntry, plan: StopLossRebuildPlan) -> None:
         """Log the rebuilt entry details."""

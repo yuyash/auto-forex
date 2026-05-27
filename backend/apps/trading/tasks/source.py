@@ -515,27 +515,18 @@ class DirectBacktestTickDataSource(TickDataSource):
             self.tick_granularity,
             self.tick_window_value_mode,
         )
+        if self.tick_granularity != "tick":
+            raise ValueError(
+                "Backtest execution requires raw tick replay. Aggregated tick granularity "
+                f"({self.tick_granularity}) can produce synthetic or out-of-order fills."
+            )
 
         tick_filter = self._tick_filter()
-        rows_iter = (
-            self._iter_raw_ticks(
-                instrument=self.instrument,
-                start_dt=self.start_dt,
-                end_dt=self.end_dt,
-                batch_size=self.batch_size,
-            )
-            if self.tick_granularity == "tick"
-            else self._iter_aggregated_ticks(
-                instrument=self.instrument,
-                start_dt=self.start_dt,
-                end_dt=self.end_dt,
-                granularity=self.tick_granularity,
-                mode=self.tick_window_value_mode,
-                batch_size=self.batch_size,
-                pip_size=self.pip_size,
-                range_warning_pips=self.bar_range_warning_pips,
-                request_id=self.request_id,
-            )
+        rows_iter = self._iter_raw_ticks(
+            instrument=self.instrument,
+            start_dt=self.start_dt,
+            end_dt=self.end_dt,
+            batch_size=self.batch_size,
         )
 
         batch: list[Tick] = []
