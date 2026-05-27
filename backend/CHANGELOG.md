@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.2](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.1...backend-v2.12.2) (2026-05-27)
+
+
+### Bug Fixes
+
+* **snowball:** prevent stale warmup metrics ([#825](https://github.com/yuyash/auto-forex-web-service/issues/825)) ([6d430a1](https://github.com/yuyash/auto-forex-web-service/commit/6d430a17d12a625e9568e3659ff8a431f0c28065))
+
 ## [2.12.1](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.0...backend-v2.12.1) (2026-05-27)
 
 
