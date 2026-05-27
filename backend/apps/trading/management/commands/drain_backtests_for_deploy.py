@@ -69,14 +69,24 @@ class Command(BaseCommand):
             self.stdout.write("No active backtest tasks to drain.")
             if emit_task_ids:
                 self.stdout.write("DRAINED_BACKTEST_TASK_IDS=")
+                self.stdout.write("RESTART_BACKTEST_TASK_IDS=")
             return
 
         resumable_tasks = [
             task
             for task in active_tasks
             if task.status in (TaskStatus.STARTING, TaskStatus.RUNNING)
+            and not self._is_in_memory_task(task)
+        ]
+        restart_tasks = [
+            task
+            for task in active_tasks
+            if task.status in (TaskStatus.STARTING, TaskStatus.RUNNING)
+            and self._is_in_memory_task(task)
+            and stop_mode == "pause"
         ]
         drained_task_ids = ",".join(str(task.pk) for task in resumable_tasks)
+        restart_task_ids = ",".join(str(task.pk) for task in restart_tasks)
 
         self.stdout.write(
             self.style.WARNING(
@@ -85,21 +95,22 @@ class Command(BaseCommand):
         )
 
         for task in active_tasks:
+            action = self._task_action(task=task, stop_mode=stop_mode)
             self.stdout.write(
-                f"- Requesting {stop_mode} for {task.pk} "
+                f"- Requesting {action} for {task.pk} "
                 f"({task.name}, strategy={task.config.strategy_type}, instrument={task.instrument}, "
-                f"status={task.status}, execution_id={task.execution_id})"
+                f"status={task.status}, in_memory={self._is_in_memory_task(task)}, "
+                f"execution_id={task.execution_id})"
             )
             try:
-                if stop_mode == "pause":
-                    if task.status in (TaskStatus.STARTING, TaskStatus.RUNNING):
-                        service.pause_task(task.pk)
-                    else:
-                        self.stdout.write(
-                            f"  Skipping pause request for {task.pk}; current status is {task.status}."
-                        )
+                if action == "pause":
+                    service.pause_task(task.pk)
+                elif action == "skip":
+                    self.stdout.write(
+                        f"  Skipping pause request for {task.pk}; current status is {task.status}."
+                    )
                 else:
-                    service.stop_task(task.pk, mode=stop_mode)
+                    service.stop_task(task.pk, mode=action)
             except ValueError as exc:
                 raise CommandError(f"Failed to transition backtest task {task.pk}: {exc}") from exc
 
@@ -113,6 +124,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.SUCCESS("All active backtest tasks drained."))
                 if emit_task_ids:
                     self.stdout.write(f"DRAINED_BACKTEST_TASK_IDS={drained_task_ids}")
+                    self.stdout.write(f"RESTART_BACKTEST_TASK_IDS={restart_task_ids}")
                 return
 
             summary = ", ".join(
@@ -134,6 +146,19 @@ class Command(BaseCommand):
             "Timed out draining active backtest tasks before deployment. "
             f"Remaining task(s): {summary}"
         )
+
+    def _task_action(self, *, task: BacktestTask, stop_mode: str) -> str:
+        if stop_mode != "pause":
+            return stop_mode
+        if task.status not in (TaskStatus.STARTING, TaskStatus.RUNNING):
+            return "skip"
+        if self._is_in_memory_task(task):
+            return "graceful"
+        return "pause"
+
+    @staticmethod
+    def _is_in_memory_task(task: BacktestTask) -> bool:
+        return getattr(task, "in_memory_mode", False) is True
 
     def _get_remaining_tasks(
         self, *, stop_mode: str, resumable_tasks: list[BacktestTask]
