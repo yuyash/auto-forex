@@ -5,10 +5,11 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from logging import Logger, getLogger
-from typing import Any
+from typing import Any, cast
+from uuid import UUID
 
 from django.utils import timezone as dj_timezone
 
@@ -29,6 +30,9 @@ from apps.trading.utils import Instrument
 
 logger: Logger = getLogger(name=__name__)
 lifecycle_logger: Logger = getLogger(name="position.lifecycle")
+
+_CYCLE_RESOLUTION_PROCESSED_WINDOW = timedelta(minutes=10)
+_CYCLE_RESOLUTION_FUTURE_SKEW = timedelta(seconds=5)
 
 
 class CycleResolutionError(Exception):
@@ -614,32 +618,42 @@ class EventHandler:
                         entry_id=eid,
                         event_type="open_position",
                     )
-                    .values("event_timestamp", "sequence_number", "direction")
+                    .values(
+                        "event_timestamp",
+                        "sequence_number",
+                        "direction",
+                        "processed_at",
+                        "details",
+                    )
                     .first()
                 )
                 if te is None:
                     continue
                 event_timestamp = te.get("event_timestamp")
-                if event_timestamp is None:
-                    continue
                 event_direction = str(te.get("direction") or direction or "").strip().lower()
-                trade_qs = Trade.objects.filter(
-                    task_type=self.order_service.task_type.value,
-                    task_id=self._task_pk,
-                    execution_id=self._execution_id,
-                    timestamp=event_timestamp,
-                    execution_method="open_position",
-                    cycle_id__isnull=False,
-                    sequence_number=te.get("sequence_number", 0) or 0,
-                )
-                if event_direction:
-                    trade_qs = trade_qs.filter(direction__iexact=event_direction)
-                trade = trade_qs.values_list("cycle_id", flat=True).first()
-                if trade is None and event_direction:
-                    # Legacy compatibility: some older rows may not align on
-                    # sequence_number, but we still must not cross directions.
-                    trade = (
-                        Trade.objects.filter(
+
+                trade = None
+                if event_timestamp is not None:
+                    trade_qs = Trade.objects.filter(
+                        task_type=self.order_service.task_type.value,
+                        task_id=self._task_pk,
+                        execution_id=self._execution_id,
+                        timestamp=event_timestamp,
+                        execution_method="open_position",
+                        cycle_id__isnull=False,
+                        sequence_number=te.get("sequence_number", 0) or 0,
+                    )
+                    trade_qs = self._filter_open_trade_candidates(
+                        trade_qs,
+                        event_row=te,
+                        direction=event_direction,
+                    )
+                    trade = trade_qs.values_list("cycle_id", flat=True).first()
+                    if trade is None and event_direction:
+                        # Legacy compatibility: some older rows may not align
+                        # on sequence_number, but we still must not cross
+                        # directions.
+                        trade_qs = Trade.objects.filter(
                             task_type=self.order_service.task_type.value,
                             task_id=self._task_pk,
                             execution_id=self._execution_id,
@@ -647,15 +661,123 @@ class EventHandler:
                             execution_method="open_position",
                             cycle_id__isnull=False,
                         )
-                        .filter(direction__iexact=event_direction)
-                        .values_list("cycle_id", flat=True)
-                        .first()
+                        trade_qs = self._filter_open_trade_candidates(
+                            trade_qs,
+                            event_row=te,
+                            direction=event_direction,
+                        )
+                        trade = trade_qs.values_list("cycle_id", flat=True).first()
+
+                if trade is None:
+                    trade = self._resolve_cycle_id_from_processed_open_event(
+                        event_row=te,
+                        direction=event_direction,
                     )
                 if trade is not None:
                     return str(trade)
         except (TypeError, ValueError):
             pass
         return None
+
+    def _resolve_cycle_id_from_processed_open_event(
+        self,
+        *,
+        event_row: dict[str, Any],
+        direction: str,
+    ) -> object | None:
+        """Resolve an open trade when live fill time differs from strategy time."""
+        processed_at = event_row.get("processed_at")
+        if not isinstance(processed_at, datetime):
+            return None
+
+        start = processed_at - _CYCLE_RESOLUTION_PROCESSED_WINDOW
+        end = processed_at + _CYCLE_RESOLUTION_FUTURE_SKEW
+        sequence_number = event_row.get("sequence_number", 0) or 0
+
+        trade_qs = Trade.objects.filter(
+            task_type=self.order_service.task_type.value,
+            task_id=self._task_pk,
+            execution_id=self._execution_id,
+            execution_method="open_position",
+            cycle_id__isnull=False,
+            sequence_number=sequence_number,
+            created_at__gte=start,
+            created_at__lte=end,
+        )
+        trade_qs = self._filter_open_trade_candidates(
+            trade_qs,
+            event_row=event_row,
+            direction=direction,
+        )
+        trade = trade_qs.order_by("-created_at").values_list("cycle_id", flat=True).first()
+        if trade is not None:
+            return trade
+
+        if not direction:
+            return None
+
+        trade_qs = Trade.objects.filter(
+            task_type=self.order_service.task_type.value,
+            task_id=self._task_pk,
+            execution_id=self._execution_id,
+            execution_method="open_position",
+            cycle_id__isnull=False,
+            created_at__gte=start,
+            created_at__lte=end,
+        )
+        trade_qs = self._filter_open_trade_candidates(
+            trade_qs,
+            event_row=event_row,
+            direction=direction,
+        )
+        return trade_qs.order_by("-created_at").values_list("cycle_id", flat=True).first()
+
+    def _filter_open_trade_candidates(
+        self,
+        trade_qs,
+        *,
+        event_row: dict[str, Any],
+        direction: str,
+    ):
+        """Apply metadata filters shared by cycle-resolution fallback queries."""
+        if direction:
+            trade_qs = trade_qs.filter(direction__iexact=direction)
+
+        details = event_row.get("details")
+        if not isinstance(details, dict):
+            return trade_qs
+        details = cast("dict[str, Any]", details)
+
+        units = self._optional_int(details.get("units"))
+        if units is not None:
+            trade_qs = trade_qs.filter(units=units)
+
+        layer_number = self._optional_int(details.get("layer_number"))
+        if layer_number is not None:
+            trade_qs = trade_qs.filter(layer_index=layer_number)
+
+        retracement_count = self._optional_int(details.get("retracement_count"))
+        if retracement_count is not None:
+            trade_qs = trade_qs.filter(retracement_count=retracement_count)
+
+        return trade_qs
+
+    @staticmethod
+    def _optional_int(value: object) -> int | None:
+        if value in (None, ""):
+            return None
+        try:
+            return int(str(value))
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _is_uuid_text(value: object) -> bool:
+        try:
+            UUID(str(value))
+        except (TypeError, ValueError, AttributeError):
+            return False
+        return True
 
     def handle_open_position(self, event: OpenPositionEvent) -> Position:
         """Open position for execution.
@@ -813,12 +935,21 @@ class EventHandler:
             )
 
         if position_cycle_id and event_cycle_id and str(position_cycle_id) != str(event_cycle_id):
-            raise CycleResolutionError(
-                "ClosePositionEvent cycle mismatch: "
-                f"position_id={getattr(position, 'id', None)}, "
-                f"position_cycle_id={position_cycle_id}, event_cycle_id={event_cycle_id}, "
-                f"entry_id={eid}."
+            repaired_cycle_id = self._repair_self_cycle_open_trade_for_close(
+                event=event,
+                position=position,
+                position_cycle_id=str(position_cycle_id),
+                event_cycle_id=str(event_cycle_id),
             )
+            if repaired_cycle_id is not None:
+                position_cycle_id = repaired_cycle_id
+            else:
+                raise CycleResolutionError(
+                    "ClosePositionEvent cycle mismatch: "
+                    f"position_id={getattr(position, 'id', None)}, "
+                    f"position_cycle_id={position_cycle_id}, event_cycle_id={event_cycle_id}, "
+                    f"entry_id={eid}."
+                )
 
         cycle_id = position_cycle_id or event_cycle_id
         if cycle_id is not None:
@@ -829,6 +960,81 @@ class EventHandler:
             return cycle_id
 
         return None
+
+    def _repair_self_cycle_open_trade_for_close(
+        self,
+        *,
+        event: ClosePositionEvent,
+        position: Position | None,
+        position_cycle_id: str,
+        event_cycle_id: str,
+    ) -> str | None:
+        """Repair child open trades previously saved with their own id as cycle_id."""
+        if position is None:
+            return None
+        if not self._is_uuid_text(position_cycle_id) or not self._is_uuid_text(event_cycle_id):
+            return None
+
+        entry_id = self._optional_int(getattr(event, "entry_id", None))
+        if entry_id is None:
+            return None
+
+        open_event = (
+            TradingEvent.objects.filter(
+                task_type=self.order_service.task_type,
+                task_id=self._task_pk,
+                execution_id=self._execution_id,
+                entry_id=entry_id,
+                event_type="open_position",
+            )
+            .values("root_entry_id", "parent_entry_id")
+            .first()
+        )
+        if open_event is None:
+            return None
+
+        open_root = self._optional_int(open_event.get("root_entry_id"))
+        open_parent = self._optional_int(open_event.get("parent_entry_id"))
+        if open_parent is None:
+            return None
+
+        event_root = self._optional_int(getattr(event, "root_entry_id", None))
+        event_parent = self._optional_int(getattr(event, "parent_entry_id", None))
+        if event_root is not None and open_root is not None and event_root != open_root:
+            return None
+        if event_parent is not None and open_parent != event_parent:
+            return None
+
+        open_trade = (
+            Trade.objects.filter(
+                task_type=self.order_service.task_type.value,
+                task_id=self._task_pk,
+                execution_id=self._execution_id,
+                position_id=getattr(position, "id", None),
+                execution_method="open_position",
+                cycle_id=position_cycle_id,
+            )
+            .order_by("timestamp", "sequence_number", "created_at")
+            .first()
+        )
+        if open_trade is None or str(open_trade.id) != str(position_cycle_id):
+            return None
+
+        updated = Trade.objects.filter(pk=open_trade.pk, cycle_id=position_cycle_id).update(
+            cycle_id=event_cycle_id
+        )
+        if not updated:
+            return None
+
+        logger.warning(
+            "Repaired self-referential cycle_id for child open trade before close: "
+            "position_id=%s, entry_id=%s, old_cycle_id=%s, new_cycle_id=%s",
+            getattr(position, "id", None),
+            entry_id,
+            position_cycle_id,
+            event_cycle_id,
+        )
+        return event_cycle_id
 
     def _resolve_cycle_id_for_position(self, position: Position) -> str | None:
         """Look up cycle_id from the Trade that opened a position.
