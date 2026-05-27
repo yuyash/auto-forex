@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from django.conf import settings
@@ -53,6 +53,12 @@ class MetricPageResult:
     elapsed_seconds: float = 0.0
 
 
+@dataclass(frozen=True)
+class SnowballMetricRepairContext:
+    warmup_started_at: datetime | None
+    warmup_completed_at: datetime
+
+
 def load_paginated_metric_points(
     *, task: Any, task_type_label: str, query: StrategyDataQuery
 ) -> MetricPageResult:
@@ -73,6 +79,11 @@ def load_paginated_metric_points(
     qs = _base_queryset(task=task, task_type_label=task_type_label, query=query)
 
     enricher = MetricMoneyEnricher.for_task(task=task, task_type_label=task_type_label)
+    repair_context = _metric_repair_context(
+        task=task,
+        task_type_label=task_type_label,
+        execution_id=query.execution_id,
+    )
     started_at = time.monotonic()
 
     if seconds is None:
@@ -83,6 +94,7 @@ def load_paginated_metric_points(
             descending=descending,
             limit=limit,
             offset=offset,
+            repair_context=repair_context,
         )
         result = _with_elapsed(result, started_at)
         _log_metric_query(
@@ -112,6 +124,7 @@ def load_paginated_metric_points(
                 descending=descending,
                 limit=limit,
                 offset=offset,
+                repair_context=repair_context,
             )
             result = _with_elapsed(result, started_at)
             _log_metric_query(
@@ -133,6 +146,7 @@ def load_paginated_metric_points(
             descending=descending,
             limit=limit,
             offset=offset,
+            repair_context=repair_context,
         )
         result = _with_elapsed(result, started_at)
         _log_metric_query(
@@ -152,6 +166,7 @@ def load_paginated_metric_points(
         descending=descending,
         limit=limit,
         offset=offset,
+        repair_context=repair_context,
     )
     result = _with_elapsed(result, started_at)
     _log_metric_query(
@@ -168,6 +183,11 @@ def load_latest_metric_point(
     *, task: Any, task_type_label: str, query: StrategyDataQuery
 ) -> dict[str, Any] | None:
     """Load the latest metric snapshot without counting the full execution."""
+    repair_context = _metric_repair_context(
+        task=task,
+        task_type_label=task_type_label,
+        execution_id=query.execution_id,
+    )
 
     aggregate = (
         ExecutionMetricAggregate.objects.filter(
@@ -190,6 +210,7 @@ def load_latest_metric_point(
             aggregate.latest_metrics,
             query.metric_keys,
             enricher=enricher,
+            repair_context=repair_context,
         )
 
     row = (
@@ -202,7 +223,13 @@ def load_latest_metric_point(
         return None
     timestamp, metrics = row
     enricher = MetricMoneyEnricher.for_task(task=task, task_type_label=task_type_label)
-    return _serialize_row(timestamp, metrics, query.metric_keys, enricher=enricher)
+    return _serialize_row(
+        timestamp,
+        metrics,
+        query.metric_keys,
+        enricher=enricher,
+        repair_context=repair_context,
+    )
 
 
 def load_metric_points(
@@ -212,8 +239,19 @@ def load_metric_points(
 
     qs = _base_queryset(task=task, task_type_label=task_type_label, query=query)
     enricher = MetricMoneyEnricher.for_task(task=task, task_type_label=task_type_label)
+    repair_context = _metric_repair_context(
+        task=task,
+        task_type_label=task_type_label,
+        execution_id=query.execution_id,
+    )
     return [
-        _serialize_row(timestamp, metrics, query.metric_keys, enricher=enricher)
+        _serialize_row(
+            timestamp,
+            metrics,
+            query.metric_keys,
+            enricher=enricher,
+            repair_context=repair_context,
+        )
         for timestamp, metrics in qs.order_by("timestamp").values_list("timestamp", "metrics")
     ]
 
@@ -276,8 +314,15 @@ def _serialize_row(
     metric_keys: tuple[str, ...],
     *,
     enricher: MetricMoneyEnricher | None = None,
+    repair_context: SnowballMetricRepairContext | None = None,
 ) -> dict[str, Any]:
     metrics_dict = ensure_metrics_dict(metrics)
+    if repair_context is not None:
+        metrics_dict = _repair_snowball_stale_metrics(
+            timestamp=timestamp,
+            metrics=metrics_dict,
+            context=repair_context,
+        )
     if enricher is not None:
         metrics_dict = enricher.enrich(
             metrics_dict,
@@ -289,6 +334,99 @@ def _serialize_row(
         "timestamp": timestamp.isoformat(),
         "metrics": filter_metrics(metrics_dict, metric_keys),
     }
+
+
+def _metric_repair_context(
+    *,
+    task: Any,
+    task_type_label: str,
+    execution_id: Any,
+) -> SnowballMetricRepairContext | None:
+    config = getattr(task, "config", None)
+    if str(getattr(config, "strategy_type", "")) != "snowball":
+        return None
+    if execution_id is None:
+        return None
+
+    from apps.trading.models.state import ExecutionState
+
+    strategy_state = (
+        ExecutionState.objects.filter(
+            task_type=task_type_label,
+            task_id=task.pk,
+            execution_id=execution_id,
+        )
+        .values_list("strategy_state", flat=True)
+        .first()
+    )
+    if not isinstance(strategy_state, dict):
+        return None
+
+    completed_at = _parse_metric_datetime(strategy_state.get("warmup_completed_at"))
+    if completed_at is None:
+        return None
+    return SnowballMetricRepairContext(
+        warmup_started_at=_parse_metric_datetime(strategy_state.get("warmup_started_at")),
+        warmup_completed_at=completed_at,
+    )
+
+
+def _repair_snowball_stale_metrics(
+    *,
+    timestamp: datetime,
+    metrics: dict[str, Any],
+    context: SnowballMetricRepairContext,
+) -> dict[str, Any]:
+    if _normalise_datetime(timestamp) < _normalise_datetime(context.warmup_completed_at):
+        return metrics
+
+    repaired = dict(metrics)
+    repaired["warmup_status"] = "normal"
+    repaired["warmup_block_reason"] = ""
+    repaired["warmup_progress_pct"] = "100"
+    repaired["warmup_unit_ratio_pct"] = "100"
+    if context.warmup_started_at is not None:
+        elapsed_minutes = int(
+            (
+                _normalise_datetime(timestamp) - _normalise_datetime(context.warmup_started_at)
+            ).total_seconds()
+            // 60
+        )
+        repaired["warmup_elapsed_minutes"] = str(max(0, elapsed_minutes))
+
+    if not str(repaired.get("snowball_add_block_reason") or "").strip() and _is_blocked_metric(
+        repaired.get("snowball_allow_new_positions")
+    ):
+        repaired["snowball_allow_new_positions"] = "1"
+    if not str(repaired.get("snowball_rebuild_block_reason") or "").strip() and _is_blocked_metric(
+        repaired.get("snowball_allow_rebuilds")
+    ):
+        repaired["snowball_allow_rebuilds"] = "1"
+    return repaired
+
+
+def _is_blocked_metric(value: Any) -> bool:
+    return str(value).strip().lower() in {"0", "0.0", "false", "blocked", "stop", "stopped"}
+
+
+def _parse_metric_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if not value:
+        return None
+    raw = str(value)
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _normalise_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _base_queryset(
@@ -322,12 +460,20 @@ def _load_raw_page(
     descending: bool,
     limit: int,
     offset: int,
+    repair_context: SnowballMetricRepairContext | None,
 ) -> MetricPageResult:
     total = qs.count()
     order = "-timestamp" if descending else "timestamp"
     window = qs.order_by(order).values_list("timestamp", "metrics")[offset : offset + limit]
     rows = [
-        _serialize_row(ts, metrics, query.metric_keys, enricher=enricher) for ts, metrics in window
+        _serialize_row(
+            ts,
+            metrics,
+            query.metric_keys,
+            enricher=enricher,
+            repair_context=repair_context,
+        )
+        for ts, metrics in window
     ]
     return MetricPageResult(
         rows=rows,
@@ -348,6 +494,7 @@ def _load_bucketed_page_postgres(
     descending: bool,
     limit: int,
     offset: int,
+    repair_context: SnowballMetricRepairContext | None,
 ) -> MetricPageResult:
     """Aggregate rows to one entry per bucket without sorting JSON payloads."""
 
@@ -400,7 +547,13 @@ def _load_bucketed_page_postgres(
     has_next = len(raw_rows) > limit
     raw_rows = raw_rows[:limit]
     rows = [
-        _serialize_row(ts, metrics, query.metric_keys, enricher=enricher)
+        _serialize_row(
+            ts,
+            metrics,
+            query.metric_keys,
+            enricher=enricher,
+            repair_context=repair_context,
+        )
         for ts, metrics in raw_rows
     ]
     return MetricPageResult(
@@ -420,6 +573,7 @@ def _load_bucketed_page_in_memory(
     descending: bool,
     limit: int,
     offset: int,
+    repair_context: SnowballMetricRepairContext | None,
 ) -> MetricPageResult:
     """Fallback aggregation for non-PostgreSQL backends (primarily SQLite tests)."""
 
@@ -430,7 +584,13 @@ def _load_bucketed_page_in_memory(
     ordered = sorted(bucketed.items(), key=lambda item: item[0], reverse=descending)
     page = ordered[offset : offset + limit]
     rows = [
-        _serialize_row(ts, metrics, query.metric_keys, enricher=enricher)
+        _serialize_row(
+            ts,
+            metrics,
+            query.metric_keys,
+            enricher=enricher,
+            repair_context=repair_context,
+        )
         for _, (ts, metrics) in page
     ]
     total = len(ordered)
@@ -452,6 +612,7 @@ def _load_rollup_page(
     descending: bool,
     limit: int,
     offset: int,
+    repair_context: SnowballMetricRepairContext | None,
 ) -> MetricPageResult:
     qs = MetricsRollup.objects.filter(
         task_type=task_type_label,
@@ -470,7 +631,13 @@ def _load_rollup_page(
     has_next = len(raw_rows) > limit
     raw_rows = raw_rows[:limit]
     rows = [
-        _serialize_row(ts, metrics, query.metric_keys, enricher=enricher)
+        _serialize_row(
+            ts,
+            metrics,
+            query.metric_keys,
+            enricher=enricher,
+            repair_context=repair_context,
+        )
         for ts, metrics in raw_rows
     ]
     return MetricPageResult(
