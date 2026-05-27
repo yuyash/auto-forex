@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -25,6 +25,7 @@ from apps.trading.events.handler import (
     CycleResolutionError,
     EventHandler,
 )
+from apps.trading.models import Position, Trade, TradingEvent
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -303,6 +304,74 @@ class TestHandleClosePosition:
         with pytest.raises(CycleResolutionError):
             handler._resolve_cycle_id_for_close(event, position)
 
+    @pytest.mark.django_db
+    def test_close_repairs_child_open_trade_saved_as_self_cycle(self):
+        svc = _make_order_service()
+        handler = EventHandler(order_service=svc, instrument="EUR_USD")
+        root_cycle_id = uuid4()
+        bad_cycle_id = uuid4()
+        opened_at = timezone.now()
+        position = Position.objects.create(
+            task_type=svc.task_type.value,
+            task_id=svc.task.id,
+            execution_id=svc.task.execution_id,
+            instrument="EUR_USD",
+            direction="short",
+            units=-12000,
+            entry_price=Decimal("1.10000"),
+            entry_time=opened_at,
+            layer_index=1,
+            retracement_count=1,
+        )
+        open_trade = Trade.objects.create(
+            id=bad_cycle_id,
+            task_type=svc.task_type.value,
+            task_id=svc.task.id,
+            execution_id=svc.task.execution_id,
+            timestamp=opened_at,
+            direction="short",
+            units=12000,
+            instrument="EUR_USD",
+            price=Decimal("1.10000"),
+            execution_method="open_position",
+            layer_index=1,
+            retracement_count=1,
+            position=position,
+            cycle_id=bad_cycle_id,
+            sequence_number=0,
+        )
+        TradingEvent.objects.create(
+            task_type=svc.task_type.value,
+            task_id=svc.task.id,
+            execution_id=svc.task.execution_id,
+            event_type="open_position",
+            event_timestamp=opened_at,
+            processed_at=opened_at,
+            is_processed=True,
+            entry_id=61,
+            root_entry_id=59,
+            parent_entry_id=59,
+            sequence_number=0,
+            direction="short",
+            details={"event_type": "open_position", "entry_id": 61},
+        )
+        handler._entry_id_to_cycle_id[59] = str(root_cycle_id)
+
+        event = ClosePositionEvent(
+            event_type=EventType.CLOSE_POSITION,
+            layer_number=1,
+            direction="short",
+            units=12000,
+            position_id=str(position.id),
+            root_entry_id=59,
+            parent_entry_id=59,
+            entry_id=61,
+        )
+
+        assert handler._resolve_cycle_id_for_close(event, position) == str(root_cycle_id)
+        open_trade.refresh_from_db()
+        assert open_trade.cycle_id == root_cycle_id
+
     def test_close_does_not_spill_into_another_position(self):
         svc = _make_order_service()
         p1 = _make_position(units=500)
@@ -424,6 +493,83 @@ class TestResolveCycleIdFromDb:
         assert resolved == str(expected_cycle_id)
         assert trade_objects.filter.call_count == 2
         legacy_trade_qs.filter.assert_called_once_with(direction__iexact="short")
+
+    @pytest.mark.django_db
+    def test_processed_at_fallback_handles_live_fill_timestamp_drift(self):
+        svc = _make_order_service()
+        handler = EventHandler(order_service=svc, instrument="EUR_USD")
+        event_timestamp = datetime(2026, 5, 25, 7, 15, 0, tzinfo=UTC)
+        fill_timestamp = event_timestamp + timedelta(seconds=5)
+        processed_at = timezone.now()
+        expected_cycle_id = uuid4()
+
+        TradingEvent.objects.create(
+            task_type=svc.task_type.value,
+            task_id=svc.task.id,
+            execution_id=svc.task.execution_id,
+            event_type="open_position",
+            event_timestamp=event_timestamp,
+            processed_at=processed_at,
+            is_processed=True,
+            entry_id=59,
+            root_entry_id=59,
+            sequence_number=1,
+            direction="short",
+            details={
+                "event_type": "open_position",
+                "entry_id": 59,
+                "root_entry_id": 59,
+                "direction": "short",
+                "units": 6000,
+                "layer_number": 1,
+                "retracement_count": 0,
+            },
+        )
+        expected_trade = Trade.objects.create(
+            task_type=svc.task_type.value,
+            task_id=svc.task.id,
+            execution_id=svc.task.execution_id,
+            timestamp=fill_timestamp,
+            direction="short",
+            units=6000,
+            instrument="EUR_USD",
+            price=Decimal("1.10000"),
+            execution_method="open_position",
+            layer_index=1,
+            retracement_count=0,
+            cycle_id=expected_cycle_id,
+            sequence_number=1,
+        )
+        Trade.objects.create(
+            task_type=svc.task_type.value,
+            task_id=svc.task.id,
+            execution_id=svc.task.execution_id,
+            timestamp=fill_timestamp,
+            direction="long",
+            units=6000,
+            instrument="EUR_USD",
+            price=Decimal("1.10000"),
+            execution_method="open_position",
+            layer_index=1,
+            retracement_count=0,
+            cycle_id=uuid4(),
+            sequence_number=1,
+        )
+        Trade.objects.filter(pk=expected_trade.pk).update(
+            created_at=processed_at - timedelta(seconds=1)
+        )
+
+        child_event = OpenPositionEvent(
+            event_type=EventType.OPEN_POSITION,
+            layer_number=1,
+            direction="short",
+            units=12000,
+            root_entry_id=59,
+            parent_entry_id=59,
+            entry_id=61,
+        )
+
+        assert handler._resolve_cycle_id_for_open(child_event) == str(expected_cycle_id)
 
 
 class TestHandleVolatilityLock:
