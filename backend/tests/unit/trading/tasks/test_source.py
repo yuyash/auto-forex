@@ -88,6 +88,44 @@ class TestDirectBacktestTickDataSource:
         tick_filter.should_publish.assert_not_called()
         mark_failed.assert_not_called()
 
+    def test_raw_tick_iterator_delegates_to_bounded_query_helper(self):
+        from apps.market.services.backtest_ticks import BacktestTickRow
+        from apps.trading.tasks.source import DirectBacktestTickDataSource
+
+        start = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
+        end = datetime(2026, 1, 1, 0, 1, tzinfo=UTC)
+        helper_rows = iter(
+            [
+                BacktestTickRow(
+                    timestamp=start,
+                    bid=Decimal("157.240"),
+                    ask=Decimal("157.250"),
+                    mid=Decimal("157.245"),
+                )
+            ]
+        )
+
+        with patch(
+            "apps.market.services.backtest_ticks.iter_raw_backtest_ticks",
+            return_value=helper_rows,
+        ) as iter_raw_backtest_ticks:
+            rows = list(
+                DirectBacktestTickDataSource._iter_raw_ticks(
+                    instrument="USD_JPY",
+                    start_dt=start,
+                    end_dt=end,
+                    batch_size=1000,
+                )
+            )
+
+        iter_raw_backtest_ticks.assert_called_once_with(
+            instrument="USD_JPY",
+            start_dt=start,
+            end_dt=end,
+            batch_size=1000,
+        )
+        assert rows == [(start, Decimal("157.240"), Decimal("157.250"), Decimal("157.245"))]
+
     def test_close_is_noop(self):
         from apps.trading.tasks.source import DirectBacktestTickDataSource
 

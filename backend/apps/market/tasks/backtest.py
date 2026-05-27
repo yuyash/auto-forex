@@ -11,8 +11,11 @@ from typing import Any
 from celery import shared_task
 from django.conf import settings
 
-from apps.market.models import CeleryTaskStatus, TickData
-from apps.market.services.backtest_ticks import iter_aggregated_backtest_ticks
+from apps.market.models import CeleryTaskStatus
+from apps.market.services.backtest_ticks import (
+    iter_aggregated_backtest_ticks,
+    iter_raw_backtest_ticks,
+)
 from apps.market.services.backtest_tick_quality import BacktestTickQualityFilter
 from apps.market.services.celery import CeleryTaskService
 from apps.market.tasks.base import (
@@ -818,16 +821,18 @@ class BacktestTickPublisherRunner:
         end_dt: datetime,
         batch_size: int,
     ) -> Any:
-        qs = (
-            TickData.objects.filter(
-                instrument=str(instrument),
-                timestamp__gte=start_dt,
-                timestamp__lte=end_dt,
-            )
-            .order_by("timestamp")
-            .values("timestamp", "bid", "ask", "mid")
-        )
-        return qs.iterator(chunk_size=batch_size)
+        for row in iter_raw_backtest_ticks(
+            instrument=instrument,
+            start_dt=start_dt,
+            end_dt=end_dt,
+            batch_size=batch_size,
+        ):
+            yield {
+                "timestamp": row.timestamp,
+                "bid": row.bid,
+                "ask": row.ask,
+                "mid": row.mid,
+            }
 
     @staticmethod
     def _iter_aggregated_ticks(
