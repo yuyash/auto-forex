@@ -101,6 +101,7 @@ jobs:
           docker compose config > /dev/null
           DRAINED_TRADING_TASK_IDS=""
           DRAINED_BACKTEST_TASK_IDS=""
+          RESTART_BACKTEST_TASK_IDS=""
           if docker compose ps --services --status running | grep -qx backend; then
             TRADING_DRAIN_OUTPUT=$(docker compose exec --interactive=false -T backend \
               python manage.py drain_trading_for_deploy --mode graceful --emit-task-ids </dev/null)
@@ -108,9 +109,145 @@ jobs:
             DRAINED_TRADING_TASK_IDS=$(printf '%s\n' "$TRADING_DRAIN_OUTPUT" | sed -n 's/^DRAINED_TASK_IDS=//p' | tail -n 1)
 
             BACKTEST_DRAIN_OUTPUT=$(docker compose exec --interactive=false -T backend \
-              python manage.py drain_backtests_for_deploy --mode pause --emit-task-ids </dev/null)
+              python manage.py shell -c 'exec(__import__("textwrap").dedent("""
+                import sys
+                import time
+
+                from apps.trading.enums import TaskStatus
+                from apps.trading.models import BacktestTask
+                from apps.trading.models.celery import CeleryTaskStatus
+                from apps.trading.tasks.service import TaskService
+
+                ACTIVE_STATUSES = (TaskStatus.STARTING, TaskStatus.RUNNING, TaskStatus.STOPPING)
+                REQUESTABLE_STATUSES = (TaskStatus.STARTING, TaskStatus.RUNNING)
+                TIMEOUT_SECONDS = 180
+                POLL_INTERVAL_SECONDS = 2.0
+
+
+                def is_pause_settled(task):
+                    execution_id = getattr(task, "execution_id", None)
+                    if not execution_id:
+                        return True
+                    instance_key = f"{task.pk}:{execution_id}"
+                    celery_status = (
+                        CeleryTaskStatus.objects.filter(
+                            task_name="trading.tasks.run_backtest_task",
+                            instance_key=instance_key,
+                        )
+                        .values_list("status", flat=True)
+                        .first()
+                    )
+                    return celery_status in {
+                        None,
+                        CeleryTaskStatus.Status.PAUSED,
+                        CeleryTaskStatus.Status.STOPPED,
+                        CeleryTaskStatus.Status.COMPLETED,
+                        CeleryTaskStatus.Status.FAILED,
+                    }
+
+
+                def remaining_tasks(pause_ids):
+                    active = list(
+                        BacktestTask.objects.select_related("config", "user")
+                        .filter(status__in=ACTIVE_STATUSES)
+                        .order_by("created_at")
+                    )
+                    remaining_by_id = {task.pk: task for task in active}
+                    if pause_ids:
+                        paused_tasks = list(
+                            BacktestTask.objects.select_related("config", "user")
+                            .filter(pk__in=pause_ids)
+                            .order_by("created_at")
+                        )
+                        for task in paused_tasks:
+                            if task.status == TaskStatus.PAUSED and is_pause_settled(task):
+                                remaining_by_id.pop(task.pk, None)
+                            else:
+                                remaining_by_id[task.pk] = task
+                    return list(remaining_by_id.values())
+
+
+                service = TaskService()
+                active_tasks = list(
+                    BacktestTask.objects.select_related("config", "user")
+                    .filter(status__in=ACTIVE_STATUSES)
+                    .order_by("created_at")
+                )
+
+                if not active_tasks:
+                    print("No active backtest tasks to drain.")
+                    print("DRAINED_BACKTEST_TASK_IDS=")
+                    print("RESTART_BACKTEST_TASK_IDS=")
+                    raise SystemExit(0)
+
+                pause_ids = []
+                restart_ids = []
+                print(
+                    f"Draining {len(active_tasks)} active backtest task(s) "
+                    "with mixed pause/restart mode."
+                )
+                for task in active_tasks:
+                    is_in_memory = getattr(task, "in_memory_mode", False) is True
+                    if task.status not in REQUESTABLE_STATUSES:
+                        print(
+                            f"- Skipping request for {task.pk} ({task.name}, "
+                            f"status={task.status}, in_memory={is_in_memory}); "
+                            "waiting for it to settle."
+                        )
+                        continue
+                    if is_in_memory:
+                        restart_ids.append(task.pk)
+                        print(
+                            f"- Requesting graceful stop for in-memory backtest {task.pk} "
+                            f"({task.name}, strategy={task.config.strategy_type}, "
+                            f"instrument={task.instrument}, status={task.status}, "
+                            f"execution_id={task.execution_id})"
+                        )
+                        service.stop_task(task.pk, mode="graceful")
+                    else:
+                        pause_ids.append(task.pk)
+                        print(
+                            f"- Requesting pause for {task.pk} "
+                            f"({task.name}, strategy={task.config.strategy_type}, "
+                            f"instrument={task.instrument}, status={task.status}, "
+                            f"execution_id={task.execution_id})"
+                        )
+                        service.pause_task(task.pk)
+
+                deadline = time.monotonic() + TIMEOUT_SECONDS
+                while time.monotonic() < deadline:
+                    remaining = remaining_tasks(pause_ids)
+                    if not remaining:
+                        print("All active backtest tasks drained.")
+                        print(
+                            "DRAINED_BACKTEST_TASK_IDS="
+                            + ",".join(str(task_id) for task_id in pause_ids)
+                        )
+                        print(
+                            "RESTART_BACKTEST_TASK_IDS="
+                            + ",".join(str(task_id) for task_id in restart_ids)
+                        )
+                        raise SystemExit(0)
+                    summary = ", ".join(
+                        f"{task.pk}:{task.status}:{task.config.strategy_type}:{task.instrument}"
+                        for task in remaining
+                    )
+                    print(f"Waiting for {len(remaining)} backtest task(s): {summary}")
+                    time.sleep(POLL_INTERVAL_SECONDS)
+
+                summary = ", ".join(
+                    f"{task.pk}:{task.status}:{task.config.strategy_type}:{task.instrument}"
+                    for task in remaining_tasks(pause_ids)
+                )
+                sys.exit(
+                    "Timed out draining active backtest tasks before deployment. "
+                    "Remaining task(s): " + summary
+                )
+              """))'
+            )
             printf '%s\n' "$BACKTEST_DRAIN_OUTPUT"
             DRAINED_BACKTEST_TASK_IDS=$(printf '%s\n' "$BACKTEST_DRAIN_OUTPUT" | sed -n 's/^DRAINED_BACKTEST_TASK_IDS=//p' | tail -n 1)
+            RESTART_BACKTEST_TASK_IDS=$(printf '%s\n' "$BACKTEST_DRAIN_OUTPUT" | sed -n 's/^RESTART_BACKTEST_TASK_IDS=//p' | tail -n 1)
           else
             echo "Backend is not currently running; skipping task drain."
           fi
@@ -161,6 +298,20 @@ jobs:
             IFS=$OLD_IFS
           else
             echo "No backtest tasks needed resume after deployment."
+          fi
+
+          if [ -n "$RESTART_BACKTEST_TASK_IDS" ]; then
+            echo "Restarting drained in-memory backtest tasks: $RESTART_BACKTEST_TASK_IDS"
+            OLD_IFS=$IFS
+            IFS=','
+            for task_id in $RESTART_BACKTEST_TASK_IDS; do
+              [ -z "$task_id" ] && continue
+              docker compose exec --interactive=false -T backend \
+                python manage.py restart_backtest "$task_id" </dev/null
+            done
+            IFS=$OLD_IFS
+          else
+            echo "No in-memory backtest tasks needed restart after deployment."
           fi
 
           docker image prune -af
