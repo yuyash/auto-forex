@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.3](https://github.com/yuyash/auto-forex-web-service/compare/frontend-v2.12.2...frontend-v2.12.3) (2026-05-27)
+
+
+### Bug Fixes
+
+* **backtest:** prevent impossible simulated fills ([#830](https://github.com/yuyash/auto-forex-web-service/issues/830)) ([bd07ee1](https://github.com/yuyash/auto-forex-web-service/commit/bd07ee16459917b72ec1da7870a9aabe4e5222fe))
+
 ## [2.12.2](https://github.com/yuyash/auto-forex-web-service/compare/frontend-v2.12.1...frontend-v2.12.2) (2026-05-25)
 
 
