@@ -624,6 +624,42 @@ class TestSnowballExecutionStateBoundary:
         assert state.strategy_state["metrics"]["snowball_current_base_units"] == "2300"
         assert state.strategy_state["metrics"]["current_balance"] == "1183656.600000"
 
+    def test_materialize_keeps_fresh_strategy_metrics_over_stale_runtime_view(self) -> None:
+        initial_state = SnowballStrategyState()
+        initial_state.metrics.update(
+            {
+                "warmup_status": "warmup",
+                "warmup_elapsed_minutes": "0",
+                "snowball_allow_new_positions": "0",
+                "current_balance": "10000",
+            }
+        )
+        state = ExecutionStateDouble(strategy_state=initial_state.to_dict())
+        state._defer_snowball_state_serialization = True  # type: ignore[attr-defined]
+        state._defer_snowball_runtime_view_updates = True  # type: ignore[attr-defined]
+        boundary = SnowballExecutionStateBoundary(state=state)
+
+        snowball_state = boundary.load()
+        snowball_state.metrics["warmup_status"] = "normal"
+        snowball_state.metrics["warmup_elapsed_minutes"] = "20160"
+        snowball_state.metrics["snowball_allow_new_positions"] = "1"
+        boundary.persist(snowball_state)
+        state.strategy_state["metrics"].update(
+            {
+                "warmup_status": "warmup",
+                "warmup_elapsed_minutes": "0",
+                "snowball_allow_new_positions": "0",
+                "current_balance": "12000",
+            }
+        )
+
+        state._strategy_state_materializer()  # type: ignore[attr-defined]
+
+        assert state.strategy_state["metrics"]["warmup_status"] == "normal"
+        assert state.strategy_state["metrics"]["warmup_elapsed_minutes"] == "20160"
+        assert state.strategy_state["metrics"]["snowball_allow_new_positions"] == "1"
+        assert state.strategy_state["metrics"]["current_balance"] == "12000"
+
     def test_persist_archives_completed_trade_backed_cycles(self) -> None:
         state = ExecutionStateDouble(strategy_state={ARCHIVED_COMPLETED_CYCLES_KEY: 2})
         boundary = SnowballExecutionStateBoundary(state=state)

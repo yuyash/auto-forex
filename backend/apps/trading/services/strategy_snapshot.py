@@ -71,7 +71,7 @@ def _snowball_snapshot(state: dict[str, Any]) -> dict[str, Any]:
             "open_entries": len(entries),
             "open_long_units": sum(abs(entry.units) for entry in entries if entry.is_long),
             "open_short_units": sum(abs(entry.units) for entry in entries if entry.is_short),
-            "warmup_status": parsed.metrics.get("warmup_status") or "normal",
+            "warmup_status": _snowball_warmup_status(parsed),
             "current_base_units": current_base_units,
             "account_balance": str(parsed.account_balance),
             "account_nav": str(parsed.account_nav),
@@ -85,7 +85,7 @@ def _snowball_snapshot(state: dict[str, Any]) -> dict[str, Any]:
             "protection_level": state.get("protection_level"),
             "active_cycles": len(state.get("cycles") or []),
             "completed_cycles": _int_state_value(state.get(ARCHIVED_COMPLETED_CYCLES_KEY)),
-            "warmup_status": metrics.get("warmup_status") or "normal",
+            "warmup_status": _raw_snowball_warmup_status(state, metrics),
             "current_base_units": metrics.get("current_base_units")
             or metrics.get("snowball_current_base_units"),
             "account_nav": state.get("account_nav"),
@@ -163,3 +163,18 @@ def _int_state_value(value: Any) -> int:
         return max(0, int(value or 0))
     except (TypeError, ValueError):
         return 0
+
+
+def _snowball_warmup_status(parsed: Any) -> str:
+    if getattr(parsed, "warmup_completed_at", None):
+        return "normal"
+    metrics = getattr(parsed, "metrics", {})
+    if isinstance(metrics, dict):
+        return str(metrics.get("warmup_status") or "normal")
+    return "normal"
+
+
+def _raw_snowball_warmup_status(state: dict[str, Any], metrics: dict[str, Any]) -> str:
+    if state.get("warmup_completed_at"):
+        return "normal"
+    return str(metrics.get("warmup_status") or "normal")

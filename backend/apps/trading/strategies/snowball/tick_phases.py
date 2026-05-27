@@ -33,6 +33,13 @@ SNOWBALL_DEFERRED_RUNTIME_METRIC_KEYS = frozenset(
         "snowball_current_base_units",
     }
 )
+SNOWBALL_STRATEGY_METRIC_PREFIXES = ("snowball_", "warmup_")
+SNOWBALL_STRATEGY_METRIC_KEYS = frozenset(
+    {
+        "active_cycles",
+        *SNOWBALL_DEFERRED_RUNTIME_METRIC_KEYS,
+    }
+)
 
 
 class SnowballTickStrategy(CycleOrchestratorStrategy, ProtectionStrategy, Protocol):
@@ -149,12 +156,10 @@ class SnowballExecutionStateBoundary:
         runtime_state = self.raw_strategy_state()
         runtime_metrics = runtime_state.get("metrics", {})
         if isinstance(runtime_metrics, dict):
-            merged_metrics = dict(cached.metrics)
-            merged_metrics.update(runtime_metrics)
-            for key in SNOWBALL_DEFERRED_RUNTIME_METRIC_KEYS:
-                if key in cached.metrics:
-                    merged_metrics[key] = cached.metrics[key]
-            cached.metrics = merged_metrics
+            cached.metrics = _merge_materialized_metrics(
+                cached_metrics=cached.metrics,
+                runtime_metrics=runtime_metrics,
+            )
         strategy_state = self._hot_strategy_state(cached)
         for key, value in runtime_state.items():
             if key not in strategy_state:
@@ -203,6 +208,22 @@ def _archived_completed_cycles(strategy_state: dict[str, Any]) -> int:
         return max(0, int(strategy_state.get(ARCHIVED_COMPLETED_CYCLES_KEY, 0) or 0))
     except (TypeError, ValueError):
         return 0
+
+
+def _merge_materialized_metrics(
+    *,
+    cached_metrics: dict[str, str | int | float],
+    runtime_metrics: dict[str, Any],
+) -> dict[str, str | int | float]:
+    merged_metrics = dict(runtime_metrics)
+    for key, value in cached_metrics.items():
+        if _strategy_metric_should_override_runtime_view(key) or key not in merged_metrics:
+            merged_metrics[key] = value
+    return merged_metrics
+
+
+def _strategy_metric_should_override_runtime_view(key: str) -> bool:
+    return key in SNOWBALL_STRATEGY_METRIC_KEYS or key.startswith(SNOWBALL_STRATEGY_METRIC_PREFIXES)
 
 
 @dataclass
