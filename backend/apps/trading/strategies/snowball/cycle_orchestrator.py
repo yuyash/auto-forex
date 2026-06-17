@@ -243,15 +243,43 @@ class SnowballActiveCycleProcessor:
                     cycle=cycle,
                 )
             if cycle.grid.is_empty():
-                strategy._validate_grid_ordering(cycle)
+                if strategy.config.reseed_on_all_pending:
+                    # The operator opted into reseeding fully-pending cycles, so
+                    # leave this one PENDING and let ``SnowballCycleReseeder``
+                    # spawn a fresh cycle instead of averaging deeper into the
+                    # underwater one.  This preserves the historical
+                    # reseed-driven recovery path.
+                    strategy._validate_grid_ordering(cycle)
+                    trace.record(
+                        phase="cycle",
+                        outcome="skipped",
+                        reason="pending_rebuilds_remain_without_live_entries",
+                        cycle=cycle,
+                    )
+                    return CycleProcessingResult(events=events, rebuild_count=rebuild_count)
+                # Otherwise keep the cycle averaging from its pending-rebuild
+                # head.  This branch used to ``return`` unconditionally, which
+                # froze a PENDING cycle: it would only ever retry rebuilds of
+                # its existing pending slots (which fire when price returns to
+                # their original entry prices) and never open the next counter
+                # or layer as price kept moving adversely (production backtest
+                # DN/TEST3, cycle 686).  We now fall through to the normal
+                # phases so the counter-add phase can refill a take-profit'd
+                # counter slot (when refill is enabled) or open the next layer's
+                # R0 (when it is not).  The counter-close, cycle-TP, and
+                # stop-loss-close phases are no-ops without live entries, and
+                # the trailing stop-loss-rebuild pass cannot fire because this
+                # tick's rebuild trigger was already missed above.
+                # ``status_refresher`` flips the cycle back to ACTIVE if a new
+                # entry is opened, or leaves it PENDING otherwise.
                 trace.record(
                     phase="cycle",
-                    outcome="skipped",
-                    reason="pending_rebuilds_remain_without_live_entries",
+                    outcome="continued",
+                    reason="pending_cycle_counter_add_attempt",
                     cycle=cycle,
                 )
-                return CycleProcessingResult(events=events, rebuild_count=rebuild_count)
-            cycle.status = CycleStatus.ACTIVE
+            else:
+                cycle.status = CycleStatus.ACTIVE
 
         counter_close_events = strategy._process_cycle_counter_closes(ss, tick, cycle)
         trace.record_events(

@@ -299,7 +299,14 @@ L1/R0 が `pending_rebuild` の場合、TP 領域に到達してもクローズ�
 3. `shrink_enabled` かつ証拠金比率が `m_th` 以上なら shrink を行う。shrink が走ったティックでは通常のサイクル処理へ進まない。
 4. 未初期化なら LONG を作成し、ヘッジ有効なら SHORT も作成して終了する。
 5. 各 active cycle を処理する。
-   - 空グリッドかつ `pending_rebuild` ありなら PENDING にし、再建だけを試す。
+   - 空グリッドかつ `pending_rebuild` ありなら PENDING にし、まず再建を試す。
+     - 再建が発生せずグリッドが空のままで、かつ `reseed_on_all_pending=false` の場合は、
+       PENDING のまま後続のカウンター処理へ進む。`pending_rebuild` ヘッド（R0 スナップショット）を
+       基準に、価格がさらに逆行すればカウンター追加（refill）や新レイヤー作成を行い、
+       建玉が入れば `ACTIVE` に戻る。これにより PENDING サイクルが逆行に対して凍結せず、
+       averaging を継続する。
+     - `reseed_on_all_pending=true` の場合は PENDING のまま当ティックの処理を終え、
+       再シード（7.2）で新サイクル作成に委ねる。
    - カウンターTPを新しいスロットから順に処理する。
    - L1/R0 のサイクルTPを処理する。
    - SLヒットを一括で閉じる。
@@ -406,11 +413,19 @@ L1/R0 がライブ状態で TP に到達した場合:
 
 L1/R0 を閉じた後、同じ方向に他の ACTIVE サイクルがなければ、新サイクルを作成する。すでに他の ACTIVE サイクルがある場合は作成しない。
 
-### 7.2 PENDING 中の再シード
+### 7.2 PENDING 中の挙動と再シード
 
-全ライブエントリーが SL で消え、`pending_rebuild` だけが残るとサイクルは PENDING になる。PENDING サイクルがあるだけでは新サイクルは作成されない。
+全ライブエントリーが SL で消え、`pending_rebuild` だけが残るとサイクルは PENDING になる。
 
-新サイクルを作る条件は以下。
+PENDING サイクルの逆行時の扱いは `reseed_on_all_pending` で変わる。
+
+- `reseed_on_all_pending=false`（既定）: PENDING サイクルは `pending_rebuild` ヘッドを基準に
+  averaging を継続する。価格が逆行すれば、refill 可能なカウンタースロットを再エントリーし、
+  refill 不可（sealed）なら次レイヤーの R0 を作成する。建玉が入ればサイクルは `ACTIVE` に戻る。
+  これにより、ヘッドの再建価格に戻らない限り何も建てずに凍結する旧挙動を避ける。
+- `reseed_on_all_pending=true`: PENDING サイクルは追加建玉を行わず、再シードに委ねる。
+
+PENDING サイクルがあるだけでは新サイクルは作成されない。新サイクルを作る条件は以下。
 
 - その方向に active cycle が 1 つもない。
 - または `reseed_on_all_pending=true` で、その方向の全サイクルが PENDING。
