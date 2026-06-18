@@ -430,10 +430,18 @@ services:
     volumes:
       - ./certbot/conf:/etc/letsencrypt
       - ./certbot/www:/var/www/certbot
+    # NOTE: the certificate must be bootstrapped with the *webroot* challenge
+    # from inside a container that mounts ./certbot/conf at /etc/letsencrypt
+    # (see DEPLOYMENT.md "Initial Certificate Issuance").  Issuing on the host
+    # with a host --config-dir bakes host-absolute paths and a standalone
+    # authenticator into the renewal config, which this container cannot
+    # resolve, silently stopping renewals.  --quiet is intentionally omitted so
+    # renewal output and errors are visible via `docker logs certbot`.
     entrypoint: >
       sh -c "trap exit TERM;
       while :; do
-        certbot renew --webroot -w /var/www/certbot --quiet;
+        echo \"[certbot] renewal check at $$(date -u +%Y-%m-%dT%H:%M:%SZ)\";
+        certbot renew --webroot -w /var/www/certbot;
         sleep 12h & wait $${!};
       done"
     restart: unless-stopped

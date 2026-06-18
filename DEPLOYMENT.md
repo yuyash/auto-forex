@@ -114,34 +114,88 @@ Notes:
 
 ### Initial Certificate Issuance
 
-The production Nginx config expects real certificate files, so the first certificate issuance is a one-time manual step.
+The production Nginx config references real certificate files at
+`/etc/letsencrypt/live/<domain>/`, so Nginx cannot start until a certificate
+exists. Bootstrap the first certificate **inside a container that uses the
+same volume mounts as the stack** (`certbot/conf` → `/etc/letsencrypt`,
+`certbot/www` → `/var/www/certbot`).
+
+> **Important:** Do not issue the certificate on the host with a host
+> `--config-dir`. Doing so bakes host-absolute paths (e.g.
+> `/opt/auto-forex/certbot/conf`) and a `standalone` authenticator into the
+> renewal config. Inside the `certbot` container that directory is mounted at
+> `/etc/letsencrypt`, so the stored paths no longer resolve and
+> `certbot renew` silently skips the certificate — it eventually expires even
+> though the container is running. Issuing in-container with the **webroot**
+> challenge writes container-relative paths and `authenticator = webroot`, so
+> the `certbot` service renews it automatically.
 
 On the server:
 
 ```bash
-mkdir -p <DEPLOY_PATH>/certbot/conf <DEPLOY_PATH>/certbot/www <DEPLOY_PATH>/certbot/work <DEPLOY_PATH>/certbot/logs <DEPLOY_PATH>/logs
 cd <DEPLOY_PATH>
+mkdir -p certbot/conf certbot/www logs
+export DOMAIN=www.yourdomain.com
+export EMAIL=you@example.com
 ```
 
-Install `certbot` on the host and obtain the initial certificate directly on the host instead of using Docker. The important part is to store the certificate under `<DEPLOY_PATH>/certbot/conf` so the production containers can mount the same files later.
+1. Create a throwaway self-signed certificate so Nginx can boot and serve the
+   ACME HTTP-01 challenge on port 80:
 
-```bash
-sudo apt update
-sudo apt install -y certbot
+   ```bash
+   mkdir -p "certbot/conf/live/$DOMAIN"
+   docker run --rm -v "$PWD/certbot/conf:/etc/letsencrypt" \
+     --entrypoint openssl certbot/certbot \
+     req -x509 -nodes -newkey rsa:2048 -days 1 \
+     -keyout "/etc/letsencrypt/live/$DOMAIN/privkey.pem" \
+     -out "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" \
+     -subj "/CN=$DOMAIN"
+   ```
 
-sudo certbot certonly --standalone \
-  --preferred-challenges http \
-  --config-dir <DEPLOY_PATH>/certbot/conf \
-  --work-dir <DEPLOY_PATH>/certbot/work \
-  --logs-dir <DEPLOY_PATH>/certbot/logs \
-  -d www.yourdomain.com
-```
+2. Start Nginx only — it now boots with the dummy certificate and serves the
+   challenge path:
+
+   ```bash
+   docker compose -f docker-compose.prod.yaml up -d nginx
+   ```
+
+3. Delete the dummy certificate and request the real one via the **webroot**
+   challenge:
+
+   ```bash
+   rm -rf "certbot/conf/live/$DOMAIN" \
+          "certbot/conf/archive/$DOMAIN" \
+          "certbot/conf/renewal/$DOMAIN.conf"
+
+   docker run --rm \
+     -v "$PWD/certbot/conf:/etc/letsencrypt" \
+     -v "$PWD/certbot/www:/var/www/certbot" \
+     certbot/certbot certonly --webroot -w /var/www/certbot \
+     -d "$DOMAIN" --non-interactive --agree-tos -m "$EMAIL" --no-eff-email
+   ```
+
+4. Bring up the full stack and reload Nginx so it serves the real certificate:
+
+   ```bash
+   docker compose -f docker-compose.prod.yaml up -d
+   docker exec nginx nginx -s reload
+   ```
 
 Notes:
 
-- `certbot --standalone` binds to port `80`, so nothing else should be listening on `80` during the first issuance.
-- Because `--config-dir` points at `<DEPLOY_PATH>/certbot/conf`, the later Docker deployment can reuse the same certificate files without copying them again.
-- After the first issuance, the repository's `certbot` container can continue renewing certificates against the same mounted certificate directory.
+- Steps 1–2 exist only to break the chicken-and-egg problem (Nginx needs a
+  certificate to start; the webroot challenge needs Nginx running). The dummy
+  certificate is discarded in step 3.
+- Ports `80` and `443` must be reachable from the internet for the HTTP-01
+  challenge and normal traffic.
+- After the first issuance, the repository's `certbot` service renews the
+  certificate on a 12-hour loop and Nginx reloads every 6 hours to pick up the
+  new files.
+- Verify automatic renewal end to end with a dry run:
+
+  ```bash
+  docker exec certbot certbot renew --webroot -w /var/www/certbot --dry-run
+  ```
 
 ### Deploying with GitHub Actions
 
