@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.4](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.3...backend-v2.12.4) (2026-06-18)
+
+
+### Bug Fixes
+
+* **snowball:** keep pending cycles averaging instead of freezing ([#833](https://github.com/yuyash/auto-forex-web-service/issues/833)) ([0661bb1](https://github.com/yuyash/auto-forex-web-service/commit/0661bb1ac912f8bd4b2fc0c399fbe5e8edc4af7d))
+
 ## [2.12.3](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.2...backend-v2.12.3) (2026-05-27)
 
 
