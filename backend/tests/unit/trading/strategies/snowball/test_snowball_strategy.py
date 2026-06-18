@@ -26,6 +26,7 @@ from apps.trading.strategies.snowball import strategy as snowball_strategy_modul
 from apps.trading.strategies.snowball.config import SnowballStrategyConfig
 from apps.trading.strategies.snowball.cycle_state import SnowballCycle, SnowballStrategyState
 from apps.trading.strategies.snowball.entries import Entry, StopLossClosedEntry
+from apps.trading.strategies.snowball.enums import CycleStatus
 from apps.trading.strategies.snowball.grid_models import Layer
 from apps.trading.strategies.snowball.strategy import SnowballStrategy
 
@@ -2266,3 +2267,173 @@ class TestGridOrderingValidation:
         assert result.should_stop is False
         assert result.is_error is False
         assert result.stop_reason == ""
+
+
+# ==================================================================
+# Pending cycle keeps averaging (regression: DN/TEST3, cycle 686)
+# ==================================================================
+
+
+class TestPendingCycleKeepsAveraging:
+    """A PENDING cycle (no live head, only pending rebuilds) must keep
+    opening counter entries / new layers as price keeps moving adversely,
+    instead of freezing until a pending slot's rebuild trigger is hit.
+
+    Reproduces the production backtest "DN/TEST3" (cycle 686): after
+    counter slots were rebuilt and taken-profit while the head stayed
+    pending, the cycle froze in PENDING and ignored further adverse
+    movement, so the grid stopped averaging.
+    """
+
+    def _pending_long_cycle(self) -> SnowballCycle:
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        layer = Layer.create(1, 7, 1000, 7)
+        r0 = layer.slot_at(0)
+        assert r0 is not None
+        r0.pending_rebuild = StopLossClosedEntry(
+            entry_price=Decimal("150.00"),
+            close_price=Decimal("150.50"),
+            units=1000,
+            direction=Direction.LONG,
+            role="initial",
+            layer_number=1,
+            retracement_count=0,
+            step=1,
+            root_entry_id=1,
+            cycle_id=1,
+            stop_loss_price=Decimal("149.70"),
+            closed_at=T0,
+        )
+        cycle.add_layer(layer)
+        cycle.status = CycleStatus.PENDING
+        return cycle
+
+    def test_pending_cycle_refills_counter_slot_when_price_moves_adverse(self):
+        """Refill enabled: the next counter slot (R1) re-enters even though
+        the head R0 rebuild trigger has not been reached."""
+        s = _strategy(
+            stop_loss_enabled=True,
+            rebuild_enabled=True,
+            rebuild_entry_price_mode="original_entry",
+            reseed_on_all_pending=False,
+            interval_mode="constant",
+            n_pips_head="30",
+            refill_limit_enabled=False,
+        )
+        s.configure_runtime(account_currency="JPY", hedging_enabled=False)
+        ss = SnowballStrategyState(initialised=True)
+        ss.cycles.append(self._pending_long_cycle())
+        state = DummyState(strategy_state=ss.to_dict())
+
+        # 30 pips below the pending head (150.00).  The R0 rebuild trigger
+        # (LONG: bid >= 150.00) is NOT hit, but the adverse distance is
+        # enough to open the next counter slot (R1).
+        result = s.on_tick(
+            tick=_tick(T0 + timedelta(minutes=5), "149.68", "149.70"),
+            state=state,
+        )
+
+        opens = _open_events(result)
+        assert len(opens) == 1
+        assert opens[0].units == 2000  # (R1 index + 1) * base_units
+
+        persisted = SnowballStrategyState.from_strategy_state(state.strategy_state)
+        cycle = persisted.cycles[0]
+        assert cycle.is_active
+        layer = cycle.current_layer
+        assert layer is not None
+        r1 = layer.slot_at(1)
+        assert r1 is not None and r1.entry is not None
+        assert r1.entry.retracement_count == 1
+        # The head's rebuild slot is untouched (its trigger was not hit).
+        assert layer.slot_at(0).pending_rebuild is not None
+
+    def test_pending_cycle_opens_next_layer_when_refill_is_exhausted(self):
+        """Refill disabled / counter slots sealed: a pending cycle opens the
+        next layer's R0 instead of staying frozen."""
+        s = _strategy(
+            stop_loss_enabled=True,
+            rebuild_enabled=True,
+            rebuild_entry_price_mode="original_entry",
+            reseed_on_all_pending=False,
+            interval_mode="constant",
+            n_pips_head="30",
+            n_pips_flat_steps=0,
+            r_max=1,
+            f_max=3,
+        )
+        s.configure_runtime(account_currency="JPY", hedging_enabled=False)
+        ss = SnowballStrategyState(initialised=True)
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        layer = Layer.create(1, 1, 1000, 0)
+        r0 = layer.slot_at(0)
+        assert r0 is not None
+        r0.pending_rebuild = StopLossClosedEntry(
+            entry_price=Decimal("150.00"),
+            close_price=Decimal("150.50"),
+            units=1000,
+            direction=Direction.LONG,
+            role="initial",
+            layer_number=1,
+            retracement_count=0,
+            step=1,
+            root_entry_id=1,
+            cycle_id=1,
+            stop_loss_price=Decimal("149.70"),
+            closed_at=T0,
+        )
+        # The only counter slot (R1) was taken-profit and sealed (refill off).
+        r1 = layer.slot_at(1)
+        assert r1 is not None
+        r1.ever_closed = True
+        cycle.add_layer(layer)
+        cycle.status = CycleStatus.PENDING
+        ss.cycles.append(cycle)
+        state = DummyState(strategy_state=ss.to_dict())
+
+        result = s.on_tick(
+            tick=_tick(T0 + timedelta(minutes=5), "149.68", "149.70"),
+            state=state,
+        )
+
+        opens = _open_events(result)
+        assert len(opens) == 1
+        assert opens[0].retracement_count == 0  # new layer initial (R0)
+
+        persisted = SnowballStrategyState.from_strategy_state(state.strategy_state)
+        cycle = persisted.cycles[0]
+        assert cycle.is_active
+        assert cycle.layer_count == 2  # L2 was opened
+        l2 = cycle.find_layer(2)
+        assert l2 is not None
+        assert l2.slot_at(0).entry is not None
+
+    def test_pending_cycle_stays_pending_when_price_is_not_adverse_enough(self):
+        """Guard: the cycle must not open anything (and stay PENDING) when
+        neither the rebuild trigger nor the counter-add interval is met."""
+        s = _strategy(
+            stop_loss_enabled=True,
+            rebuild_enabled=True,
+            rebuild_entry_price_mode="original_entry",
+            reseed_on_all_pending=False,
+            interval_mode="constant",
+            n_pips_head="30",
+            refill_limit_enabled=False,
+        )
+        s.configure_runtime(account_currency="JPY", hedging_enabled=False)
+        ss = SnowballStrategyState(initialised=True)
+        ss.cycles.append(self._pending_long_cycle())
+        state = DummyState(strategy_state=ss.to_dict())
+
+        # Only 10 pips below head: below both the rebuild trigger (150.00)
+        # and the 30-pip counter interval.
+        result = s.on_tick(
+            tick=_tick(T0 + timedelta(minutes=5), "149.88", "149.90"),
+            state=state,
+        )
+
+        assert _open_events(result) == []
+        persisted = SnowballStrategyState.from_strategy_state(state.strategy_state)
+        cycle = persisted.cycles[0]
+        assert cycle.is_pending
+        assert cycle.grid.is_empty()
