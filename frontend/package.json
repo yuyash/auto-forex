@@ -62,7 +62,7 @@
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^5.1.0",
-    "@vitest/coverage-v8": "^4.0.16",
+    "@vitest/coverage-v8": "^4.1.8",
     "baseline-browser-mapping": "^2.9.14",
     "eslint": "^9.38.0",
     "eslint-plugin-react-hooks": "^7.0.1",
@@ -74,7 +74,7 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.46.2",
     "vite": "^7.3.2",
-    "vitest": "^4.0.6"
+    "vitest": "^4.1.8"
   },
   "overrides": {
     "@typescript-eslint/typescript-estree": {
