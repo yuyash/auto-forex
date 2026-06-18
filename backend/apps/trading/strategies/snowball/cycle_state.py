@@ -93,19 +93,21 @@ class SnowballCycle:
     def effective_head(self) -> tuple[Decimal | None, int | None]:
         """Return (entry_price, entry_id) for the cycle head.
 
-        Falls back to the R0 pending-rebuild snapshot when no live entry
-        exists, so callers can still compute adverse distance and loss
-        checks even after all positions have been stop-loss closed.
+        Falls back to the oldest pending-rebuild snapshot across the whole
+        grid when no live entry exists, so callers can still compute adverse
+        distance and loss checks even after all positions have been stop-loss
+        closed.  The pending head lives in the lowest layer, which is not
+        necessarily the current (top) layer, so the search spans every layer
+        rather than only ``current_layer``.
         """
         head = self.initial_entry
         if head is not None:
             return head.entry_price, head.entry_id
-        layer = self.current_layer
-        if layer is None:
-            return None, None
-        r0 = layer.slot_at(0)
-        if r0 is not None and r0.pending_rebuild is not None:
-            return r0.pending_rebuild.entry_price, r0.pending_rebuild.root_entry_id
+        pending_head = self.grid.first_pending_rebuild_slot()
+        if pending_head is not None:
+            _, slot = pending_head
+            if slot.pending_rebuild is not None:
+                return slot.pending_rebuild.entry_price, slot.pending_rebuild.root_entry_id
         return None, None
 
     def add_layer(self, layer: Layer) -> None:

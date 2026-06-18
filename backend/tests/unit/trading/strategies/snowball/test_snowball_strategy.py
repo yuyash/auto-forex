@@ -2437,3 +2437,169 @@ class TestPendingCycleKeepsAveraging:
         cycle = persisted.cycles[0]
         assert cycle.is_pending
         assert cycle.grid.is_empty()
+
+
+# ==================================================================
+# Multi-layer pending recovery (regression: DN/TEST3, cycle 2162)
+# ==================================================================
+
+
+class TestGhostLayerAndCrossLayerHead:
+    """Multi-layer fully-pending cycles must not freeze.
+
+    Reproduces production backtest "DN/TEST3" (cycle 2162): after a non-L1
+    layer-initial that was acting as the de-facto head took profit, its empty
+    layer lingered as a "ghost" top layer whose R0 was sealed (not pending).
+    Head resolution only inspected the current/top layer's R0, so it returned
+    None and the cycle froze instead of resuming averaging in the layer below.
+
+    Fix A: closing a non-L1 layer-initial head removes the emptied layer.
+    Fix B: head resolution falls back to the oldest pending rebuild across the
+    whole grid, not just the current layer.
+    """
+
+    def _pending(self, *, entry_price: str, units: int, layer_number: int, r: int):
+        return StopLossClosedEntry(
+            entry_price=Decimal(entry_price),
+            close_price=Decimal(entry_price) + Decimal("0.15"),
+            units=units,
+            direction=Direction.LONG,
+            role="initial" if r == 0 else "counter",
+            layer_number=layer_number,
+            retracement_count=r,
+            step=r + 1,
+            root_entry_id=1,
+            cycle_id=1,
+            stop_loss_price=Decimal(entry_price) - Decimal("0.31"),
+            closed_at=T0,
+        )
+
+    def test_closing_non_l1_layer_initial_head_removes_emptied_layer(self):
+        """Fix A: a head TP that empties a non-L1 layer removes that layer."""
+        s = _strategy(
+            stop_loss_enabled=True,
+            rebuild_enabled=True,
+            rebuild_entry_price_mode="original_entry",
+        )
+        ss = SnowballStrategyState(initialised=True)
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        # L1 fully pending keeps the cycle from completing on this close.
+        l1 = Layer.create(1, 6, 1000, 3)
+        l1.slot_at(0).pending_rebuild = self._pending(
+            entry_price="150.00", units=1000, layer_number=1, r=0
+        )
+        # L2 holds the only live entry (its layer-initial, the de-facto head).
+        l2 = Layer.create(2, 6, 1000, 3)
+        l2.slot_at(0).fill(
+            Entry(
+                entry_id=10,
+                step=1,
+                direction=Direction.LONG,
+                entry_price=Decimal("149.50"),
+                close_price=Decimal("149.65"),
+                units=1000,
+                opened_at=T0,
+                role="layer_initial",
+                layer_number=2,
+                retracement_count=0,
+                root_entry_id=1,
+            )
+        )
+        cycle.add_layer(l1)
+        cycle.add_layer(l2)
+        ss.cycles.append(cycle)
+
+        # Price reaches L2/R0 TP (149.65): head closes via _close_and_reenter.
+        events = s._process_cycle_tp(
+            ss,
+            _tick(T0 + timedelta(minutes=1), "149.66", "149.68"),
+            cycle,
+            allow_reentry=False,
+        )
+
+        assert events  # a close happened
+        # The emptied L2 must be removed; the pending L1 is preserved and
+        # becomes the current layer again.
+        assert [layer.layer_number for layer in cycle.grid.layers] == [1]
+        assert cycle.current_layer is not None
+        assert cycle.current_layer.layer_number == 1
+
+    def test_head_resolution_falls_back_to_lowest_layer_pending(self):
+        """Fix B: head resolution finds the oldest pending across all layers,
+        even when the current/top layer is an emptied ghost."""
+        from apps.trading.strategies.snowball.counter_flow import CounterSlotSelector
+
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        cycle.status = CycleStatus.PENDING
+        l1 = Layer.create(1, 6, 1000, 3)
+        l1.slot_at(0).pending_rebuild = self._pending(
+            entry_price="150.00", units=1000, layer_number=1, r=0
+        )
+        # Ghost top layer: R0 sealed, no pending, no live entry.
+        l2 = Layer.create(2, 6, 1000, 3)
+        l2.slot_at(0).ever_closed = True
+        cycle.add_layer(l1)
+        cycle.add_layer(l2)
+
+        assert cycle.current_layer is not None
+        assert cycle.current_layer.layer_number == 2  # ghost is the top layer
+
+        price, _eid = cycle.effective_head()
+        assert price == Decimal("150.00")  # found L1/R0, not the ghost L2/R0
+
+        ctx = CounterSlotSelector().head_context(cycle=cycle)
+        assert ctx is not None
+        assert ctx.entry is None
+        assert ctx.entry_price == Decimal("150.00")
+
+    def test_multi_layer_pending_cycle_resumes_counter_add(self):
+        """End-to-end: a multi-layer fully-pending cycle resumes averaging in
+        its current layer when price moves adverse."""
+        s = _strategy(
+            stop_loss_enabled=True,
+            rebuild_enabled=True,
+            rebuild_entry_price_mode="original_entry",
+            reseed_on_all_pending=False,
+            interval_mode="constant",
+            n_pips_head="30",
+            refill_limit_enabled=False,
+        )
+        s.configure_runtime(account_currency="JPY", hedging_enabled=False)
+        ss = SnowballStrategyState(initialised=True)
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        cycle.status = CycleStatus.PENDING
+        l1 = Layer.create(1, 6, 1000, 6)
+        l1.slot_at(0).pending_rebuild = self._pending(
+            entry_price="150.00", units=1000, layer_number=1, r=0
+        )
+        # L2 is the current layer: R0 pending, R1 empty + refillable.
+        l2 = Layer.create(2, 6, 1000, 6)
+        l2.slot_at(0).pending_rebuild = self._pending(
+            entry_price="149.00", units=1000, layer_number=2, r=0
+        )
+        cycle.add_layer(l1)
+        cycle.add_layer(l2)
+        ss.cycles.append(cycle)
+        state = DummyState(strategy_state=ss.to_dict())
+
+        # 30 pips below L2/R0 (149.00): opens L2/R1.  Neither rebuild trigger
+        # (150.00 / 149.00, original-entry mode) is hit at bid 148.68.
+        result = s.on_tick(
+            tick=_tick(T0 + timedelta(minutes=5), "148.68", "148.70"),
+            state=state,
+        )
+
+        opens = _open_events(result)
+        assert len(opens) == 1
+        assert opens[0].units == 2000  # (R1 index + 1) * base_units
+
+        persisted = SnowballStrategyState.from_strategy_state(state.strategy_state)
+        c = persisted.cycles[0]
+        assert c.is_active
+        l2p = c.find_layer(2)
+        assert l2p is not None
+        assert l2p.slot_at(1).entry is not None
+        assert l2p.slot_at(1).entry.retracement_count == 1
+        # The pending heads were left untouched (their triggers were not hit).
+        assert c.find_layer(1).slot_at(0).pending_rebuild is not None
+        assert l2p.slot_at(0).pending_rebuild is not None
