@@ -487,6 +487,21 @@ class PositionGrid:
                     result.append((layer, s))
         return result
 
+    def first_pending_rebuild_slot(self) -> tuple["Layer", Slot] | None:
+        """Return the oldest (lowest grid-key) slot awaiting SL rebuild.
+
+        Layers are stored in ascending layer-number order and slots in
+        ascending R-index order, so the first match is the lowest grid key.
+        This is the effective cycle head when no live entry survives: the
+        head lives in the lowest layer, which is not necessarily the current
+        (top) layer.
+        """
+        for layer in self.layers:
+            for s in layer.slots:
+                if s.is_pending_rebuild:
+                    return layer, s
+        return None
+
     # -- Shrink: close from front --
 
     def front_entry(self) -> Entry | None:

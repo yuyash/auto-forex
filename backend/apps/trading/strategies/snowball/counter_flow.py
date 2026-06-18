@@ -477,7 +477,7 @@ class CounterSlotSelector:
         self.grid_policy = grid_policy or SNOWBALL_GRID_POLICY
         self.logger = logger_ or logger
 
-    def head_context(self, *, cycle: SnowballCycle, layer: Layer) -> CounterHeadContext | None:
+    def head_context(self, *, cycle: SnowballCycle) -> CounterHeadContext | None:
         """Return live or pending-rebuild head context for a cycle."""
         head = cycle.initial_entry
         if head is not None:
@@ -487,13 +487,20 @@ class CounterSlotSelector:
                 entry_id=head.entry_id,
                 direction=head.direction,
             )
-        r0 = layer.slot_at(0)
-        if r0 is None or r0.pending_rebuild is None:
+        # No live head: fall back to the oldest pending-rebuild snapshot across
+        # the whole grid.  The cycle head lives in the lowest layer, which is
+        # not necessarily the current (top) layer, so a layer-local R0 lookup
+        # would miss it (e.g. when the top layer is an emptied ghost layer).
+        pending_head = cycle.grid.first_pending_rebuild_slot()
+        if pending_head is None:
+            return None
+        _, slot = pending_head
+        if slot.pending_rebuild is None:
             return None
         return CounterHeadContext(
             entry=None,
-            entry_price=r0.pending_rebuild.entry_price,
-            entry_id=r0.pending_rebuild.root_entry_id,
+            entry_price=slot.pending_rebuild.entry_price,
+            entry_id=slot.pending_rebuild.root_entry_id,
             direction=cycle.direction,
         )
 
@@ -935,7 +942,7 @@ class SnowballCounterAddProcessor:
         if layer is None:
             return []
 
-        head_context = self.slot_selector.head_context(cycle=cycle, layer=layer)
+        head_context = self.slot_selector.head_context(cycle=cycle)
         if head_context is None:
             return []
 

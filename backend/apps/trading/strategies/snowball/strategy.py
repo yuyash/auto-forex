@@ -538,6 +538,16 @@ class SnowballStrategy(Strategy):
         layer.close_slot(slot.index)
         ss.invalidate_entry_cache()
 
+        # If closing this head emptied a non-L1 layer (no live entries and no
+        # pending rebuilds left), remove it so it does not linger as a "ghost"
+        # top layer.  A ghost current layer breaks head resolution for fully
+        # pending cycles: its R0 is sealed (not pending), so the cycle would
+        # freeze instead of resuming counter adds in the layer below.  L1 is
+        # always preserved.
+        if layer.layer_number > 1 and not layer.has_present_entries():
+            cycle.grid.layers.remove(layer)
+            ss.invalidate_entry_cache()
+
         # Do NOT clear pending rebuilds here.  If other slots have
         # pending rebuilds, the cycle status update in on_tick will
         # transition the cycle to PENDING (not COMPLETED).  Those
