@@ -4,7 +4,7 @@ version = "2.12.6"
 description = "Auto forex trading application."
 requires-python = ">=3.13"
 dependencies = [
-    "django>=5.2.13,<5.3",
+    "django>=5.2.14,<5.3",
     "djangorestframework>=3.15.0",
     "django-cors-headers>=4.7.0",
     "uvicorn[standard]>=0.34.0",
@@ -19,7 +19,7 @@ dependencies = [
     "pyyaml>=6.0.0",
     "pyjwt>=2.13.0",
     "bcrypt>=4.2.0",
-    "cryptography>=43.0.0",
+    "cryptography>=48.0.1",
     "psutil>=6.1.0",
     "requests>=2.32.0",
     "pydantic>=2.12.5",

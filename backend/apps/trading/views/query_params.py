@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -17,6 +18,8 @@ from apps.trading.views.pagination import (
     ActivityPagination,
     TradePositionPagination,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -1036,7 +1039,8 @@ class LogsQueryParams:
             try:
                 re.compile(message)
             except re.error as exc:
-                raise _invalid_query_param(f"Invalid message regex: {exc}") from exc
+                logger.warning("Invalid message regex rejected: %s", exc)
+                raise _invalid_query_param("Invalid message regex pattern") from exc
         return cls(
             execution=_build_execution_scoped_query(
                 request,
