@@ -4,6 +4,34 @@ import { readFileSync } from 'fs';
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
 
+// Group large vendor dependencies into separate chunks. Vite 8 / Rollup 4
+// type `output.manualChunks` as a function (the legacy object form is no
+// longer accepted by the types), so we map module ids (node_modules paths)
+// to chunk names instead.
+const vendorChunks: Record<string, string[]> = {
+  react: ['react', 'react-dom', 'react-router-dom'],
+  mui: [
+    '@mui/material',
+    '@mui/icons-material',
+    '@emotion/react',
+    '@emotion/styled',
+  ],
+  charts: ['@mui/x-charts', 'lightweight-charts', 'd3-scale'],
+  query: ['@tanstack/react-query'],
+  forms: ['react-hook-form', '@hookform/resolvers', 'zod'],
+  i18n: ['i18next', 'react-i18next'],
+};
+
+function manualChunks(id: string): string | undefined {
+  if (!id.includes('/node_modules/')) return undefined;
+  for (const [chunk, packages] of Object.entries(vendorChunks)) {
+    if (packages.some((name) => id.includes(`/node_modules/${name}/`))) {
+      return chunk;
+    }
+  }
+  return undefined;
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   define: {
@@ -13,19 +41,7 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          react: ['react', 'react-dom', 'react-router-dom'],
-          mui: [
-            '@mui/material',
-            '@mui/icons-material',
-            '@emotion/react',
-            '@emotion/styled',
-          ],
-          charts: ['@mui/x-charts', 'lightweight-charts', 'd3-scale'],
-          query: ['@tanstack/react-query'],
-          forms: ['react-hook-form', '@hookform/resolvers', 'zod'],
-          i18n: ['i18next', 'react-i18next'],
-        },
+        manualChunks,
       },
     },
   },
