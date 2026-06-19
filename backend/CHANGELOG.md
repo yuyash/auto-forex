@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.6](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.5...backend-v2.12.6) (2026-06-19)
+
+
+### Bug Fixes
+
+* **snowball:** enforce rebuild stop-loss invariants ([#838](https://github.com/yuyash/auto-forex-web-service/issues/838)) ([ab25451](https://github.com/yuyash/auto-forex-web-service/commit/ab2545136e05b5444a80253785c90d8098488a26))
+
 ## [2.12.5](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.4...backend-v2.12.5) (2026-06-18)
 
 
