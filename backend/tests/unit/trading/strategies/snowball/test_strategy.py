@@ -1029,6 +1029,82 @@ class TestSnowballRebuildStopLossModes:
 
         assert entry.stop_loss_price == Decimal("154.40")
 
+    def test_same_mode_reprojects_invalid_short_stop_loss_to_loss_side(self):
+        s = _strategy(
+            {
+                "stop_loss_enabled": True,
+                "rebuild_stop_loss_mode": "same",
+            }
+        )
+        entry = Entry(
+            entry_id=9,
+            step=7,
+            direction=Direction.SHORT,
+            entry_price=Decimal("136.230"),
+            close_price=Decimal("135.984"),
+            units=7000,
+            opened_at=datetime(2026, 1, 1, tzinfo=UTC),
+            role="counter",
+            layer_number=2,
+            retracement_count=6,
+            is_rebuild=True,
+        )
+        pending = StopLossClosedEntry(
+            entry_price=Decimal("136.240"),
+            close_price=Decimal("135.994"),
+            units=7000,
+            direction=Direction.SHORT,
+            role="counter",
+            layer_number=2,
+            retracement_count=6,
+            step=7,
+            cycle_id=1,
+            stop_loss_price=Decimal("136.225"),
+        )
+
+        s._assign_rebuild_stop_loss(entry, pending)
+
+        assert entry.stop_loss_price == Decimal("136.245")
+
+    def test_same_mode_falls_back_when_pending_stop_loss_is_corrupt(self):
+        s = _strategy(
+            {
+                "stop_loss_enabled": True,
+                "stop_loss_mode": "constant",
+                "stop_loss_pips_head": "31",
+                "rebuild_stop_loss_mode": "same",
+            }
+        )
+        entry = Entry(
+            entry_id=9,
+            step=7,
+            direction=Direction.SHORT,
+            entry_price=Decimal("136.230"),
+            close_price=Decimal("135.984"),
+            units=7000,
+            opened_at=datetime(2026, 1, 1, tzinfo=UTC),
+            role="counter",
+            layer_number=2,
+            retracement_count=6,
+            is_rebuild=True,
+        )
+        pending = StopLossClosedEntry(
+            entry_price=Decimal("136.240"),
+            close_price=Decimal("135.994"),
+            units=7000,
+            direction=Direction.SHORT,
+            role="counter",
+            layer_number=2,
+            retracement_count=6,
+            step=7,
+            cycle_id=1,
+            stop_loss_price=Decimal("-904.479"),
+        )
+
+        s._assign_rebuild_stop_loss(entry, pending)
+
+        assert entry.stop_loss_price == Decimal("136.540")
+
     def test_same_pips_mode_reuses_original_stop_loss_distance(self):
         s = _strategy(
             {
@@ -1074,6 +1150,40 @@ class TestSnowballRebuildStopLossModes:
 
         assert long_entry.stop_loss_price == Decimal("154.60")
         assert short_entry.stop_loss_price == Decimal("154.80")
+
+    def test_same_pips_mode_falls_back_when_pending_stop_loss_is_corrupt(self):
+        s = _strategy(
+            {
+                "stop_loss_enabled": True,
+                "stop_loss_mode": "constant",
+                "stop_loss_pips_head": "31",
+                "rebuild_stop_loss_mode": "same_pips",
+            }
+        )
+        entry = Entry(
+            entry_id=10,
+            step=7,
+            direction=Direction.SHORT,
+            entry_price=Decimal("136.230"),
+            close_price=Decimal("135.984"),
+            units=7000,
+            opened_at=datetime(2026, 1, 1, tzinfo=UTC),
+            role="counter",
+            layer_number=2,
+            retracement_count=6,
+            is_rebuild=True,
+        )
+
+        s._assign_rebuild_stop_loss(
+            entry,
+            self._make_pending_rebuild(
+                direction=Direction.SHORT,
+                stop_loss_price="-904.479",
+                retracement_count=6,
+            ),
+        )
+
+        assert entry.stop_loss_price == Decimal("136.540")
 
     def test_manual_mode_applies_absolute_pips_from_rebuild_entry(self):
         s = _strategy(
@@ -1663,6 +1773,56 @@ class TestSnowballRebuildTakeProfitModes:
 
 
 class TestSnowballPricingHelpers:
+    def test_sync_entry_fill_price_repairs_invalid_stop_loss_side(self):
+        entry = Entry(
+            entry_id=1,
+            step=7,
+            direction=Direction.SHORT,
+            entry_price=Decimal("136.240"),
+            close_price=Decimal("135.994"),
+            units=7000,
+            opened_at=datetime(2026, 1, 1, tzinfo=UTC),
+            role="counter",
+            layer_number=2,
+            retracement_count=6,
+            stop_loss_price=Decimal("136.225"),
+            is_rebuild=True,
+        )
+
+        SNOWBALL_PRICING.sync_entry_fill_price(
+            entry=entry,
+            layer=None,
+            fill_price=Decimal("136.230"),
+            counter_tp_mode="weighted_avg",
+        )
+
+        assert entry.entry_price == Decimal("136.230")
+        assert entry.stop_loss_price == Decimal("136.245")
+
+    def test_sync_entry_fill_price_rejects_corrupt_stop_loss(self):
+        entry = Entry(
+            entry_id=1,
+            step=7,
+            direction=Direction.SHORT,
+            entry_price=Decimal("136.240"),
+            close_price=Decimal("135.994"),
+            units=7000,
+            opened_at=datetime(2026, 1, 1, tzinfo=UTC),
+            role="counter",
+            layer_number=2,
+            retracement_count=6,
+            stop_loss_price=Decimal("-904.479"),
+            is_rebuild=True,
+        )
+
+        with pytest.raises(ValueError, match="Stop-loss price"):
+            SNOWBALL_PRICING.sync_entry_fill_price(
+                entry=entry,
+                layer=None,
+                fill_price=Decimal("136.230"),
+                counter_tp_mode="weighted_avg",
+            )
+
     def test_weighted_average_sync_updates_all_counter_take_profits(self):
         layer = Layer.create(1, 3, 1000)
         layer.slot_at(0).fill(

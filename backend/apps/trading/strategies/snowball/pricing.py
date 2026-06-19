@@ -172,7 +172,9 @@ class SnowballPricingService:
             return
 
         fill_price = Decimal(str(fill_price))
-        delta = fill_price - entry.entry_price
+        original_entry_price = entry.entry_price
+        original_stop_loss_price = entry.stop_loss_price
+        delta = fill_price - original_entry_price
         if delta == 0:
             return
 
@@ -180,12 +182,104 @@ class SnowballPricingService:
 
         if entry.stop_loss_price is not None:
             entry.stop_loss_price += delta
+            entry.stop_loss_price = self.ensure_stop_loss_on_loss_side(
+                direction=entry.direction,
+                entry_price=entry.entry_price,
+                stop_loss_price=entry.stop_loss_price,
+                source_entry_price=original_entry_price,
+                source_stop_loss_price=original_stop_loss_price,
+            )
 
         if layer is not None and entry.role == "counter" and counter_tp_mode == "weighted_avg":
             self.sync_weighted_average_counter_take_profits(layer)
             return
 
         entry.close_price += delta
+
+    def is_stop_loss_on_loss_side(
+        self,
+        *,
+        direction: Direction,
+        entry_price: Decimal,
+        stop_loss_price: Decimal | None,
+    ) -> bool:
+        """Return whether a stop-loss is positive and on the loss side."""
+        if stop_loss_price is None:
+            return True
+        if stop_loss_price <= 0:
+            return False
+        if direction == Direction.LONG:
+            return stop_loss_price < entry_price
+        return stop_loss_price > entry_price
+
+    def stop_loss_from_distance(
+        self,
+        *,
+        direction: Direction,
+        entry_price: Decimal,
+        distance: Decimal,
+    ) -> Decimal | None:
+        """Project an absolute stop-loss distance from an entry price."""
+        if distance <= 0:
+            return None
+        if direction == Direction.LONG:
+            stop_loss_price = entry_price - distance
+        else:
+            stop_loss_price = entry_price + distance
+        if stop_loss_price <= 0:
+            return None
+        return stop_loss_price
+
+    def reproject_stop_loss(
+        self,
+        *,
+        direction: Direction,
+        entry_price: Decimal,
+        source_entry_price: Decimal | None,
+        source_stop_loss_price: Decimal | None,
+    ) -> Decimal | None:
+        """Rebuild a stop-loss from a prior entry/SL distance."""
+        if source_entry_price is None or source_stop_loss_price is None:
+            return None
+        if source_entry_price <= 0 or source_stop_loss_price <= 0:
+            return None
+        return self.stop_loss_from_distance(
+            direction=direction,
+            entry_price=entry_price,
+            distance=abs(source_entry_price - source_stop_loss_price),
+        )
+
+    def ensure_stop_loss_on_loss_side(
+        self,
+        *,
+        direction: Direction,
+        entry_price: Decimal,
+        stop_loss_price: Decimal | None,
+        source_entry_price: Decimal | None = None,
+        source_stop_loss_price: Decimal | None = None,
+    ) -> Decimal | None:
+        """Return a valid stop-loss or raise when it cannot be repaired."""
+        if self.is_stop_loss_on_loss_side(
+            direction=direction,
+            entry_price=entry_price,
+            stop_loss_price=stop_loss_price,
+        ):
+            return stop_loss_price
+
+        repaired = self.reproject_stop_loss(
+            direction=direction,
+            entry_price=entry_price,
+            source_entry_price=source_entry_price,
+            source_stop_loss_price=source_stop_loss_price,
+        )
+        if repaired is not None and self.is_stop_loss_on_loss_side(
+            direction=direction,
+            entry_price=entry_price,
+            stop_loss_price=repaired,
+        ):
+            return repaired
+
+        raise ValueError("Stop-loss price must be positive and on the loss side of entry price")
 
     def _take_profit_price(
         self,

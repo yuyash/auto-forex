@@ -822,6 +822,12 @@ class EventHandler:
             planned_exit_price=planned_exit_price,
             planned_exit_price_formula=getattr(event, "planned_exit_price_formula", None),
         )
+        order_fill_price = getattr(order, "fill_price", None)
+        open_entry_price = (
+            order_fill_price
+            if isinstance(order_fill_price, Decimal)
+            else Decimal(str(position.entry_price))
+        )
 
         cycle_id = self._resolve_cycle_id_for_open(event)
 
@@ -833,14 +839,17 @@ class EventHandler:
 
         # Persist stop-loss price on the position
         if stop_loss_price is not None:
+            stop_loss_price = self._validated_stop_loss_price(
+                direction=direction,
+                entry_price=open_entry_price,
+                stop_loss_price=stop_loss_price,
+                event=event,
+            )
             position.stop_loss_price = stop_loss_price
             position.save(update_fields=["stop_loss_price"])
 
         self._mark_replay_records(position, order)
-        order_fill_price = getattr(order, "fill_price", None)
-        self._last_open_fill_price = (
-            order_fill_price if isinstance(order_fill_price, Decimal) else position.entry_price
-        )
+        self._last_open_fill_price = open_entry_price
 
         self._cache_position(event.layer_number, position)
         if event.entry_id is not None:
@@ -947,6 +956,40 @@ class EventHandler:
         if delta == 0:
             return Decimal(str(price))
         return Decimal(str(price)) + delta
+
+    def _validated_stop_loss_price(
+        self,
+        *,
+        direction: Direction,
+        entry_price: Decimal,
+        stop_loss_price: Decimal,
+        event: StrategyEvent,
+    ) -> Decimal:
+        if self._is_stop_loss_on_loss_side(
+            direction=direction,
+            entry_price=entry_price,
+            stop_loss_price=stop_loss_price,
+        ):
+            return stop_loss_price
+        event_type = self._event_type_key(event)
+        raise OrderServiceError(
+            "Invalid stop-loss price for open position: stop loss must be positive "
+            "and on the loss side of the entry price "
+            f"(event_type={event_type}, direction={direction.value})."
+        )
+
+    @staticmethod
+    def _is_stop_loss_on_loss_side(
+        *,
+        direction: Direction,
+        entry_price: Decimal,
+        stop_loss_price: Decimal,
+    ) -> bool:
+        if stop_loss_price <= 0:
+            return False
+        if direction == Direction.LONG:
+            return stop_loss_price < entry_price
+        return stop_loss_price > entry_price
 
     def _resolve_cycle_id_for_close(
         self,

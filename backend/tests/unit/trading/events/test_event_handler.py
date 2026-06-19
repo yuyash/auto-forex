@@ -26,6 +26,7 @@ from apps.trading.events.handler import (
     EventHandler,
 )
 from apps.trading.models import Position, Trade, TradingEvent
+from apps.trading.order import OrderServiceError
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -232,6 +233,33 @@ class TestHandleOpenPosition:
         assert call_kwargs["planned_exit_price"] == Decimal("144.870")
         assert position.stop_loss_price == Decimal("144.370")
         position.save.assert_called_with(update_fields=["stop_loss_price"])
+
+    def test_rejects_stop_loss_on_profit_side_after_fill_shift(self):
+        svc = _make_order_service()
+        position = _make_position(direction="short")
+        position.entry_price = Decimal("136.230")
+        position.save = MagicMock()
+        order = MagicMock(fill_price=Decimal("136.230"))
+        svc.open_position.return_value = (position, order)
+
+        handler = EventHandler(order_service=svc, instrument="USD_JPY")
+        handler._record_trade = MagicMock()
+
+        event = OpenPositionEvent(
+            event_type=EventType.OPEN_POSITION,
+            layer_number=2,
+            direction="short",
+            units=7000,
+            price=Decimal("136.230"),
+            planned_entry_price=Decimal("136.240"),
+            planned_exit_price=Decimal("135.994"),
+            stop_loss_price=Decimal("136.225"),
+        )
+
+        with pytest.raises(OrderServiceError, match="Invalid stop-loss price"):
+            handler.handle_open_position(event)
+
+        position.save.assert_not_called()
 
 
 class TestHandleClosePosition:

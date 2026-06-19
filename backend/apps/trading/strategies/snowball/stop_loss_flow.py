@@ -157,17 +157,24 @@ class StopLossAssigner:
 
         if strategy.config.rebuild_stop_loss_mode == "same":
             if pending.stop_loss_price is not None:
-                entry.stop_loss_price = pending.stop_loss_price
+                projected = self._same_mode_stop_loss(entry, pending)
+                if projected is not None:
+                    entry.stop_loss_price = projected
+                else:
+                    self._assign_fallback_configured(strategy, entry, pending)
             return
 
         if strategy.config.rebuild_stop_loss_mode == "same_pips":
-            if pending.stop_loss_price is None:
+            projected = SNOWBALL_PRICING.reproject_stop_loss(
+                direction=entry.direction,
+                entry_price=entry.entry_price,
+                source_entry_price=pending.entry_price,
+                source_stop_loss_price=pending.stop_loss_price,
+            )
+            if projected is None:
+                self._assign_fallback_configured(strategy, entry, pending)
                 return
-            if strategy.pip_size <= 0:
-                entry.stop_loss_price = pending.stop_loss_price
-                return
-            sl_pips = abs(pending.entry_price - pending.stop_loss_price) / strategy.pip_size
-            self.assign(strategy, entry, sl_pips)
+            entry.stop_loss_price = projected
             return
 
         values = strategy.config.rebuild_stop_loss_manual_pips
@@ -177,6 +184,65 @@ class StopLossAssigner:
         sl_pips = round_to_step(values[idx], strategy.config.round_step_pips)
         if sl_pips > 0:
             self.assign(strategy, entry, sl_pips)
+
+    def _same_mode_stop_loss(
+        self,
+        entry: Entry,
+        pending: StopLossClosedEntry,
+    ) -> Decimal | None:
+        stop_loss_price = pending.stop_loss_price
+        if SNOWBALL_PRICING.is_stop_loss_on_loss_side(
+            direction=entry.direction,
+            entry_price=entry.entry_price,
+            stop_loss_price=stop_loss_price,
+        ):
+            return stop_loss_price
+
+        projected = SNOWBALL_PRICING.reproject_stop_loss(
+            direction=entry.direction,
+            entry_price=entry.entry_price,
+            source_entry_price=pending.entry_price,
+            source_stop_loss_price=stop_loss_price,
+        )
+        if projected is not None and SNOWBALL_PRICING.is_stop_loss_on_loss_side(
+            direction=entry.direction,
+            entry_price=entry.entry_price,
+            stop_loss_price=projected,
+        ):
+            self.logger.warning(
+                "Rebuild SL reprojected to preserve loss-side placement: "
+                "L%d/R%d %s original_entry=%.5f copied_sl=%s rebuilt_entry=%.5f "
+                "projected_sl=%.5f",
+                pending.layer_number,
+                pending.retracement_count,
+                pending.direction.value.upper(),
+                pending.entry_price,
+                stop_loss_price,
+                entry.entry_price,
+                projected,
+            )
+            return projected
+
+        self.logger.warning(
+            "Rebuild SL could not reuse copied price; falling back to configured SL: "
+            "L%d/R%d %s original_entry=%.5f copied_sl=%s rebuilt_entry=%.5f",
+            pending.layer_number,
+            pending.retracement_count,
+            pending.direction.value.upper(),
+            pending.entry_price,
+            stop_loss_price,
+            entry.entry_price,
+        )
+        return None
+
+    def _assign_fallback_configured(
+        self,
+        strategy: StopLossFlowStrategy,
+        entry: Entry,
+        pending: StopLossClosedEntry,
+    ) -> None:
+        slot_number = max(pending.retracement_count + 1, 1)
+        self.assign_configured(strategy, entry, slot_number)
 
 
 class StopLossProtectionPolicy:
@@ -520,11 +586,10 @@ class StopLossRebuildPricePlanner:
         In ``stop_loss_exit`` mode the trigger is anchored on the previous
         stop-loss price level, NOT the actual fill price.  Anchoring on the
         fill price made every rebuild round drift the trigger by one
-        slippage step in the adverse direction, which combined with
-        ``rebuild_stop_loss_mode='same'`` placed the rebuilt SL on the
-        profit side of the new entry and produced spurious "stop-loss"
-        closes that booked profits.  Anchoring on the SL level keeps the
-        trigger stationary across rounds.
+        slippage step in the adverse direction.  Historically, that drift
+        could combine with ``rebuild_stop_loss_mode='same'`` and place the
+        rebuilt SL on the profit side of the new entry.  Anchoring on the SL
+        level keeps the trigger stationary across rounds.
         """
         if entry_price_mode == "stop_loss_exit":
             return pending.stop_loss_price or pending.stop_loss_exit_price or pending.entry_price
