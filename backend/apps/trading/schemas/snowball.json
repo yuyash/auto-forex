@@ -1336,7 +1336,7 @@
         "manual": "手動"
       },
       "enum_descriptions": {
-        "same": "Reuse the absolute stop-loss price that closed the previous position.",
+        "same": "Reuse the absolute stop-loss price when it remains on the loss side; otherwise preserve the prior distance from the rebuilt entry price.",
         "same_pips": "Reuse the stop-loss distance in pips from the stopped-out position, measured from the rebuilt entry price.",
         "manual": "Use per-slot absolute pip distances from the rebuilt entry price."
       },
