@@ -67,6 +67,11 @@ class TaskEventStreamView(APIView):
     @extend_schema(exclude=True)
     def get(self, request: Request, task_type: str, task_id: UUID) -> StreamingHttpResponse:
         task_type = self._normalize_task_type(task_type)
+        # Reconstruct the identifier through the UUID constructor so only a
+        # validated, canonical value (hex digits and hyphens) can ever reach
+        # the response body. This rejects any malformed input up front and
+        # breaks the taint flow from the URL into the SSE stream.
+        task_id = UUID(str(task_id))
         task_model = self._task_model(task_type)
         user_id = request.user.pk
         try:
