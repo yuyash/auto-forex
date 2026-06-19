@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.12.7](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.6...backend-v2.12.7) (2026-06-19)
+
+
+### Bug Fixes
+
+* **security:** patch cryptography/Django CVEs and harden error output - Bump cryptography to &gt;=48.0.1 (GHSA-537c-gmf6-5ccf) and Django to &gt;=5.2.14 to clear Dependabot alerts [#108](https://github.com/yuyash/auto-forex-web-service/issues/108), [#85](https://github.com/yuyash/auto-forex-web-service/issues/85), [#86](https://github.com/yuyash/auto-forex-web-service/issues/86), [#87](https://github.com/yuyash/auto-forex-web-service/issues/87). - stream.py: reconstruct task_id through the UUID constructor so only a validated canonical value can reach the SSE response body, resolving reflective XSS alert [#102](https://github.com/yuyash/auto-forex-web-service/issues/102). - query_params.py: stop echoing the raw regex exception text to clients; log it server-side and return a generic message, resolving stack-trace exposure alert [#105](https://github.com/yuyash/auto-forex-web-service/issues/105). ([a9968d8](https://github.com/yuyash/auto-forex-web-service/commit/a9968d87d11a9759cf647d46169002daffbd7d88))
+* **security:** patch cryptography/Django CVEs and harden error output ([#842](https://github.com/yuyash/auto-forex-web-service/issues/842)) ([a9968d8](https://github.com/yuyash/auto-forex-web-service/commit/a9968d87d11a9759cf647d46169002daffbd7d88))
+
 ## [2.12.6](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.5...backend-v2.12.6) (2026-06-19)
 
 
