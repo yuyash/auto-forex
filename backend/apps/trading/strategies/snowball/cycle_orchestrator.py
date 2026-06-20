@@ -305,6 +305,21 @@ class SnowballActiveCycleProcessor:
         )
         events.extend(cycle_tp_events)
 
+        if (
+            cycle_tp_events
+            and cycle.grid.is_empty()
+            and cycle.grid.has_pending_rebuilds()
+            and strategy.config.reseed_on_all_pending
+        ):
+            self.status_refresher.refresh(cycle)
+            trace.record(
+                phase="cycle",
+                outcome="skipped",
+                reason="pending_after_tp_waiting_for_reseed",
+                cycle=cycle,
+            )
+            return CycleProcessingResult(events=events, rebuild_count=rebuild_count)
+
         if strategy._close_order_violation:
             trace.record(
                 phase="close_order",
