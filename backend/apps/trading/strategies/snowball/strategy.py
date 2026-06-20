@@ -463,6 +463,26 @@ class SnowballStrategy(Strategy):
             ratio = Decimal("100")
         return self.config.warmup_scaled_base_units(ss.account_balance, ratio_pct=ratio)
 
+    def _tp_reentry_block_reason(
+        self,
+        ss: SnowballStrategyState,
+        cycle: SnowballCycle,
+    ) -> str:
+        """Return why TP re-entry must not create a replacement cycle."""
+        if cycle.grid.has_pending_rebuilds():
+            return "pending rebuilds remain"
+        if not cycle.grid.is_empty():
+            return "live entries remain"
+        has_same_direction_cycle = any(
+            other.cycle_id != cycle.cycle_id
+            and other.direction == cycle.direction
+            and not other.completed
+            for other in ss.iter_active_cycles()
+        )
+        if has_same_direction_cycle:
+            return "other active/pending cycle(s) exist"
+        return ""
+
     def _close_and_reenter(
         self,
         ss: SnowballStrategyState,
@@ -554,12 +574,9 @@ class SnowballStrategy(Strategy):
         # rebuilds will eventually restore positions and close them
         # normally, at which point the cycle will finally complete.
 
-        # Only create a new cycle if no other ACTIVE cycle exists for
-        # this direction.  When multiple cycles coexist (e.g. after SL
-        # rebuild reactivation), each TP close used to spawn a new
-        # cycle, causing exponential proliferation.  The re-seed logic
-        # at the end of on_tick will create exactly one new cycle when
-        # the direction has zero active/pending cycles.
+        # Only create a replacement when this close genuinely exhausted the
+        # direction.  Pending-rebuild cycles are still live recovery state:
+        # ``reseed_on_all_pending`` owns whether they may spawn a fresh cycle.
         if not allow_reentry:
             logger.info(
                 "TP (%s) cycle %d — skipping re-entry while new opens are blocked",
@@ -568,24 +585,23 @@ class SnowballStrategy(Strategy):
             )
             return events
 
-        has_other_active = any(
-            c.is_active and c.cycle_id != cycle.cycle_id and c.direction == direction
-            for c in ss.iter_active_cycles()
-        )
-        if not has_other_active:
-            new_events, _new_cycle = self._create_cycle(ss, tick, direction)
+        block_reason = self._tp_reentry_block_reason(ss, cycle)
+        if block_reason:
             logger.info(
-                "Re-entry (%s) after TP: new cycle_id=%d",
-                direction.value.upper(),
-                _new_cycle.cycle_id,
-            )
-            events.extend(new_events)
-        else:
-            logger.info(
-                "TP (%s) cycle %d — skipping re-entry, other active cycle(s) exist",
+                "TP (%s) cycle %d — skipping re-entry, %s",
                 direction.value.upper(),
                 cycle.cycle_id,
+                block_reason,
             )
+            return events
+
+        new_events, _new_cycle = self._create_cycle(ss, tick, direction)
+        logger.info(
+            "Re-entry (%s) after TP: new cycle_id=%d",
+            direction.value.upper(),
+            _new_cycle.cycle_id,
+        )
+        events.extend(new_events)
 
         return events
 

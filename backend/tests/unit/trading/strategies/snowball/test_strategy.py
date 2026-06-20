@@ -13,9 +13,13 @@ import pytest
 from apps.trading.dataclasses.tick import Tick
 from apps.trading.enums import Direction, EventType, StrategyType
 from apps.trading.strategies.snowball.config import SnowballStrategyConfig
-from apps.trading.strategies.snowball.cycle_orchestrator import SnowballCycleReseeder
+from apps.trading.strategies.snowball.cycle_orchestrator import (
+    SnowballActiveCycleProcessor,
+    SnowballCycleReseeder,
+)
 from apps.trading.strategies.snowball.cycle_state import SnowballCycle, SnowballStrategyState
 from apps.trading.strategies.snowball.entries import Entry, StopLossClosedEntry
+from apps.trading.strategies.snowball.enums import CycleStatus
 from apps.trading.strategies.snowball.grid_models import Layer, Slot
 from apps.trading.strategies.snowball.pricing import SNOWBALL_PRICING
 from apps.trading.strategies.snowball.reconciliation import SNOWBALL_RECONCILER
@@ -443,6 +447,161 @@ class TestSnowballOnTickInit:
 
 
 class TestSnowballCycleTp:
+    def _cycle_with_pending_head_and_live_counter(
+        self,
+        *,
+        pending_head_price: Decimal = Decimal("150.00"),
+        counter_close_price: Decimal = Decimal("149.80"),
+    ) -> tuple[SnowballStrategyState, SnowballCycle, Layer]:
+        state = SnowballStrategyState()
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        layer = Layer.create(1, 3, 1000, 2)
+        layer.slot_at(0).pending_rebuild = StopLossClosedEntry(
+            entry_price=pending_head_price,
+            close_price=pending_head_price + Decimal("0.50"),
+            units=1000,
+            direction=Direction.LONG,
+            role="initial",
+            layer_number=1,
+            retracement_count=0,
+            step=1,
+            root_entry_id=1,
+            cycle_id=1,
+            stop_loss_price=pending_head_price - Decimal("0.30"),
+        )
+        layer.slot_at(1).fill(
+            Entry(
+                entry_id=2,
+                step=2,
+                direction=Direction.LONG,
+                entry_price=Decimal("149.70"),
+                close_price=counter_close_price,
+                units=2000,
+                opened_at=datetime(2026, 1, 1, tzinfo=UTC),
+                role="counter",
+                layer_number=1,
+                retracement_count=1,
+                root_entry_id=1,
+                parent_entry_id=1,
+            )
+        )
+        cycle.add_layer(layer)
+        state.cycles.append(cycle)
+        return state, cycle, layer
+
+    def test_head_tp_does_not_reenter_when_pending_rebuilds_remain(self):
+        strategy = _strategy(
+            {
+                "m_pips": "15",
+                "stop_loss_enabled": True,
+                "rebuild_enabled": True,
+                "reseed_on_all_pending": False,
+            }
+        )
+        state, cycle, layer = self._cycle_with_pending_head_and_live_counter()
+
+        events = strategy._process_cycle_tp(
+            state,
+            _make_tick(datetime(2026, 1, 1, tzinfo=UTC) + timedelta(seconds=1), "149.80", "149.82"),
+            cycle,
+        )
+
+        assert [event.event_type for event in events] == [EventType.CLOSE_POSITION]
+        assert len(state.cycles) == 1
+        assert layer.slot_at(0).pending_rebuild is not None
+        assert layer.slot_at(1).entry is None
+
+    def test_head_tp_does_not_reenter_when_same_direction_cycle_is_pending(self):
+        strategy = _strategy({"m_pips": "15"})
+        state = SnowballStrategyState()
+
+        pending_cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        pending_cycle.status = CycleStatus.PENDING
+        pending_layer = Layer.create(1, 3, 1000, 2)
+        pending_layer.slot_at(0).pending_rebuild = StopLossClosedEntry(
+            entry_price=Decimal("150.00"),
+            close_price=Decimal("150.50"),
+            units=1000,
+            direction=Direction.LONG,
+            role="initial",
+            layer_number=1,
+            retracement_count=0,
+            step=1,
+            root_entry_id=1,
+            cycle_id=1,
+        )
+        pending_cycle.add_layer(pending_layer)
+        state.cycles.append(pending_cycle)
+
+        closing_cycle = SnowballCycle(cycle_id=2, direction=Direction.LONG)
+        closing_layer = Layer.create(1, 3, 1000, 2)
+        closing_layer.slot_at(0).fill(
+            Entry(
+                entry_id=2,
+                step=1,
+                direction=Direction.LONG,
+                entry_price=Decimal("149.50"),
+                close_price=Decimal("149.65"),
+                units=1000,
+                opened_at=datetime(2026, 1, 1, tzinfo=UTC),
+                role="initial",
+                layer_number=1,
+                retracement_count=0,
+                root_entry_id=2,
+            )
+        )
+        closing_cycle.add_layer(closing_layer)
+        state.cycles.append(closing_cycle)
+
+        events = strategy._process_cycle_tp(
+            state,
+            _make_tick(datetime(2026, 1, 1, tzinfo=UTC) + timedelta(seconds=1), "149.65", "149.67"),
+            closing_cycle,
+        )
+
+        assert [event.event_type for event in events] == [EventType.CLOSE_POSITION]
+        assert len(state.cycles) == 2
+
+    def test_reseed_enabled_waits_for_reseeder_after_tp_creates_pending_cycle(self):
+        strategy = _strategy(
+            {
+                "m_pips": "15",
+                "stop_loss_enabled": True,
+                "rebuild_enabled": True,
+                "reseed_on_all_pending": True,
+                "n_pips_head": "30",
+                "interval_mode": "constant",
+            }
+        )
+        strategy._hedging_enabled = False
+        state, cycle, layer = self._cycle_with_pending_head_and_live_counter(
+            pending_head_price=Decimal("150.50"),
+            counter_close_price=Decimal("149.82"),
+        )
+
+        result = SnowballActiveCycleProcessor().process(
+            strategy,
+            state,
+            _make_tick(datetime(2026, 1, 1, tzinfo=UTC) + timedelta(seconds=1), "149.82", "149.84"),
+            allow_new_positions=True,
+            allow_rebuilds=True,
+        )
+
+        assert [event.event_type for event in result.events] == [EventType.CLOSE_POSITION]
+        assert cycle.is_pending
+        assert layer.slot_at(0).pending_rebuild is not None
+        assert layer.slot_at(1).entry is None
+
+        reseed_events = SnowballCycleReseeder().reseed(
+            strategy,
+            state,
+            _make_tick(datetime(2026, 1, 1, tzinfo=UTC) + timedelta(seconds=2), "149.82", "149.84"),
+            allow_new_positions=True,
+        )
+
+        assert [event.event_type for event in reseed_events] == [EventType.OPEN_POSITION]
+        assert len(state.cycles) == 2
+
     def test_rebuilt_r0_waits_for_adjusted_close_price(self):
         strategy = _strategy({"m_pips": "15"})
         state = SnowballStrategyState()
