@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.8](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.7...backend-v2.12.8) (2026-06-20)
+
+
+### Bug Fixes
+
+* **snowball:** block TP reentry while cycles are pending ([#844](https://github.com/yuyash/auto-forex-web-service/issues/844)) ([86e5703](https://github.com/yuyash/auto-forex-web-service/commit/86e5703095703337ec8ebd9ada6a2fd4ced368db))
+
 ## [2.12.7](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.6...backend-v2.12.7) (2026-06-19)
 
 
