@@ -24,7 +24,7 @@ from apps.trading.strategies.snowball.grid_policy import SNOWBALL_GRID_POLICY, S
 from apps.trading.strategies.snowball.cycle_state import SnowballCycle, SnowballStrategyState
 from apps.trading.strategies.snowball.entries import Entry, StopLossClosedEntry
 from apps.trading.strategies.snowball.grid_models import Layer, Slot
-from apps.trading.strategies.snowball.pricing import SNOWBALL_PRICING
+from apps.trading.strategies.snowball.pricing import SNOWBALL_PRICING, PlannedExitPriceBound
 
 logger = getLogger(__name__)
 
@@ -54,6 +54,8 @@ class StopLossRebuildPlan:
 
     trigger_price: Decimal
     close_price: Decimal
+    planned_exit_price_bound: Decimal | None = None
+    planned_exit_price_bound_mode: str = ""
 
 
 class StopLossAssigner:
@@ -485,7 +487,7 @@ class StopLossRebuildPricePlanner:
         if not self.trigger_hit(pending, tick, trigger_price):
             return None
 
-        close_price = self.take_profit_price(
+        close_price, planned_exit_bound = self.take_profit_price(
             strategy=strategy,
             cycle=cycle,
             layer=layer,
@@ -496,6 +498,12 @@ class StopLossRebuildPricePlanner:
         return StopLossRebuildPlan(
             trigger_price=trigger_price,
             close_price=close_price,
+            planned_exit_price_bound=planned_exit_bound.price
+            if planned_exit_bound is not None
+            else None,
+            planned_exit_price_bound_mode=planned_exit_bound.mode
+            if planned_exit_bound is not None
+            else "",
         )
 
     def rebuild_trigger_price(
@@ -658,17 +666,23 @@ class StopLossRebuildPricePlanner:
         slot: Slot,
         pending: StopLossClosedEntry,
         trigger_price: Decimal,
-    ) -> Decimal:
-        """Return adjusted and clamped rebuild take-profit price."""
+    ) -> tuple[Decimal, PlannedExitPriceBound | None]:
+        """Return adjusted and clamped rebuild take-profit price with hard bound."""
         close_price = SNOWBALL_PRICING.rebuild_take_profit_price(
             pending=pending,
             entry_price=trigger_price,
             pip_size=strategy.pip_size,
             config=strategy.config,
         )
-        close_price = self.clamp_take_profit(cycle, layer, slot, pending, close_price)
+        close_price, planned_exit_bound = self.clamp_take_profit(
+            cycle,
+            layer,
+            slot,
+            pending,
+            close_price,
+        )
         self.propagate_take_profit(cycle, layer, slot, pending, close_price)
-        return close_price
+        return close_price, planned_exit_bound
 
     def clamp_take_profit(
         self,
@@ -677,16 +691,20 @@ class StopLossRebuildPricePlanner:
         slot: Slot,
         pending: StopLossClosedEntry,
         adjusted_close_price: Decimal,
-    ) -> Decimal:
+    ) -> tuple[Decimal, PlannedExitPriceBound | None]:
         """Clamp rebuild TP against preceding occupied or pending slots."""
         hard_bound, _soft_bound = self.grid_policy.tp_bounds(cycle, layer, slot.index)
         if hard_bound is None:
-            return adjusted_close_price
+            return adjusted_close_price, None
+        bound = PlannedExitPriceBound(
+            mode="min" if pending.direction == Direction.LONG else "max",
+            price=hard_bound,
+        )
         if pending.direction == Direction.LONG and adjusted_close_price > hard_bound:
-            return self._clamped_take_profit(pending, adjusted_close_price, hard_bound)
+            return self._clamped_take_profit(pending, adjusted_close_price, hard_bound), bound
         if pending.direction == Direction.SHORT and adjusted_close_price < hard_bound:
-            return self._clamped_take_profit(pending, adjusted_close_price, hard_bound)
-        return adjusted_close_price
+            return self._clamped_take_profit(pending, adjusted_close_price, hard_bound), bound
+        return adjusted_close_price, bound
 
     def propagate_take_profit(
         self,
@@ -812,6 +830,8 @@ class StopLossRebuildEntryFactory:
             timestamp=tick.timestamp,
             execution_price=self._entry_side_price(entry.direction, tick),
             original_position_id=pending.position_id,
+            planned_exit_price_bound=plan.planned_exit_price_bound,
+            planned_exit_price_bound_mode=plan.planned_exit_price_bound_mode,
             description=(
                 f"Stop-loss rebuild ({pending.direction.value.upper()}) | "
                 f"L{pending.layer_number}/R{pending.retracement_count}, "

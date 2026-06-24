@@ -109,31 +109,39 @@ class TestSnowballLayerInitialPricing:
         return layer
 
     def test_long_layer_initial_uses_fixed_tp_when_previous_tp_is_farther(self):
-        close_price, formula = SNOWBALL_PRICING.layer_initial_close_price(
+        plan = SNOWBALL_PRICING.layer_initial_close_price(
             new_price=Decimal("141.299"),
             prev_layer=self._previous_layer(pending=True),
             direction=Direction.LONG,
             pip_size=Decimal("0.01"),
             m_pips=Decimal("15"),
         )
+        close_price, formula = plan
 
         assert close_price == Decimal("141.449")
         assert formula == "141.299 + 15 * 0.01"
+        assert plan.bound is not None
+        assert plan.bound.mode == "min"
+        assert plan.bound.price == Decimal("157.8686666667")
 
     def test_long_layer_initial_clamps_to_previous_tp_when_fixed_tp_crosses_it(self):
-        close_price, formula = SNOWBALL_PRICING.layer_initial_close_price(
+        plan = SNOWBALL_PRICING.layer_initial_close_price(
             new_price=Decimal("157.800"),
             prev_layer=self._previous_layer(close_price=Decimal("157.8686666667")),
             direction=Direction.LONG,
             pip_size=Decimal("0.01"),
             m_pips=Decimal("15"),
         )
+        close_price, formula = plan
 
         assert close_price == Decimal("157.8686666667")
         assert formula == "min(157.800 + 15 * 0.01, 157.86867)"
+        assert plan.bound is not None
+        assert plan.bound.mode == "min"
+        assert plan.bound.price == Decimal("157.8686666667")
 
     def test_short_layer_initial_uses_fixed_tp_when_previous_tp_is_farther(self):
-        close_price, formula = SNOWBALL_PRICING.layer_initial_close_price(
+        plan = SNOWBALL_PRICING.layer_initial_close_price(
             new_price=Decimal("157.800"),
             prev_layer=self._previous_layer(
                 direction=Direction.SHORT,
@@ -144,12 +152,16 @@ class TestSnowballLayerInitialPricing:
             pip_size=Decimal("0.01"),
             m_pips=Decimal("15"),
         )
+        close_price, formula = plan
 
         assert close_price == Decimal("157.650")
         assert formula == "157.800 - 15 * 0.01"
+        assert plan.bound is not None
+        assert plan.bound.mode == "max"
+        assert plan.bound.price == Decimal("142.280")
 
     def test_short_layer_initial_clamps_to_previous_tp_when_fixed_tp_crosses_it(self):
-        close_price, formula = SNOWBALL_PRICING.layer_initial_close_price(
+        plan = SNOWBALL_PRICING.layer_initial_close_price(
             new_price=Decimal("157.800"),
             prev_layer=self._previous_layer(
                 direction=Direction.SHORT,
@@ -159,9 +171,13 @@ class TestSnowballLayerInitialPricing:
             pip_size=Decimal("0.01"),
             m_pips=Decimal("15"),
         )
+        close_price, formula = plan
 
         assert close_price == Decimal("157.700")
         assert formula == "max(157.800 - 15 * 0.01, 157.70000)"
+        assert plan.bound is not None
+        assert plan.bound.mode == "max"
+        assert plan.bound.price == Decimal("157.700")
 
 
 # ===================================================================
@@ -1932,6 +1948,58 @@ class TestSnowballRebuildTakeProfitModes:
 
 
 class TestSnowballPricingHelpers:
+    def test_sync_entry_fill_price_reapplies_long_layer_initial_bound_after_fill(self):
+        entry = Entry(
+            entry_id=1,
+            step=1,
+            direction=Direction.LONG,
+            entry_price=Decimal("161.003"),
+            close_price=Decimal("161.1598888889"),
+            units=1000,
+            opened_at=datetime(2026, 1, 1, tzinfo=UTC),
+            role="layer_initial",
+            layer_number=2,
+            retracement_count=0,
+        )
+
+        SNOWBALL_PRICING.sync_entry_fill_price(
+            entry=entry,
+            layer=None,
+            fill_price=Decimal("161.053"),
+            counter_tp_mode="weighted_avg",
+            planned_exit_price_bound=Decimal("161.1598888889"),
+            planned_exit_price_bound_mode="min",
+        )
+
+        assert entry.entry_price == Decimal("161.053")
+        assert entry.close_price == Decimal("161.1598888889")
+
+    def test_sync_entry_fill_price_reapplies_short_layer_initial_bound_after_fill(self):
+        entry = Entry(
+            entry_id=1,
+            step=1,
+            direction=Direction.SHORT,
+            entry_price=Decimal("147.257"),
+            close_price=Decimal("147.08269"),
+            units=1000,
+            opened_at=datetime(2026, 1, 1, tzinfo=UTC),
+            role="layer_initial",
+            layer_number=2,
+            retracement_count=0,
+        )
+
+        SNOWBALL_PRICING.sync_entry_fill_price(
+            entry=entry,
+            layer=None,
+            fill_price=Decimal("147.207"),
+            counter_tp_mode="weighted_avg",
+            planned_exit_price_bound=Decimal("147.08269"),
+            planned_exit_price_bound_mode="max",
+        )
+
+        assert entry.entry_price == Decimal("147.207")
+        assert entry.close_price == Decimal("147.08269")
+
     def test_sync_entry_fill_price_repairs_invalid_stop_loss_side(self):
         entry = Entry(
             entry_id=1,

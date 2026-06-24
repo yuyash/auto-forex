@@ -175,6 +175,8 @@ class TestHandleOpenPosition:
             direction="long",
             units=1000,
             entry_id=7,
+            planned_exit_price_bound=Decimal("1.10500"),
+            planned_exit_price_bound_mode="min",
         )
 
         result = handler._dispatch_open_position(event)
@@ -184,6 +186,8 @@ class TestHandleOpenPosition:
         assert result.entry_binding.entry_id == 7
         assert result.entry_binding.position_id == str(position.id)
         assert result.entry_binding.fill_price == position.entry_price
+        assert result.entry_binding.planned_exit_price_bound == Decimal("1.10500")
+        assert result.entry_binding.planned_exit_price_bound_mode == "min"
 
     def test_passes_retracement_count(self):
         svc = _make_order_service()
@@ -233,6 +237,54 @@ class TestHandleOpenPosition:
         assert call_kwargs["planned_exit_price"] == Decimal("144.870")
         assert position.stop_loss_price == Decimal("144.370")
         position.save.assert_called_with(update_fields=["stop_loss_price"])
+
+    def test_clamps_bounded_planned_exit_after_fill_shift(self):
+        svc = _make_order_service()
+        position = _make_position()
+        position.entry_price = Decimal("161.053")
+        order = MagicMock(fill_price=Decimal("161.053"))
+        svc.open_position.return_value = (position, order)
+
+        handler = EventHandler(order_service=svc, instrument="USD_JPY")
+        handler._record_trade = MagicMock()
+
+        event = OpenPositionEvent(
+            event_type=EventType.OPEN_POSITION,
+            layer_number=2,
+            direction="long",
+            units=1000,
+            price=Decimal("161.053"),
+            planned_entry_price=Decimal("161.003"),
+            planned_exit_price=Decimal("161.1598888889"),
+            planned_exit_price_bound=Decimal("161.1598888889"),
+            planned_exit_price_bound_mode="min",
+        )
+
+        handler.handle_open_position(event)
+
+        call_kwargs = svc.open_position.call_args.kwargs
+        assert call_kwargs["planned_exit_price"] == Decimal("161.1598888889")
+
+    def test_rejects_bounded_planned_exit_on_loss_side_after_fill_shift(self):
+        svc = _make_order_service()
+        handler = EventHandler(order_service=svc, instrument="USD_JPY")
+
+        event = OpenPositionEvent(
+            event_type=EventType.OPEN_POSITION,
+            layer_number=2,
+            direction="long",
+            units=1000,
+            price=Decimal("161.200"),
+            planned_entry_price=Decimal("161.003"),
+            planned_exit_price=Decimal("161.1598888889"),
+            planned_exit_price_bound=Decimal("161.1598888889"),
+            planned_exit_price_bound_mode="min",
+        )
+
+        with pytest.raises(OrderServiceError, match="Invalid bounded planned-exit price"):
+            handler.handle_open_position(event)
+
+        svc.open_position.assert_not_called()
 
     def test_rejects_stop_loss_on_profit_side_after_fill_shift(self):
         svc = _make_order_service()

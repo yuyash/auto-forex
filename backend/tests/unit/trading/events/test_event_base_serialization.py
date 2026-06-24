@@ -10,6 +10,8 @@ from apps.trading.events.base import (
     AddLayerEvent,
     InitialEntryEvent,
     MarginProtectionEvent,
+    OpenPositionEvent,
+    RebuildPositionEvent,
     RemoveLayerEvent,
     RetracementEvent,
     StrategyEvent,
@@ -135,6 +137,63 @@ class TestInitialEntryEventSerialization:
         event = InitialEntryEvent.from_dict(d)
         assert event.timestamp == NOW
         assert event.entry_time == NOW
+
+
+# ---------------------------------------------------------------------------
+# OpenPositionEvent / RebuildPositionEvent
+# ---------------------------------------------------------------------------
+
+
+class TestOpenPositionEventSerialization:
+    def test_roundtrip_preserves_planned_exit_bound(self):
+        original = OpenPositionEvent(
+            event_type=EventType.OPEN_POSITION,
+            timestamp=NOW,
+            layer_number=2,
+            direction="long",
+            price=Decimal("161.053"),
+            planned_entry_price=Decimal("161.003"),
+            units=1000,
+            entry_id=9,
+            planned_exit_price=Decimal("161.1598888889"),
+            planned_exit_price_formula="min(161.003 + 20 * 0.01, 161.15989)",
+            planned_exit_price_bound=Decimal("161.1598888889"),
+            planned_exit_price_bound_mode="min",
+        )
+
+        restored = OpenPositionEvent.from_dict(original.to_dict())
+
+        assert restored.planned_exit_price == Decimal("161.1598888889")
+        assert restored.planned_exit_price_formula == "min(161.003 + 20 * 0.01, 161.15989)"
+        assert restored.planned_exit_price_bound == Decimal("161.1598888889")
+        assert restored.planned_exit_price_bound_mode == "min"
+
+
+class TestRebuildPositionEventSerialization:
+    def test_roundtrip_preserves_planned_exit_bound(self):
+        original = RebuildPositionEvent(
+            event_type=EventType.REBUILD_POSITION,
+            timestamp=NOW,
+            layer_number=2,
+            direction="short",
+            price=Decimal("147.207"),
+            planned_entry_price=Decimal("147.257"),
+            units=1000,
+            entry_id=9,
+            planned_exit_price=Decimal("147.08269"),
+            planned_exit_price_formula="max(147.257 - 20 * 0.01, 147.08269)",
+            planned_exit_price_bound=Decimal("147.08269"),
+            planned_exit_price_bound_mode="max",
+            original_position_id="original-position",
+        )
+
+        restored = RebuildPositionEvent.from_dict(original.to_dict())
+
+        assert restored.planned_exit_price == Decimal("147.08269")
+        assert restored.planned_exit_price_formula == "max(147.257 - 20 * 0.01, 147.08269)"
+        assert restored.planned_exit_price_bound == Decimal("147.08269")
+        assert restored.planned_exit_price_bound_mode == "max"
+        assert restored.original_position_id == "original-position"
 
 
 # ---------------------------------------------------------------------------

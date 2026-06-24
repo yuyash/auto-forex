@@ -21,6 +21,7 @@ from apps.trading.events import (
     ClosePositionEvent,
     GenericStrategyEvent,
     OpenPositionEvent,
+    RebuildPositionEvent,
 )
 from apps.trading.strategies.snowball import strategy as snowball_strategy_module
 from apps.trading.strategies.snowball.config import SnowballStrategyConfig
@@ -1026,6 +1027,198 @@ class TestCounterAdds:
         # TP = anchor + m_pips = 99.840 + 0.50 = 100.340
         assert open_event.planned_exit_price == Decimal("100.340")
 
+    def test_layer_initial_preserves_previous_tp_bound_after_fill_sync_long(self):
+        s = _strategy(
+            counter_tp_mode="weighted_avg",
+            interval_mode="manual",
+            manual_intervals=["5", "5", "5", "5", "5", "5", "5", "5"],
+            n_pips_head="5",
+            n_pips_tail="5",
+            f_max=3,
+            r_max=7,
+            refill_up_to=2,
+            pip_size="0.01",
+            m_pips="20",
+        )
+        ss = SnowballStrategyState(
+            initialised=True,
+            account_nav=Decimal("100000"),
+            next_entry_id=9,
+        )
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        layer1 = Layer.create(1, 7, 100, 2)
+        entries = [
+            ("161.809", "162.009", "initial"),
+            ("161.584", "161.659", "counter"),
+            ("161.343", "161.501", "counter"),
+            ("161.343", "161.4378", "counter"),
+            ("161.053", "161.3095333333", "counter"),
+            ("161.053", "161.2362380952", "counter"),
+            ("161.053", "161.1904285714", "counter"),
+            ("161.053", "161.1598888889", "counter"),
+        ]
+        for index, (entry_price, close_price, role) in enumerate(entries):
+            layer1.slot_at(index).fill(
+                Entry(
+                    entry_id=index + 1,
+                    step=index + 1,
+                    direction=Direction.LONG,
+                    entry_price=Decimal(entry_price),
+                    close_price=Decimal(close_price),
+                    units=100 * (index + 1),
+                    opened_at=T0 - timedelta(minutes=60 - index),
+                    role=role,
+                    layer_number=1,
+                    retracement_count=index,
+                    root_entry_id=1,
+                    parent_entry_id=1 if index > 0 else None,
+                )
+            )
+        cycle.add_layer(layer1)
+        ss.cycles.append(cycle)
+
+        tick = _tick(T0 + timedelta(minutes=1), "161.048", "161.053")
+        events = s._open_layer_initial(ss, tick, cycle)
+
+        assert len(events) == 1
+        open_event = events[0]
+        assert isinstance(open_event, OpenPositionEvent)
+        assert open_event.layer_number == 2
+        assert open_event.retracement_count == 0
+        assert open_event.planned_entry_price == Decimal("161.003")
+        assert open_event.price == Decimal("161.053")
+        assert open_event.planned_exit_price == Decimal("161.1598888889")
+        assert open_event.planned_exit_price_formula == "min(161.003 + 20.0 * 0.01, 161.15989)"
+        assert open_event.planned_exit_price_bound == Decimal("161.1598888889")
+        assert open_event.planned_exit_price_bound_mode == "min"
+
+        state = DummyState(strategy_state=ss.to_dict())
+        s.apply_event_execution_result(
+            state=state,
+            execution_result=EventExecutionResult(
+                entry_binding=EntryExecutionBinding(
+                    entry_id=open_event.entry_id,
+                    position_id="6adf8955-1836-4db1-aac9-ea3fbd8a67cb",
+                    fill_price=open_event.price,
+                    planned_exit_price_bound=open_event.planned_exit_price_bound,
+                    planned_exit_price_bound_mode=open_event.planned_exit_price_bound_mode,
+                )
+            ),
+        )
+
+        updated = SnowballStrategyState.from_strategy_state(state.strategy_state)
+        previous_tp = updated.cycles[0].grid.layers[0].slot_at(7).entry.close_price
+        layer_initial = updated.cycles[0].grid.layers[1].slot_at(0).entry
+        assert layer_initial is not None
+        assert layer_initial.entry_price == Decimal("161.053")
+        assert layer_initial.close_price == Decimal("161.1598888889")
+        assert layer_initial.close_price <= previous_tp
+
+    def test_layer_initial_rebuild_preserves_previous_tp_bound_after_fill_sync_long(self):
+        s = _strategy(
+            counter_tp_mode="weighted_avg",
+            interval_mode="manual",
+            manual_intervals=["5", "5", "5", "5", "5", "5", "5", "5"],
+            n_pips_head="5",
+            n_pips_tail="5",
+            f_max=3,
+            r_max=7,
+            refill_up_to=2,
+            pip_size="0.01",
+            m_pips="20",
+            stop_loss_enabled=True,
+            rebuild_enabled=True,
+            rebuild_take_profit_mode="same",
+        )
+        ss = SnowballStrategyState(
+            initialised=True,
+            account_nav=Decimal("100000"),
+            next_entry_id=9,
+        )
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        layer1 = Layer.create(1, 7, 100, 2)
+        entries = [
+            ("161.809", "162.009", "initial"),
+            ("161.584", "161.659", "counter"),
+            ("161.343", "161.501", "counter"),
+            ("161.343", "161.4378", "counter"),
+            ("161.053", "161.3095333333", "counter"),
+            ("161.053", "161.2362380952", "counter"),
+            ("161.053", "161.1904285714", "counter"),
+            ("161.053", "161.1598888889", "counter"),
+        ]
+        for index, (entry_price, close_price, role) in enumerate(entries):
+            layer1.slot_at(index).fill(
+                Entry(
+                    entry_id=index + 1,
+                    step=index + 1,
+                    direction=Direction.LONG,
+                    entry_price=Decimal(entry_price),
+                    close_price=Decimal(close_price),
+                    units=100 * (index + 1),
+                    opened_at=T0 - timedelta(minutes=60 - index),
+                    role=role,
+                    layer_number=1,
+                    retracement_count=index,
+                    root_entry_id=1,
+                    parent_entry_id=1 if index > 0 else None,
+                )
+            )
+        layer2 = Layer.create(2, 7, 100, 2)
+        layer2.slot_at(0).pending_rebuild = StopLossClosedEntry(
+            entry_price=Decimal("161.003"),
+            close_price=Decimal("161.1598888889"),
+            units=100,
+            direction=Direction.LONG,
+            role="layer_initial",
+            layer_number=2,
+            retracement_count=0,
+            step=1,
+            root_entry_id=1,
+            parent_entry_id=1,
+            cycle_id=1,
+            closed_at=T0 - timedelta(seconds=1),
+        )
+        cycle.add_layer(layer1)
+        cycle.add_layer(layer2)
+        ss.cycles.append(cycle)
+
+        tick = _tick(T0 + timedelta(minutes=1), "161.048", "161.053")
+        events = s._process_stop_loss_rebuilds(ss, tick, cycle)
+
+        assert len(events) == 1
+        rebuild_event = events[0]
+        assert isinstance(rebuild_event, RebuildPositionEvent)
+        assert rebuild_event.layer_number == 2
+        assert rebuild_event.retracement_count == 0
+        assert rebuild_event.planned_entry_price == Decimal("161.003")
+        assert rebuild_event.price == Decimal("161.053")
+        assert rebuild_event.planned_exit_price == Decimal("161.1598888889")
+        assert rebuild_event.planned_exit_price_bound == Decimal("161.1598888889")
+        assert rebuild_event.planned_exit_price_bound_mode == "min"
+
+        state = DummyState(strategy_state=ss.to_dict())
+        s.apply_event_execution_result(
+            state=state,
+            execution_result=EventExecutionResult(
+                entry_binding=EntryExecutionBinding(
+                    entry_id=rebuild_event.entry_id,
+                    position_id="0a6c2720-5cb1-4a90-a0c8-5f7b09e4b20d",
+                    fill_price=rebuild_event.price,
+                    planned_exit_price_bound=rebuild_event.planned_exit_price_bound,
+                    planned_exit_price_bound_mode=rebuild_event.planned_exit_price_bound_mode,
+                )
+            ),
+        )
+
+        updated = SnowballStrategyState.from_strategy_state(state.strategy_state)
+        previous_tp = updated.cycles[0].grid.layers[0].slot_at(7).entry.close_price
+        rebuilt = updated.cycles[0].grid.layers[1].slot_at(0).entry
+        assert rebuilt is not None
+        assert rebuilt.entry_price == Decimal("161.053")
+        assert rebuilt.close_price == Decimal("161.1598888889")
+        assert rebuilt.close_price <= previous_tp
+
     def test_layer_initial_snap_uses_pending_rebuild_anchor(self):
         """If the prev layer's highest slot is pending rebuild (no live entry),
         the snap must still anchor off its stored entry price rather than the
@@ -1597,6 +1790,53 @@ class TestEmergencyStop:
 
 
 class TestGridOrderingValidation:
+    def test_repairs_legacy_layer_initial_tp_bound_violation_before_validation(self):
+        s = _strategy(counter_tp_mode="weighted_avg")
+        cycle = SnowballCycle(cycle_id=4672, direction=Direction.LONG)
+        layer1 = Layer.create(1, 7, 1000, 3)
+        layer1.slot_at(7).fill(
+            Entry(
+                entry_id=8,
+                step=8,
+                direction=Direction.LONG,
+                entry_price=Decimal("161.053"),
+                close_price=Decimal("161.1598888889"),
+                units=800,
+                opened_at=T0,
+                role="counter",
+                layer_number=1,
+                retracement_count=7,
+                root_entry_id=1,
+                parent_entry_id=1,
+            )
+        )
+        layer2 = Layer.create(2, 7, 1000, 3)
+        layer2.slot_at(0).fill(
+            Entry(
+                entry_id=9,
+                step=1,
+                direction=Direction.LONG,
+                entry_price=Decimal("161.053"),
+                close_price=Decimal("161.2098888889"),
+                units=1000,
+                opened_at=T0,
+                role="layer_initial",
+                layer_number=2,
+                retracement_count=0,
+                root_entry_id=1,
+                parent_entry_id=1,
+            )
+        )
+        cycle.add_layer(layer1)
+        cycle.add_layer(layer2)
+
+        s._validate_grid_ordering(cycle)
+
+        repaired = layer2.slot_at(0).entry
+        assert repaired is not None
+        assert repaired.close_price == Decimal("161.1598888889")
+        assert s._grid_order_violation is None
+
     def test_long_cycle_does_not_fail_when_entry_prices_are_not_descending(self):
         s = _strategy(counter_tp_mode="fixed", counter_tp_pips="25")
         s.configure_runtime(account_currency="JPY", hedging_enabled=False)

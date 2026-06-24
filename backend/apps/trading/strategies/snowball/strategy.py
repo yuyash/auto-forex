@@ -638,6 +638,13 @@ class SnowballStrategy(Strategy):
             and self.config.rebuild_enabled
             and self.config.rebuild_take_profit_mode == "manual"
         )
+        if not manual_rebuild_take_profit_active:
+            repaired = self._repair_layer_initial_take_profit_bounds(cycle)
+            if repaired:
+                logger.info(
+                    "Repaired %d layer-initial take-profit bound(s) before grid validation",
+                    repaired,
+                )
         self._grid_order_violation = self.grid_policy.validate_ordering(
             cycle,
             check_take_profit=not manual_rebuild_take_profit_active,
@@ -658,6 +665,34 @@ class SnowballStrategy(Strategy):
             "Grid ordering violation detected; pausing counter adds until ordering recovers: %s",
             self._grid_order_violation,
         )
+
+    def _repair_layer_initial_take_profit_bounds(self, cycle: SnowballCycle) -> int:
+        """Clamp legacy layer-initial TPs that crossed their preceding hard bound."""
+        repaired = 0
+        for layer in cycle.grid.layers:
+            if layer.layer_number <= 1:
+                continue
+            slot = layer.slot_at(0)
+            if slot is None:
+                continue
+            target = slot.entry if slot.entry is not None else slot.pending_rebuild
+            if target is None or target.role != "layer_initial":
+                continue
+            hard_bound, _soft_bound = self.grid_policy.tp_bounds(cycle, layer, slot.index)
+            if hard_bound is None:
+                continue
+
+            current = Decimal(str(target.close_price))
+            entry_price = Decimal(str(target.entry_price))
+            if cycle.direction == Direction.LONG:
+                if current <= hard_bound or hard_bound <= entry_price:
+                    continue
+            elif current >= hard_bound or hard_bound >= entry_price:
+                continue
+
+            target.close_price = hard_bound
+            repaired += 1
+        return repaired
 
     # ------------------------------------------------------------------
     # Per-cycle tick processing
@@ -965,6 +1000,34 @@ class SnowballStrategy(Strategy):
                     cycle.grid.layers.remove(layer)
                     return []
 
+        close_plan = SNOWBALL_PRICING.layer_initial_close_price(
+            new_price=price,
+            prev_layer=prev_layer,
+            direction=direction,
+            pip_size=self.pip_size,
+            m_pips=self.trend_take_profit_pips(),
+        )
+        close_price = close_plan.close_price
+        formula = close_plan.formula
+
+        effective_close_price = close_price + (market_price - price)
+        if close_plan.bound is not None:
+            effective_close_price = close_plan.bound.apply(effective_close_price)
+        if not self._planned_exit_on_profit_side(
+            direction=direction,
+            entry_price=market_price,
+            planned_exit_price=effective_close_price,
+        ):
+            logger.info(
+                "Skipping layer initial L%d/R0: planned exit %.5f would not remain "
+                "on the profit side after fill price %.5f",
+                layer.layer_number,
+                effective_close_price,
+                market_price,
+            )
+            cycle.grid.layers.remove(layer)
+            return []
+
         layer_entry = Entry.open(
             state=ss,
             tick=tick,
@@ -982,16 +1045,9 @@ class SnowballStrategy(Strategy):
         # the grid-snapped anchor so the planned price matches where the
         # layer-interval gate said it should sit.  If the broker fills at
         # a different price, ``sync_entry_fill_price`` will shift entry/SL/
-        # TP together to absorb the slippage.
+        # TP together, then reapply the cross-layer TP boundary when one
+        # was needed to preserve grid ordering.
         layer_entry.entry_price = price
-
-        close_price, formula = SNOWBALL_PRICING.layer_initial_close_price(
-            new_price=price,
-            prev_layer=prev_layer,
-            direction=direction,
-            pip_size=self.pip_size,
-            m_pips=self.trend_take_profit_pips(),
-        )
 
         layer_entry.close_price = close_price
         tp_pips = abs(close_price - layer_entry.entry_price) / self.pip_size
@@ -1026,6 +1082,12 @@ class SnowballStrategy(Strategy):
             timestamp=tick.timestamp,
             execution_price=market_price,
             planned_exit_price_formula=formula,
+            planned_exit_price_bound=close_plan.bound.price
+            if close_plan.bound is not None
+            else None,
+            planned_exit_price_bound_mode=close_plan.bound.mode
+            if close_plan.bound is not None
+            else "",
             description=(
                 f"Layer initial entry ({direction.value.upper()}) | "
                 f"L{layer.layer_number}/R0, units={layer_entry.units}, TP={close_price:.3f}"
@@ -1078,6 +1140,17 @@ class SnowballStrategy(Strategy):
             interval_pips=interval,
             pip_size=self.pip_size,
         )
+
+    @staticmethod
+    def _planned_exit_on_profit_side(
+        *,
+        direction: Direction,
+        entry_price: Decimal,
+        planned_exit_price: Decimal,
+    ) -> bool:
+        if direction == Direction.LONG:
+            return planned_exit_price > entry_price
+        return planned_exit_price < entry_price
 
     # ------------------------------------------------------------------
     # Stop-loss protection
