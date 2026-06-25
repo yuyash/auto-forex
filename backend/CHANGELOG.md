@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.9](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.8...backend-v2.12.9) (2026-06-25)
+
+
+### Bug Fixes
+
+* **strategy:** preserve snowball layer initial TP bounds ([#847](https://github.com/yuyash/auto-forex-web-service/issues/847)) ([26a6a44](https://github.com/yuyash/auto-forex-web-service/commit/26a6a441a4dc3eaf260f28eb69b35f73ba1bf9e1))
+
 ## [2.12.8](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.7...backend-v2.12.8) (2026-06-20)
 
 
