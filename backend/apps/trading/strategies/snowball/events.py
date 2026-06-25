@@ -51,6 +51,8 @@ class SnowballEventFactory:
         timestamp,
         execution_price: Decimal | None = None,
         planned_exit_price_formula: str | None = None,
+        planned_exit_price_bound: Decimal | None = None,
+        planned_exit_price_bound_mode: str = "",
         description: str = "",
     ) -> OpenPositionEvent:
         event_price = execution_price if execution_price is not None else entry.entry_price
@@ -67,6 +69,8 @@ class SnowballEventFactory:
             strategy_event_type=f"snowball_{entry.role}",
             planned_exit_price=entry.close_price,
             planned_exit_price_formula=planned_exit_price_formula,
+            planned_exit_price_bound=planned_exit_price_bound,
+            planned_exit_price_bound_mode=planned_exit_price_bound_mode,
             stop_loss_price=entry.stop_loss_price,
             description=description,
         )
@@ -80,6 +84,8 @@ class SnowballEventFactory:
         timestamp,
         execution_price: Decimal | None = None,
         original_position_id: str | None = None,
+        planned_exit_price_bound: Decimal | None = None,
+        planned_exit_price_bound_mode: str = "",
         description: str = "",
     ) -> RebuildPositionEvent:
         event_price = execution_price if execution_price is not None else entry.entry_price
@@ -95,6 +101,8 @@ class SnowballEventFactory:
             retracement_count=entry.retracement_count,
             strategy_event_type=f"snowball_{entry.role}",
             planned_exit_price=entry.close_price,
+            planned_exit_price_bound=planned_exit_price_bound,
+            planned_exit_price_bound_mode=planned_exit_price_bound_mode,
             stop_loss_price=entry.stop_loss_price,
             description=description,
             original_position_id=original_position_id,

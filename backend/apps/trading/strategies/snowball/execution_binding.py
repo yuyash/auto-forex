@@ -45,6 +45,8 @@ def apply_event_execution_result(
                         layer=layer,
                         fill_price=binding.fill_price,
                         counter_tp_mode=strategy.config.counter_tp_mode,
+                        planned_exit_price_bound=binding.planned_exit_price_bound,
+                        planned_exit_price_bound_mode=binding.planned_exit_price_bound_mode,
                     )
                     if binding.cycle_id and cycle.cycle_id == eid and cycle.trade_cycle_id is None:
                         cycle.trade_cycle_id = binding.cycle_id
@@ -56,6 +58,8 @@ def apply_event_execution_result(
                     layer=None,
                     fill_price=binding.fill_price,
                     counter_tp_mode=strategy.config.counter_tp_mode,
+                    planned_exit_price_bound=binding.planned_exit_price_bound,
+                    planned_exit_price_bound_mode=binding.planned_exit_price_bound_mode,
                 )
 
     state_boundary.persist(ss)

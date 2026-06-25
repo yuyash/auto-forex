@@ -2,13 +2,61 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal
+from collections.abc import Iterator
+from typing import Literal
 
 from apps.trading.enums import Direction
 from apps.trading.strategies.snowball.calculators import SnowballCalculator
 from apps.trading.strategies.snowball.config import SnowballStrategyConfig
 from apps.trading.strategies.snowball.entries import Entry, StopLossClosedEntry
 from apps.trading.strategies.snowball.grid_models import Layer
+
+
+@dataclass(frozen=True, slots=True)
+class PlannedExitPriceBound:
+    """A hard boundary applied after planned-exit price adjustments."""
+
+    mode: Literal["min", "max"]
+    price: Decimal
+
+    def apply(self, price: Decimal) -> Decimal:
+        """Return price clamped to this boundary."""
+        if self.mode == "min":
+            return min(price, self.price)
+        return max(price, self.price)
+
+    @classmethod
+    def from_values(
+        cls,
+        *,
+        mode: str | None,
+        price: Decimal | str | None,
+    ) -> "PlannedExitPriceBound | None":
+        """Build a bound from event or execution-binding fields."""
+        if price is None:
+            return None
+        mode_value = str(mode or "").strip().lower()
+        if mode_value == "min":
+            return cls(mode="min", price=Decimal(str(price)))
+        if mode_value == "max":
+            return cls(mode="max", price=Decimal(str(price)))
+        raise ValueError("planned_exit_price_bound_mode must be 'min' or 'max'")
+
+
+@dataclass(frozen=True, slots=True)
+class LayerInitialClosePrice:
+    """Close-price plan for a layer-initial entry."""
+
+    close_price: Decimal
+    formula: str
+    bound: PlannedExitPriceBound | None = None
+
+    def __iter__(self) -> Iterator[Decimal | str]:
+        """Keep tuple unpacking compatibility for existing callers."""
+        yield self.close_price
+        yield self.formula
 
 
 class SnowballPricingService:
@@ -113,7 +161,7 @@ class SnowballPricingService:
         direction: Direction,
         pip_size: Decimal,
         m_pips: Decimal,
-    ) -> tuple[Decimal, str]:
+    ) -> LayerInitialClosePrice:
         """Compute close price for a layer-initial entry.
 
         The layer initial normally uses the same fixed TP distance as L1/R0.
@@ -129,7 +177,7 @@ class SnowballPricingService:
 
         highest = prev_layer.highest_present_slot()
         if highest is None:
-            return close_price, formula
+            return LayerInitialClosePrice(close_price=close_price, formula=formula)
 
         previous_close_price: Decimal | None = None
         if highest.entry is not None:
@@ -138,14 +186,26 @@ class SnowballPricingService:
             previous_close_price = highest.pending_rebuild.close_price
 
         if previous_close_price is None:
-            return close_price, formula
+            return LayerInitialClosePrice(close_price=close_price, formula=formula)
 
+        bound = PlannedExitPriceBound(
+            mode="min" if direction == Direction.LONG else "max",
+            price=previous_close_price,
+        )
         if direction == Direction.LONG and close_price > previous_close_price:
-            return previous_close_price, f"min({formula}, {previous_close_price:.5f})"
+            return LayerInitialClosePrice(
+                close_price=previous_close_price,
+                formula=f"min({formula}, {previous_close_price:.5f})",
+                bound=bound,
+            )
         if direction == Direction.SHORT and close_price < previous_close_price:
-            return previous_close_price, f"max({formula}, {previous_close_price:.5f})"
+            return LayerInitialClosePrice(
+                close_price=previous_close_price,
+                formula=f"max({formula}, {previous_close_price:.5f})",
+                bound=bound,
+            )
 
-        return close_price, formula
+        return LayerInitialClosePrice(close_price=close_price, formula=formula, bound=bound)
 
     def sync_weighted_average_counter_take_profits(self, layer: Layer) -> Decimal | None:
         """Recompute weighted-average TP and apply it to all live counters in a layer."""
@@ -166,16 +226,24 @@ class SnowballPricingService:
         layer: Layer | None,
         fill_price: Decimal | None,
         counter_tp_mode: str,
+        planned_exit_price_bound: Decimal | str | None = None,
+        planned_exit_price_bound_mode: str | None = None,
     ) -> None:
         """Align entry pricing with a broker fill price and refresh dependent exits."""
         if fill_price is None:
             return
 
+        bound = PlannedExitPriceBound.from_values(
+            mode=planned_exit_price_bound_mode,
+            price=planned_exit_price_bound,
+        )
         fill_price = Decimal(str(fill_price))
         original_entry_price = entry.entry_price
         original_stop_loss_price = entry.stop_loss_price
         delta = fill_price - original_entry_price
         if delta == 0:
+            if bound is not None:
+                entry.close_price = bound.apply(entry.close_price)
             return
 
         entry.entry_price = fill_price
@@ -192,9 +260,13 @@ class SnowballPricingService:
 
         if layer is not None and entry.role == "counter" and counter_tp_mode == "weighted_avg":
             self.sync_weighted_average_counter_take_profits(layer)
+            if bound is not None:
+                entry.close_price = bound.apply(entry.close_price)
             return
 
         entry.close_price += delta
+        if bound is not None:
+            entry.close_price = bound.apply(entry.close_price)
 
     def is_stop_loss_on_loss_side(
         self,

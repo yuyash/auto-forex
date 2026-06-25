@@ -548,6 +548,8 @@ class OpenPositionEvent(StrategyEvent):
     strategy_event_type: str = ""
     planned_exit_price: Decimal | None = None
     planned_exit_price_formula: str | None = None
+    planned_exit_price_bound: Decimal | None = None
+    planned_exit_price_bound_mode: str = ""
     stop_loss_price: Decimal | None = None
     description: str = ""
     merge_with_existing: bool = False
@@ -600,6 +602,10 @@ class OpenPositionEvent(StrategyEvent):
             result["planned_exit_price"] = str(self.planned_exit_price)
         if self.planned_exit_price_formula:
             result["planned_exit_price_formula"] = self.planned_exit_price_formula
+        if self.planned_exit_price_bound is not None:
+            result["planned_exit_price_bound"] = str(self.planned_exit_price_bound)
+        if self.planned_exit_price_bound_mode:
+            result["planned_exit_price_bound_mode"] = self.planned_exit_price_bound_mode
         if self.stop_loss_price is not None:
             result["stop_loss_price"] = str(self.stop_loss_price)
         if self.description:
@@ -624,6 +630,12 @@ class OpenPositionEvent(StrategyEvent):
             strategy_event_type=str(event_dict.get("strategy_event_type", "")),
             planned_exit_price=parse_optional_decimal(event_dict.get("planned_exit_price")),
             planned_exit_price_formula=event_dict.get("planned_exit_price_formula"),
+            planned_exit_price_bound=parse_optional_decimal(
+                event_dict.get("planned_exit_price_bound")
+            ),
+            planned_exit_price_bound_mode=str(
+                event_dict.get("planned_exit_price_bound_mode") or ""
+            ),
             stop_loss_price=parse_optional_decimal(event_dict.get("stop_loss_price")),
             description=str(event_dict.get("description", "")),
             merge_with_existing=parse_bool(event_dict.get("merge_with_existing")),
@@ -654,6 +666,8 @@ class RebuildPositionEvent(StrategyEvent):
     strategy_event_type: str = ""
     planned_exit_price: Decimal | None = None
     planned_exit_price_formula: str | None = None
+    planned_exit_price_bound: Decimal | None = None
+    planned_exit_price_bound_mode: str = ""
     stop_loss_price: Decimal | None = None
     description: str = ""
     original_position_id: str | None = None
@@ -705,6 +719,10 @@ class RebuildPositionEvent(StrategyEvent):
             result["planned_exit_price"] = str(self.planned_exit_price)
         if self.planned_exit_price_formula:
             result["planned_exit_price_formula"] = self.planned_exit_price_formula
+        if self.planned_exit_price_bound is not None:
+            result["planned_exit_price_bound"] = str(self.planned_exit_price_bound)
+        if self.planned_exit_price_bound_mode:
+            result["planned_exit_price_bound_mode"] = self.planned_exit_price_bound_mode
         if self.stop_loss_price is not None:
             result["stop_loss_price"] = str(self.stop_loss_price)
         if self.description:
@@ -728,6 +746,12 @@ class RebuildPositionEvent(StrategyEvent):
             strategy_event_type=str(event_dict.get("strategy_event_type", "")),
             planned_exit_price=parse_optional_decimal(event_dict.get("planned_exit_price")),
             planned_exit_price_formula=event_dict.get("planned_exit_price_formula"),
+            planned_exit_price_bound=parse_optional_decimal(
+                event_dict.get("planned_exit_price_bound")
+            ),
+            planned_exit_price_bound_mode=str(
+                event_dict.get("planned_exit_price_bound_mode") or ""
+            ),
             stop_loss_price=parse_optional_decimal(event_dict.get("stop_loss_price")),
             description=str(event_dict.get("description", "")),
             original_position_id=event_dict.get("original_position_id"),

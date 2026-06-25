@@ -443,6 +443,8 @@ class EventHandler:
             position_id=str(position.id),
             cycle_id=getattr(self, "_last_open_cycle_id", None),
             fill_price=getattr(self, "_last_open_fill_price", position.entry_price),
+            planned_exit_price_bound=strategy_event.planned_exit_price_bound,
+            planned_exit_price_bound_mode=strategy_event.planned_exit_price_bound_mode,
         )
         return EventExecutionResult(
             realized_pnl_delta=Decimal("0"),
@@ -473,6 +475,8 @@ class EventHandler:
             position_id=str(position.id),
             cycle_id=getattr(self, "_last_open_cycle_id", None),
             fill_price=position.entry_price,
+            planned_exit_price_bound=strategy_event.planned_exit_price_bound,
+            planned_exit_price_bound_mode=strategy_event.planned_exit_price_bound_mode,
         )
         return EventExecutionResult(
             realized_pnl_delta=Decimal("0"),
@@ -806,6 +810,18 @@ class EventHandler:
             event.planned_exit_price,
             planned_fill_delta,
         )
+        planned_exit_price = self._apply_planned_exit_price_bound(
+            planned_exit_price,
+            bound=getattr(event, "planned_exit_price_bound", None),
+            bound_mode=getattr(event, "planned_exit_price_bound_mode", ""),
+        )
+        if getattr(event, "planned_exit_price_bound", None) is not None:
+            self._validate_bounded_planned_exit_price(
+                direction=direction,
+                entry_price=override_price,
+                planned_exit_price=planned_exit_price,
+                event=event,
+            )
         stop_loss_price = self._shift_optional_price(
             getattr(event, "stop_loss_price", None),
             planned_fill_delta,
@@ -956,6 +972,47 @@ class EventHandler:
         if delta == 0:
             return Decimal(str(price))
         return Decimal(str(price)) + delta
+
+    @staticmethod
+    def _apply_planned_exit_price_bound(
+        price: Decimal | None,
+        *,
+        bound: Decimal | None,
+        bound_mode: str | None,
+    ) -> Decimal | None:
+        if price is None or bound is None:
+            return price
+
+        bound_price = Decimal(str(bound))
+        mode = str(bound_mode or "").strip().lower()
+        if mode == "min":
+            return min(price, bound_price)
+        if mode == "max":
+            return max(price, bound_price)
+        raise OrderServiceError("Invalid planned-exit price boundary.")
+
+    def _validate_bounded_planned_exit_price(
+        self,
+        *,
+        direction: Direction,
+        entry_price: Decimal | None,
+        planned_exit_price: Decimal | None,
+        event: StrategyEvent,
+    ) -> None:
+        if entry_price is None or planned_exit_price is None:
+            return
+
+        if direction == Direction.LONG and planned_exit_price > entry_price:
+            return
+        if direction == Direction.SHORT and planned_exit_price < entry_price:
+            return
+
+        event_type = self._event_type_key(event)
+        raise OrderServiceError(
+            "Invalid bounded planned-exit price for open position: planned exit "
+            "must remain on the profit side after execution price adjustment "
+            f"(event_type={event_type}, direction={direction.value})."
+        )
 
     def _validated_stop_loss_price(
         self,
@@ -1210,6 +1267,9 @@ class EventHandler:
             entry_id=event.entry_id,
             strategy_event_type=event.strategy_event_type,
             planned_exit_price=event.planned_exit_price,
+            planned_exit_price_formula=event.planned_exit_price_formula,
+            planned_exit_price_bound=event.planned_exit_price_bound,
+            planned_exit_price_bound_mode=event.planned_exit_price_bound_mode,
             stop_loss_price=event.stop_loss_price,
             description=event.description,
         )

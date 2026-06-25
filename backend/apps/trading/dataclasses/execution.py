@@ -16,6 +16,8 @@ class EntryExecutionBinding:
     position_id: str
     cycle_id: str | None = None
     fill_price: Decimal | None = None
+    planned_exit_price_bound: Decimal | None = None
+    planned_exit_price_bound_mode: str = ""
 
 
 @dataclass(frozen=True, slots=True)
