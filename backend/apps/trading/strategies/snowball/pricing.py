@@ -208,7 +208,7 @@ class SnowballPricingService:
         return LayerInitialClosePrice(close_price=close_price, formula=formula, bound=bound)
 
     def sync_weighted_average_counter_take_profits(self, layer: Layer) -> Decimal | None:
-        """Recompute weighted-average TP and apply it to all live counters in a layer."""
+        """Recompute weighted-average TP and apply it to all present counters in a layer."""
         weighted = self.current_weighted_avg_close_price(layer)
         if weighted is None:
             return None
@@ -217,6 +217,8 @@ class SnowballPricingService:
         for slot in layer.slots:
             if slot.entry is not None and slot.entry.role == "counter":
                 slot.entry.close_price = close_price
+            elif slot.pending_rebuild is not None and slot.pending_rebuild.role == "counter":
+                slot.pending_rebuild.close_price = close_price
         return close_price
 
     def sync_entry_fill_price(
@@ -242,6 +244,8 @@ class SnowballPricingService:
         original_stop_loss_price = entry.stop_loss_price
         delta = fill_price - original_entry_price
         if delta == 0:
+            if layer is not None and entry.role == "counter" and counter_tp_mode == "weighted_avg":
+                self.sync_weighted_average_counter_take_profits(layer)
             if bound is not None:
                 entry.close_price = bound.apply(entry.close_price)
             return

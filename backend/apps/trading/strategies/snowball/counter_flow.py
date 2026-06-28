@@ -840,7 +840,9 @@ class CounterEntryFactory:
         ss.invalidate_entry_cache()
         layer.unseal_slots_above(slot.index)
 
-        if cfg.counter_tp_mode != "weighted_avg":
+        if cfg.counter_tp_mode == "weighted_avg":
+            SNOWBALL_PRICING.sync_weighted_average_counter_take_profits(layer)
+        else:
             self.sync_step_counter_take_profits(strategy, direction, layer)
 
         return [event]

@@ -13,6 +13,11 @@ import pytest
 from apps.trading.dataclasses.tick import Tick
 from apps.trading.enums import Direction, EventType, StrategyType
 from apps.trading.strategies.snowball.config import SnowballStrategyConfig
+from apps.trading.strategies.snowball.counter_flow import (
+    CounterAdverseInterval,
+    CounterEntryFactory,
+    CounterHeadContext,
+)
 from apps.trading.strategies.snowball.cycle_orchestrator import (
     SnowballActiveCycleProcessor,
     SnowballCycleReseeder,
@@ -20,6 +25,7 @@ from apps.trading.strategies.snowball.cycle_orchestrator import (
 from apps.trading.strategies.snowball.cycle_state import SnowballCycle, SnowballStrategyState
 from apps.trading.strategies.snowball.entries import Entry, StopLossClosedEntry
 from apps.trading.strategies.snowball.enums import CycleStatus
+from apps.trading.strategies.snowball.grid_policy import SNOWBALL_GRID_POLICY
 from apps.trading.strategies.snowball.grid_models import Layer, Slot
 from apps.trading.strategies.snowball.pricing import SNOWBALL_PRICING
 from apps.trading.strategies.snowball.reconciliation import SNOWBALL_RECONCILER
@@ -2193,6 +2199,140 @@ class TestSnowballPricingHelpers:
         assert layer.slot_at(0).entry.close_price == Decimal("150.50")
         assert layer.slot_at(1).entry.close_price == Decimal("149.600")
         assert layer.slot_at(2).entry.close_price == Decimal("149.600")
+
+    def test_weighted_average_sync_updates_pending_counter_take_profits(self):
+        cycle = SnowballCycle(cycle_id=85, direction=Direction.SHORT)
+        layer = Layer.create(1, 7, 1000)
+        cycle.add_layer(layer)
+        r0_slot = layer.slot_at(0)
+        r5_slot = layer.slot_at(5)
+        r6_slot = layer.slot_at(6)
+        r7_slot = layer.slot_at(7)
+        assert r0_slot is not None
+        assert r5_slot is not None
+        assert r6_slot is not None
+        assert r7_slot is not None
+        r0_slot.pending_rebuild = StopLossClosedEntry(
+            entry_price=Decimal("129.596"),
+            close_price=Decimal("129.496"),
+            units=1000,
+            direction=Direction.SHORT,
+            role="initial",
+            layer_number=1,
+            retracement_count=0,
+            step=1,
+            cycle_id=85,
+        )
+        r5_slot.pending_rebuild = StopLossClosedEntry(
+            entry_price=Decimal("130.678"),
+            close_price=Decimal("130.5521388888888888888888889"),
+            units=6000,
+            direction=Direction.SHORT,
+            role="counter",
+            layer_number=1,
+            retracement_count=5,
+            step=6,
+            cycle_id=85,
+        )
+        r6_slot.pending_rebuild = StopLossClosedEntry(
+            entry_price=Decimal("130.795"),
+            close_price=Decimal("130.5536944444444444444444444"),
+            units=7000,
+            direction=Direction.SHORT,
+            role="counter",
+            layer_number=1,
+            retracement_count=6,
+            step=7,
+            cycle_id=85,
+        )
+        r7_slot.fill(
+            Entry(
+                entry_id=212,
+                step=8,
+                direction=Direction.SHORT,
+                entry_price=Decimal("130.924"),
+                close_price=Decimal("130.5521388888888888888888889"),
+                units=8000,
+                opened_at=datetime(2026, 1, 1, tzinfo=UTC),
+                role="counter",
+                layer_number=1,
+                retracement_count=7,
+            )
+        )
+        assert "tp_ok=False" in (SNOWBALL_GRID_POLICY.validate_ordering(cycle) or "")
+
+        close_price = SNOWBALL_PRICING.sync_weighted_average_counter_take_profits(layer)
+
+        assert close_price == Decimal("130.7555")
+        assert r0_slot.pending_rebuild is not None
+        assert r5_slot.pending_rebuild is not None
+        assert r6_slot.pending_rebuild is not None
+        assert r7_slot.entry is not None
+        assert r0_slot.pending_rebuild.close_price == Decimal("129.496")
+        assert r5_slot.pending_rebuild.close_price == close_price
+        assert r6_slot.pending_rebuild.close_price == close_price
+        assert r7_slot.entry.close_price == close_price
+        assert SNOWBALL_GRID_POLICY.validate_ordering(cycle) is None
+
+    def test_weighted_average_counter_open_syncs_pending_counter_take_profits(self):
+        strategy = _strategy({"counter_tp_mode": "weighted_avg"})
+        state = SnowballStrategyState()
+        cycle = SnowballCycle(cycle_id=85, direction=Direction.SHORT)
+        layer = Layer.create(1, 7, 1000)
+        cycle.add_layer(layer)
+        r0_slot = layer.slot_at(0)
+        r6_slot = layer.slot_at(6)
+        r7_slot = layer.slot_at(7)
+        assert r0_slot is not None
+        assert r6_slot is not None
+        assert r7_slot is not None
+        r0_slot.pending_rebuild = StopLossClosedEntry(
+            entry_price=Decimal("129.596"),
+            close_price=Decimal("129.496"),
+            units=1000,
+            direction=Direction.SHORT,
+            role="initial",
+            layer_number=1,
+            retracement_count=0,
+            step=1,
+            cycle_id=85,
+        )
+        r6_slot.pending_rebuild = StopLossClosedEntry(
+            entry_price=Decimal("130.795"),
+            close_price=Decimal("130.79000"),
+            units=7000,
+            direction=Direction.SHORT,
+            role="counter",
+            layer_number=1,
+            retracement_count=6,
+            step=7,
+            cycle_id=85,
+        )
+
+        events = CounterEntryFactory().open_counter_entry(
+            strategy,
+            state,
+            _make_tick(datetime(2026, 1, 1, tzinfo=UTC), "130.924", "130.934"),
+            cycle,
+            layer,
+            r7_slot,
+            CounterAdverseInterval(adverse=Decimal("120"), interval=Decimal("100")),
+            CounterHeadContext(
+                entry=None,
+                entry_price=Decimal("129.596"),
+                entry_id=85,
+                direction=Direction.SHORT,
+            ),
+            assign_configured_stop_loss=lambda _entry, _slot_number: None,
+        )
+
+        close_price = Decimal("130.7845625")
+        assert getattr(events[0], "planned_exit_price") == close_price
+        assert r6_slot.pending_rebuild is not None
+        assert r7_slot.entry is not None
+        assert r6_slot.pending_rebuild.close_price == close_price
+        assert r7_slot.entry.close_price == close_price
+        assert SNOWBALL_GRID_POLICY.validate_ordering(cycle) is None
 
 
 class TestSnowballReconciliation:
