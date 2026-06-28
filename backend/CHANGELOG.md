@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.10](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.9...backend-v2.12.10) (2026-06-28)
+
+
+### Bug Fixes
+
+* **snowball:** wait for profitable rebuild take profit ([#849](https://github.com/yuyash/auto-forex-web-service/issues/849)) ([5d543f7](https://github.com/yuyash/auto-forex-web-service/commit/5d543f7511be483ff04d0f9d6bff5e19458d736e))
+
 ## [2.12.9](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.8...backend-v2.12.9) (2026-06-25)
 
 
