@@ -24,7 +24,10 @@ from apps.trading.strategies.snowball.grid_models import Layer, Slot
 from apps.trading.strategies.snowball.pricing import SNOWBALL_PRICING
 from apps.trading.strategies.snowball.reconciliation import SNOWBALL_RECONCILER
 from apps.trading.strategies.snowball.strategy import SnowballStrategy
-from apps.trading.strategies.snowball.stop_loss_flow import StopLossRebuildPricePlanner
+from apps.trading.strategies.snowball.stop_loss_flow import (
+    StopLossRebuildPricePlanner,
+    StopLossRebuildProcessor,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1744,6 +1747,99 @@ class TestSnowballRebuildTakeProfitModes:
         assert same_tick_plan is None
         assert next_tick_plan is not None
         assert next_tick_plan.trigger_price == Decimal("144.547")
+
+    def test_rebuild_waits_when_projected_take_profit_is_not_profitable_after_fill(self):
+        strategy = _strategy(
+            {
+                "stop_loss_enabled": True,
+                "rebuild_enabled": True,
+                "rebuild_take_profit_mode": "same",
+            }
+        )
+        pending = self._make_pending_rebuild(
+            direction=Direction.LONG,
+            entry_price=Decimal("130.27500"),
+            retracement_count=4,
+            close_price=Decimal("130.3881333333333333333333333"),
+        )
+        previous = Entry(
+            entry_id=1,
+            step=1,
+            direction=Direction.LONG,
+            entry_price=Decimal("130.20000"),
+            close_price=Decimal("130.2436388888888888888888889"),
+            units=12000,
+            opened_at=datetime(2026, 1, 1, tzinfo=UTC),
+            role="counter",
+            layer_number=1,
+            retracement_count=3,
+        )
+        slot = Slot(index=4, pending_rebuild=pending)
+        layer = Layer(
+            layer_number=1,
+            slots=[Slot(index=3, entry=previous), slot],
+        )
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        cycle.add_layer(layer)
+        state = SnowballStrategyState()
+        processor = StopLossRebuildProcessor()
+
+        events = processor.process(
+            strategy,
+            state,
+            _make_tick(datetime(2026, 1, 1, tzinfo=UTC), "130.31300", "130.32400"),
+            cycle,
+        )
+
+        assert events == []
+        assert slot.pending_rebuild is pending
+        assert slot.entry is None
+
+    def test_rebuild_resumes_when_projected_take_profit_is_profitable_after_fill(self):
+        strategy = _strategy(
+            {
+                "stop_loss_enabled": True,
+                "rebuild_take_profit_mode": "same",
+            }
+        )
+        pending = self._make_pending_rebuild(
+            direction=Direction.LONG,
+            entry_price=Decimal("130.27500"),
+            retracement_count=4,
+            close_price=Decimal("130.3881333333333333333333333"),
+        )
+        previous = Entry(
+            entry_id=1,
+            step=1,
+            direction=Direction.LONG,
+            entry_price=Decimal("130.20000"),
+            close_price=Decimal("130.33000"),
+            units=12000,
+            opened_at=datetime(2026, 1, 1, tzinfo=UTC),
+            role="counter",
+            layer_number=1,
+            retracement_count=3,
+        )
+        slot = Slot(index=4, pending_rebuild=pending)
+        layer = Layer(
+            layer_number=1,
+            slots=[Slot(index=3, entry=previous), slot],
+        )
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        cycle.add_layer(layer)
+        planner = StopLossRebuildPricePlanner()
+
+        plan = planner.plan(
+            strategy=strategy,
+            tick=_make_tick(datetime(2026, 1, 1, tzinfo=UTC), "130.31300", "130.32400"),
+            cycle=cycle,
+            layer=layer,
+            slot=slot,
+            pending=pending,
+        )
+
+        assert plan is not None
+        assert plan.close_price == Decimal("130.33000")
 
     def test_cycle_rebuild_guard_blocks_negative_cycle_after_repeated_stops(self):
         strategy = _strategy(
