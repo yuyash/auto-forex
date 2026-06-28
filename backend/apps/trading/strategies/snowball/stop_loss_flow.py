@@ -495,6 +495,31 @@ class StopLossRebuildPricePlanner:
             pending=pending,
             trigger_price=trigger_price,
         )
+        projected_close_price = self.projected_close_price_after_fill(
+            pending=pending,
+            tick=tick,
+            trigger_price=trigger_price,
+            close_price=close_price,
+            planned_exit_bound=planned_exit_bound,
+        )
+        fill_price = self.entry_side_fill_price(pending, tick)
+        if not self.planned_exit_on_profit_side(
+            pending=pending,
+            fill_price=fill_price,
+            planned_exit_price=projected_close_price,
+        ):
+            self.logger.info(
+                "Skipping stop-loss rebuild until planned exit is on profit side: "
+                "L%d/R%d, fill=%.5f, planned_exit=%.5f, trigger=%.5f",
+                pending.layer_number,
+                pending.retracement_count,
+                fill_price,
+                projected_close_price,
+                trigger_price,
+            )
+            return None
+
+        self.propagate_take_profit(cycle, layer, slot, pending, close_price)
         return StopLossRebuildPlan(
             trigger_price=trigger_price,
             close_price=close_price,
@@ -681,8 +706,46 @@ class StopLossRebuildPricePlanner:
             pending,
             close_price,
         )
-        self.propagate_take_profit(cycle, layer, slot, pending, close_price)
         return close_price, planned_exit_bound
+
+    def projected_close_price_after_fill(
+        self,
+        *,
+        pending: StopLossClosedEntry,
+        tick: Tick,
+        trigger_price: Decimal,
+        close_price: Decimal,
+        planned_exit_bound: PlannedExitPriceBound | None,
+    ) -> Decimal:
+        """Return the planned exit price that order execution will validate.
+
+        Rebuild events carry ``trigger_price`` as the planned entry, but dry-run
+        execution fills at the current entry-side tick price.  The execution
+        handler shifts TP by that fill delta and reapplies any grid-order bound.
+        Mirror that here so an invalid rebuild stays pending instead of creating
+        an unfillable strategy entry.
+        """
+        projected = close_price + (self.entry_side_fill_price(pending, tick) - trigger_price)
+        if planned_exit_bound is not None:
+            return planned_exit_bound.apply(projected)
+        return projected
+
+    @staticmethod
+    def entry_side_fill_price(pending: StopLossClosedEntry, tick: Tick) -> Decimal:
+        """Return the dry-run fill side used for a rebuild entry."""
+        return tick.ask if pending.direction == Direction.LONG else tick.bid
+
+    @staticmethod
+    def planned_exit_on_profit_side(
+        *,
+        pending: StopLossClosedEntry,
+        fill_price: Decimal,
+        planned_exit_price: Decimal,
+    ) -> bool:
+        """Return True when the projected TP is reachable as profit after fill."""
+        if pending.direction == Direction.LONG:
+            return planned_exit_price > fill_price
+        return planned_exit_price < fill_price
 
     def clamp_take_profit(
         self,
