@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.11](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.10...backend-v2.12.11) (2026-06-28)
+
+
+### Bug Fixes
+
+* **snowball:** sync pending weighted TP ([#851](https://github.com/yuyash/auto-forex-web-service/issues/851)) ([f573bae](https://github.com/yuyash/auto-forex-web-service/commit/f573bae4c862430fc9c62ebb1acb0fb436664c42))
+
 ## [2.12.10](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.9...backend-v2.12.10) (2026-06-28)
 
 
