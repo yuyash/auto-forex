@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.12](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.11...backend-v2.12.12) (2026-06-29)
+
+
+### Bug Fixes
+
+* **snowball:** repair rebuild tp from fill price ([#853](https://github.com/yuyash/auto-forex-web-service/issues/853)) ([4921feb](https://github.com/yuyash/auto-forex-web-service/commit/4921feb30d255050786a4206f45bd72bab3410fe))
+
 ## [2.12.11](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.10...backend-v2.12.11) (2026-06-28)
 
 
