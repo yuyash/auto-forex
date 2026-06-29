@@ -508,16 +508,40 @@ class StopLossRebuildPricePlanner:
             fill_price=fill_price,
             planned_exit_price=projected_close_price,
         ):
+            repaired_close_price = self.repair_take_profit_for_fill(
+                strategy=strategy,
+                pending=pending,
+                fill_price=fill_price,
+                trigger_price=trigger_price,
+                planned_exit_bound=planned_exit_bound,
+            )
+            if repaired_close_price is None:
+                self.logger.info(
+                    "Skipping stop-loss rebuild until planned exit is on profit side: "
+                    "L%d/R%d, fill=%.5f, planned_exit=%.5f, trigger=%.5f",
+                    pending.layer_number,
+                    pending.retracement_count,
+                    fill_price,
+                    projected_close_price,
+                    trigger_price,
+                )
+                return None
             self.logger.info(
-                "Skipping stop-loss rebuild until planned exit is on profit side: "
-                "L%d/R%d, fill=%.5f, planned_exit=%.5f, trigger=%.5f",
+                "Adjusted stop-loss rebuild TP to stay on profit side after fill: "
+                "L%d/R%d, fill=%.5f, old_projected=%.5f, repaired_projected=%.5f, "
+                "trigger=%.5f",
                 pending.layer_number,
                 pending.retracement_count,
                 fill_price,
                 projected_close_price,
+                repaired_close_price,
                 trigger_price,
             )
-            return None
+            close_price = self.pre_fill_close_price(
+                fill_price=fill_price,
+                trigger_price=trigger_price,
+                projected_close_price=repaired_close_price,
+            )
 
         self.propagate_take_profit(cycle, layer, slot, pending, close_price)
         return StopLossRebuildPlan(
@@ -729,6 +753,67 @@ class StopLossRebuildPricePlanner:
         if planned_exit_bound is not None:
             return planned_exit_bound.apply(projected)
         return projected
+
+    def repair_take_profit_for_fill(
+        self,
+        *,
+        strategy: StopLossFlowStrategy,
+        pending: StopLossClosedEntry,
+        fill_price: Decimal,
+        trigger_price: Decimal,
+        planned_exit_bound: PlannedExitPriceBound | None,
+    ) -> Decimal | None:
+        """Return a fill-based projected TP when the original TP is invalid."""
+        distance = self.repair_take_profit_distance(
+            strategy=strategy,
+            pending=pending,
+        )
+        if distance <= 0:
+            return None
+
+        if pending.direction == Direction.LONG:
+            projected = fill_price + distance
+        else:
+            projected = fill_price - distance
+
+        if planned_exit_bound is not None:
+            projected = planned_exit_bound.apply(projected)
+
+        if not self.planned_exit_on_profit_side(
+            pending=pending,
+            fill_price=fill_price,
+            planned_exit_price=projected,
+        ):
+            return None
+        return projected
+
+    def repair_take_profit_distance(
+        self,
+        *,
+        strategy: StopLossFlowStrategy,
+        pending: StopLossClosedEntry,
+    ) -> Decimal:
+        """Return the TP distance to use when a persisted TP is unusable."""
+        original_distance = abs(pending.close_price - pending.entry_price)
+        if original_distance > 0:
+            return original_distance
+
+        configured_pips = strategy.calculator.rebuild_take_profit_pips(
+            pending.retracement_count + 1
+        )
+        if configured_pips <= 0 or strategy.pip_size <= 0:
+            return Decimal("0")
+        return configured_pips * strategy.pip_size
+
+    @staticmethod
+    def pre_fill_close_price(
+        *,
+        fill_price: Decimal,
+        trigger_price: Decimal,
+        projected_close_price: Decimal,
+    ) -> Decimal:
+        """Convert a desired post-fill TP into the planned pre-fill TP."""
+        return projected_close_price - (fill_price - trigger_price)
 
     @staticmethod
     def entry_side_fill_price(pending: StopLossClosedEntry, tick: Tick) -> Decimal:

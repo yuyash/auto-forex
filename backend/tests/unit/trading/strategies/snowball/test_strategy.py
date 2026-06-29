@@ -1754,7 +1754,95 @@ class TestSnowballRebuildTakeProfitModes:
         assert next_tick_plan is not None
         assert next_tick_plan.trigger_price == Decimal("144.547")
 
-    def test_rebuild_waits_when_projected_take_profit_is_not_profitable_after_fill(self):
+    def test_rebuild_repairs_long_take_profit_from_actual_fill(self):
+        strategy = _strategy(
+            {
+                "stop_loss_enabled": True,
+                "rebuild_enabled": True,
+                "rebuild_take_profit_mode": "same",
+                "rebuild_take_profit_pips_head": "10",
+                "rebuild_take_profit_pips_tail": "10",
+            }
+        )
+        pending = self._make_pending_rebuild(
+            direction=Direction.LONG,
+            entry_price=Decimal("130.00000"),
+            retracement_count=1,
+            close_price=Decimal("130.00000"),
+        )
+        slot = Slot(index=1, pending_rebuild=pending)
+        layer = Layer(layer_number=1, slots=[slot])
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        cycle.add_layer(layer)
+        tick = _make_tick(datetime(2026, 1, 1, tzinfo=UTC), "130.00000", "130.05000")
+        planner = StopLossRebuildPricePlanner()
+
+        plan = planner.plan(
+            strategy=strategy,
+            tick=tick,
+            cycle=cycle,
+            layer=layer,
+            slot=slot,
+            pending=pending,
+        )
+
+        assert plan is not None
+        assert plan.close_price == Decimal("130.10000")
+        projected = planner.projected_close_price_after_fill(
+            pending=pending,
+            tick=tick,
+            trigger_price=plan.trigger_price,
+            close_price=plan.close_price,
+            planned_exit_bound=None,
+        )
+        assert projected == Decimal("130.15000")
+        assert projected > Decimal("130.05000")
+
+    def test_rebuild_repairs_short_take_profit_from_actual_fill(self):
+        strategy = _strategy(
+            {
+                "stop_loss_enabled": True,
+                "rebuild_enabled": True,
+                "rebuild_take_profit_mode": "same",
+                "rebuild_take_profit_pips_head": "10",
+                "rebuild_take_profit_pips_tail": "10",
+            }
+        )
+        pending = self._make_pending_rebuild(
+            direction=Direction.SHORT,
+            entry_price=Decimal("150.00000"),
+            retracement_count=1,
+            close_price=Decimal("150.00000"),
+        )
+        slot = Slot(index=1, pending_rebuild=pending)
+        layer = Layer(layer_number=1, slots=[slot])
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.SHORT)
+        cycle.add_layer(layer)
+        tick = _make_tick(datetime(2026, 1, 1, tzinfo=UTC), "149.95000", "150.00000")
+        planner = StopLossRebuildPricePlanner()
+
+        plan = planner.plan(
+            strategy=strategy,
+            tick=tick,
+            cycle=cycle,
+            layer=layer,
+            slot=slot,
+            pending=pending,
+        )
+
+        assert plan is not None
+        assert plan.close_price == Decimal("149.90000")
+        projected = planner.projected_close_price_after_fill(
+            pending=pending,
+            tick=tick,
+            trigger_price=plan.trigger_price,
+            close_price=plan.close_price,
+            planned_exit_bound=None,
+        )
+        assert projected == Decimal("149.85000")
+        assert projected < Decimal("149.95000")
+
+    def test_rebuild_waits_when_bound_prevents_take_profit_repair(self):
         strategy = _strategy(
             {
                 "stop_loss_enabled": True,
