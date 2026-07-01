@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.14](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.13...backend-v2.12.14) (2026-07-01)
+
+
+### Bug Fixes
+
+* **snowball:** reseed preserved cycles and repair layer tp ([#857](https://github.com/yuyash/auto-forex-web-service/issues/857)) ([c61099f](https://github.com/yuyash/auto-forex-web-service/commit/c61099f3ec1dc19a634e6ee7fc1dea26a33c246b))
+
 ## [2.12.13](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.12...backend-v2.12.13) (2026-07-01)
 
 
