@@ -662,7 +662,7 @@ class SnowballStrategy(Strategy):
 
         self._last_tolerated_grid_order_violation = self._grid_order_violation
         logger.info(
-            "Grid ordering violation detected; pausing counter adds until ordering recovers: %s",
+            "Grid ordering violation detected; continuing counter adds while monitoring ordering: %s",
             self._grid_order_violation,
         )
 
@@ -678,19 +678,19 @@ class SnowballStrategy(Strategy):
             target = slot.entry if slot.entry is not None else slot.pending_rebuild
             if target is None or target.role != "layer_initial":
                 continue
-            hard_bound, _soft_bound = self.grid_policy.tp_bounds(cycle, layer, slot.index)
-            if hard_bound is None:
+            neighbor_bound = self.grid_policy.upper_neighbor_tp_bound(cycle, layer, slot.index)
+            if neighbor_bound is None:
                 continue
 
             current = Decimal(str(target.close_price))
             entry_price = Decimal(str(target.entry_price))
             if cycle.direction == Direction.LONG:
-                if current <= hard_bound or hard_bound <= entry_price:
+                if current <= neighbor_bound or neighbor_bound <= entry_price:
                     continue
-            elif current >= hard_bound or hard_bound >= entry_price:
+            elif current >= neighbor_bound or neighbor_bound >= entry_price:
                 continue
 
-            target.close_price = hard_bound
+            target.close_price = neighbor_bound
             repaired += 1
         return repaired
 

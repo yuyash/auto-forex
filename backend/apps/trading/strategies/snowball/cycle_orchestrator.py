@@ -393,18 +393,17 @@ class SnowballActiveCycleProcessor:
                 strategy._validate_grid_ordering(cycle)
             if strategy._grid_order_violation:
                 self.logger.debug(
-                    "Skipping Snowball counter adds while grid ordering is violated: %s",
+                    "Continuing Snowball counter adds despite grid ordering violation: %s",
                     strategy._grid_order_violation,
                 )
                 trace.record(
                     phase="counter_add",
-                    outcome="skipped",
-                    reason="grid_ordering_violation",
+                    outcome="continued",
+                    reason="grid_ordering_violation_observed",
                     cycle=cycle,
                 )
                 strategy._grid_order_violation = None
-                order_checked_without_new_mutations = True
-            elif cycle.direction not in blocked_counter_add_directions:
+            if cycle.direction not in blocked_counter_add_directions:
                 max_iterations = max(1, strategy.config.f_max * (strategy.config.r_max + 1))
                 opened_new_position = False
                 for _ in range(max_iterations):

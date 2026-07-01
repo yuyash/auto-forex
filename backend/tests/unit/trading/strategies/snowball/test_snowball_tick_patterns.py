@@ -1116,8 +1116,8 @@ class TestSnowballRebuildCrossLayerTpOrdering:
         cycle.grid.layers.extend([l1, l2])
         return cycle, l1, l2
 
-    def test_cross_layer_rebuild_extends_preceding_pending_rebuild_tp(self):
-        """Pending predecessors can be moved to preserve cross-layer ordering."""
+    def test_cross_layer_rebuild_clamps_to_preceding_pending_rebuild_tp(self):
+        """Pending predecessors bound the rebuilt TP just like live predecessors."""
         from apps.trading.enums import Direction
         from apps.trading.strategies.snowball.cycle_state import (
             SnowballStrategyState,
@@ -1148,17 +1148,15 @@ class TestSnowballRebuildCrossLayerTpOrdering:
 
         s._process_stop_loss_rebuilds(ss, tick, cycle)
 
-        # L2/R0 rebuilt to the inherited TP; the grid stays monotonic
-        # because L1/R7's pending snapshot was also adjusted.
+        # L2/R0 rebuilt at the preceding pending TP bound so the grid
+        # stays monotonic without moving L1/R7's pending snapshot.
         assert l2.slots[0].entry is not None
-        expected_l2r0_tp = Decimal("130.64392")
+        expected_l2r0_tp = Decimal("130.644")
         assert l2.slots[0].entry.close_price == expected_l2r0_tp
 
-        # L1/R7's snapshot TP was pushed outward (lower, for SHORT) to
-        # match L2/R0's inherited TP so prev_tp ≤ curr_tp still holds.
         l1r7 = l1.slots[7]
         assert l1r7.pending_rebuild is not None
-        assert l1r7.pending_rebuild.close_price == expected_l2r0_tp
+        assert l1r7.pending_rebuild.close_price == Decimal("130.644")
 
         # Running the validator after the rebuild must find no violation.
         s._grid_order_violation = None
