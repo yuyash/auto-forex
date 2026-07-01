@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.13](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.12...backend-v2.12.13) (2026-07-01)
+
+
+### Bug Fixes
+
+* **snowball:** respect rebuild grid bounds ([66e9d4f](https://github.com/yuyash/auto-forex-web-service/commit/66e9d4fdaea409f360df5fe81ce042bcf7563c41))
+
 ## [2.12.12](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.11...backend-v2.12.12) (2026-06-29)
 
 
