@@ -17,6 +17,7 @@ from apps.trading.strategies.snowball.decision_trace import (
 )
 from apps.trading.strategies.snowball.enums import CycleStatus
 from apps.trading.strategies.snowball.cycle_state import SnowballCycle, SnowballStrategyState
+from apps.trading.strategies.snowball.grid_models import Layer, Slot
 
 logger = getLogger(__name__)
 
@@ -87,6 +88,81 @@ class CycleProcessingResult:
     rebuild_count: int = 0
 
 
+class SnowballReseedEligibilityPolicy:
+    """Classify cycles that should stop averaging and wait for reseed."""
+
+    def pending_for_reseed(
+        self,
+        *,
+        strategy: CycleOrchestratorStrategy,
+        cycle: SnowballCycle,
+        tick: Tick,
+    ) -> bool:
+        """Return True when a cycle should satisfy reseed-on-pending checks."""
+        if cycle.is_pending:
+            return True
+        return self.preserved_only_pending_for_reseed(
+            strategy=strategy,
+            cycle=cycle,
+            tick=tick,
+        )
+
+    def preserved_only_pending_for_reseed(
+        self,
+        *,
+        strategy: CycleOrchestratorStrategy,
+        cycle: SnowballCycle,
+        tick: Tick,
+    ) -> bool:
+        """Return True when only protected highest-R entries keep a cycle active."""
+        cfg = strategy.config
+        if not cfg.reseed_on_all_pending:
+            return False
+        if not cfg.stop_loss_enabled or not cfg.preserve_highest_retracement_enabled:
+            return False
+        if not cycle.grid.has_pending_rebuilds():
+            return False
+
+        ignored_preserved_entries = 0
+        for layer in cycle.grid.layers:
+            for slot in layer.slots:
+                entry = slot.entry
+                if entry is None:
+                    continue
+                if self._is_preserved_stop_loss_hit(cfg, layer, slot, tick):
+                    ignored_preserved_entries += 1
+                    continue
+                return False
+        return ignored_preserved_entries > 0
+
+    def _is_preserved_stop_loss_hit(
+        self,
+        config: SnowballStrategyConfig,
+        layer: Layer,
+        slot: Slot,
+        tick: Tick,
+    ) -> bool:
+        entry = slot.entry
+        if entry is None or entry.is_hedge:
+            return False
+        if entry.stop_loss_price is None:
+            return False
+
+        highest = layer.highest_occupied_slot()
+        if highest is None or highest.entry is None:
+            return False
+        if highest.entry.entry_id != entry.entry_id:
+            return False
+        if slot.index == 0 or slot.index < config.preserve_highest_r_from:
+            return False
+        if not entry.can_close_on_tick(tick):
+            return False
+
+        if entry.direction == Direction.LONG:
+            return tick.bid <= entry.stop_loss_price
+        return tick.ask >= entry.stop_loss_price
+
+
 class SnowballCycleStatusRefresher:
     """Update a cycle status after grid mutations have settled."""
 
@@ -124,10 +200,12 @@ class SnowballActiveCycleProcessor:
         self,
         *,
         status_refresher: SnowballCycleStatusRefresher | None = None,
+        reseed_policy: SnowballReseedEligibilityPolicy | None = None,
         decision_trace_recorder: SnowballDecisionTraceRecorder | None = None,
         logger_: Logger | None = None,
     ) -> None:
         self.status_refresher = status_refresher or SnowballCycleStatusRefresher()
+        self.reseed_policy = reseed_policy or SnowballReseedEligibilityPolicy()
         self.decision_trace_recorder = decision_trace_recorder or SnowballDecisionTraceRecorder()
         self.logger = logger_ or logger
 
@@ -375,6 +453,19 @@ class SnowballActiveCycleProcessor:
                 cycle=cycle,
             )
 
+        if self.reseed_policy.preserved_only_pending_for_reseed(
+            strategy=strategy,
+            cycle=cycle,
+            tick=tick,
+        ):
+            trace.record(
+                phase="cycle",
+                outcome="skipped",
+                reason="preserved_highest_retracement_waiting_for_reseed",
+                cycle=cycle,
+            )
+            return CycleProcessingResult(events=events, rebuild_count=rebuild_count)
+
         order_checked_without_new_mutations = False
         if (
             allow_new_positions
@@ -485,7 +576,13 @@ class SnowballActiveCycleProcessor:
 class SnowballCycleReseeder:
     """Create fresh cycles for directions that no longer have a tradable cycle."""
 
-    def __init__(self, *, logger_: Logger | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        reseed_policy: SnowballReseedEligibilityPolicy | None = None,
+        logger_: Logger | None = None,
+    ) -> None:
+        self.reseed_policy = reseed_policy or SnowballReseedEligibilityPolicy()
         self.logger = logger_ or logger
 
     def reseed(
@@ -532,9 +629,16 @@ class SnowballCycleReseeder:
             self.logger.info("No active %s cycle; creating new cycle", direction.value.upper())
             new_events, _ = strategy._create_cycle(ss, tick, direction)
             return new_events
-        if strategy.config.reseed_on_all_pending and all(cycle.is_pending for cycle in dir_cycles):
+        if strategy.config.reseed_on_all_pending and all(
+            self.reseed_policy.pending_for_reseed(
+                strategy=strategy,
+                cycle=cycle,
+                tick=tick,
+            )
+            for cycle in dir_cycles
+        ):
             self.logger.info(
-                "All %s cycles pending; creating new cycle (reseed_on_all_pending)",
+                "All %s cycles pending for reseed; creating new cycle (reseed_on_all_pending)",
                 direction.value.upper(),
             )
             new_events, _ = strategy._create_cycle(ss, tick, direction)

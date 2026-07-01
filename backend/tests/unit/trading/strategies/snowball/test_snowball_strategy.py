@@ -1114,6 +1114,84 @@ class TestCounterAdds:
         assert layer_initial.close_price == Decimal("161.1598888889")
         assert layer_initial.close_price <= previous_tp
 
+    def test_layer_initial_repairs_short_take_profit_from_actual_fill(self):
+        s = _strategy(
+            counter_tp_mode="weighted_avg",
+            interval_mode="manual",
+            manual_intervals=["20", "13", "15", "16", "17", "17", "17", "17"],
+            n_pips_head="17",
+            n_pips_tail="17",
+            f_max=10,
+            r_max=7,
+            refill_up_to=4,
+            pip_size="0.01",
+            m_pips="10",
+        )
+        ss = SnowballStrategyState(
+            initialised=True,
+            account_nav=Decimal("100000"),
+            next_entry_id=2000,
+        )
+        cycle = SnowballCycle(cycle_id=679, direction=Direction.SHORT)
+        layer8 = Layer.create(8, 7, 1000, 4)
+        layer8.slot_at(4).pending_rebuild = StopLossClosedEntry(
+            entry_price=Decimal("134.18600"),
+            close_price=Decimal("134.3569166666666666666666667"),
+            units=5000,
+            direction=Direction.SHORT,
+            role="counter",
+            layer_number=8,
+            retracement_count=4,
+            step=5,
+            root_entry_id=1389,
+            cycle_id=679,
+            stop_loss_price=Decimal("134.366000"),
+            closed_at=T0 - timedelta(minutes=1),
+        )
+        for index in (5, 6, 7):
+            layer8.slot_at(index).ever_closed = True
+        cycle.add_layer(layer8)
+        ss.cycles.append(cycle)
+
+        tick = _tick(T0 + timedelta(minutes=1), "151.738", "151.740")
+        events = s._open_layer_initial(ss, tick, cycle)
+
+        assert len(events) == 1
+        open_event = events[0]
+        assert isinstance(open_event, OpenPositionEvent)
+        assert open_event.layer_number == 9
+        assert open_event.retracement_count == 0
+        assert open_event.planned_entry_price == Decimal("134.35600")
+        assert open_event.price == Decimal("151.738")
+        assert open_event.planned_exit_price == Decimal("134.25600")
+        assert open_event.planned_exit_price_bound == Decimal("134.3569166666666666666666667")
+        assert open_event.planned_exit_price_bound_mode == "max"
+
+        state = DummyState(strategy_state=ss.to_dict())
+        s.apply_event_execution_result(
+            state=state,
+            execution_result=EventExecutionResult(
+                entry_binding=EntryExecutionBinding(
+                    entry_id=open_event.entry_id,
+                    position_id="f11707f9-3a73-4261-bf8b-dff75e84df9b",
+                    fill_price=open_event.price,
+                    planned_exit_price_bound=open_event.planned_exit_price_bound,
+                    planned_exit_price_bound_mode=open_event.planned_exit_price_bound_mode,
+                )
+            ),
+        )
+
+        updated = SnowballStrategyState.from_strategy_state(state.strategy_state)
+        updated_layer9 = updated.cycles[0].find_layer(9)
+        assert updated_layer9 is not None
+        updated_slot0 = updated_layer9.slot_at(0)
+        assert updated_slot0 is not None
+        layer_initial = updated_slot0.entry
+        assert layer_initial is not None
+        assert layer_initial.entry_price == Decimal("151.738")
+        assert layer_initial.close_price == Decimal("151.63800")
+        assert layer_initial.close_price < layer_initial.entry_price
+
     def test_layer_initial_rebuild_preserves_previous_tp_bound_after_fill_sync_long(self):
         s = _strategy(
             counter_tp_mode="weighted_avg",
@@ -2680,6 +2758,122 @@ class TestPendingCycleKeepsAveraging:
         cycle = persisted.cycles[0]
         assert cycle.is_pending
         assert cycle.grid.is_empty()
+
+
+# ==================================================================
+# Preserved highest-R cycles can reseed
+# ==================================================================
+
+
+class TestPreservedHighestReseed:
+    """A stop-loss-hit highest-R entry can remain open without blocking reseed."""
+
+    def test_preserved_highest_short_cycle_reseeds_without_adding_old_layer(self):
+        s = _strategy(
+            stop_loss_enabled=True,
+            rebuild_enabled=True,
+            preserve_highest_retracement_enabled=True,
+            preserve_highest_r_from=6,
+            reseed_on_all_pending=True,
+            interval_mode="constant",
+            n_pips_head="17",
+            f_max=5,
+            r_max=7,
+            refill_up_to=4,
+        )
+        s.configure_runtime(account_currency="JPY", hedging_enabled=True)
+        ss = SnowballStrategyState(initialised=True, next_entry_id=100)
+
+        long_cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        long_layer = Layer.create(1, 7, 1000, 4)
+        long_layer.slot_at(0).fill(
+            Entry(
+                entry_id=1,
+                step=1,
+                direction=Direction.LONG,
+                entry_price=Decimal("150.000"),
+                close_price=Decimal("200.000"),
+                units=1000,
+                opened_at=T0,
+                role="initial",
+                layer_number=1,
+                retracement_count=0,
+                root_entry_id=1,
+            )
+        )
+        long_cycle.add_layer(long_layer)
+        ss.cycles.append(long_cycle)
+
+        short_cycle = SnowballCycle(cycle_id=10, direction=Direction.SHORT)
+        layer1 = Layer.create(1, 7, 1000, 4)
+        layer1.slot_at(7).fill(
+            Entry(
+                entry_id=10,
+                step=8,
+                direction=Direction.SHORT,
+                entry_price=Decimal("129.43000"),
+                close_price=Decimal("129.06950"),
+                units=8000,
+                opened_at=T0,
+                role="counter",
+                layer_number=1,
+                retracement_count=7,
+                root_entry_id=10,
+                stop_loss_price=Decimal("129.78000"),
+            )
+        )
+        layer2 = Layer.create(2, 7, 1000, 4)
+        layer2.slot_at(0).pending_rebuild = StopLossClosedEntry(
+            entry_price=Decimal("134.18600"),
+            close_price=Decimal("134.3569166666666666666666667"),
+            units=1000,
+            direction=Direction.SHORT,
+            role="layer_initial",
+            layer_number=2,
+            retracement_count=0,
+            step=1,
+            root_entry_id=10,
+            cycle_id=10,
+            stop_loss_price=Decimal("134.36600"),
+            closed_at=T0 - timedelta(minutes=1),
+        )
+        short_cycle.add_layer(layer1)
+        short_cycle.add_layer(layer2)
+        ss.cycles.append(short_cycle)
+
+        state = DummyState(strategy_state=ss.to_dict())
+        result = s.on_tick(
+            tick=_tick(T0 + timedelta(minutes=1), "151.738", "151.740"),
+            state=state,
+        )
+
+        short_opens = [
+            event for event in _open_events(result) if event.direction == Direction.SHORT.value
+        ]
+        assert len(short_opens) == 1
+        assert short_opens[0].layer_number == 1
+        assert short_opens[0].retracement_count == 0
+
+        persisted = SnowballStrategyState.from_strategy_state(state.strategy_state)
+        old_short = next(cycle for cycle in persisted.cycles if cycle.cycle_id == 10)
+        assert old_short.layer_count == 2
+        old_l2 = old_short.find_layer(2)
+        assert old_l2 is not None
+        old_l2_r1 = old_l2.slot_at(1)
+        assert old_l2_r1 is not None
+        assert old_l2_r1.entry is None
+        old_l1 = old_short.find_layer(1)
+        assert old_l1 is not None
+        old_l1_r7 = old_l1.slot_at(7)
+        assert old_l1_r7 is not None
+        assert old_l1_r7.entry is not None
+
+        short_cycles = [cycle for cycle in persisted.cycles if cycle.direction == Direction.SHORT]
+        assert len(short_cycles) == 2
+        new_short = next(cycle for cycle in short_cycles if cycle.cycle_id != 10)
+        assert new_short.initial_entry is not None
+        assert new_short.initial_entry.layer_number == 1
+        assert new_short.initial_entry.retracement_count == 0
 
 
 # ==================================================================

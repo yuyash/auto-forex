@@ -63,7 +63,7 @@ from apps.trading.strategies.snowball.cycle_lifecycle import (
 from apps.trading.strategies.snowball.entries import Entry, StopLossClosedEntry
 from apps.trading.strategies.snowball.grid_models import Layer, Slot
 from apps.trading.strategies.snowball.parameters import SNOWBALL_PARAMETER_SERVICE
-from apps.trading.strategies.snowball.pricing import SNOWBALL_PRICING
+from apps.trading.strategies.snowball.pricing import SNOWBALL_PRICING, PlannedExitPriceBound
 from apps.trading.strategies.snowball.protection import SNOWBALL_PROTECTION
 from apps.trading.strategies.snowball.stop_loss_flow import (
     StopLossAssigner,
@@ -1000,19 +1000,66 @@ class SnowballStrategy(Strategy):
                     cycle.grid.layers.remove(layer)
                     return []
 
+        trend_tp_pips = self.trend_take_profit_pips()
         close_plan = SNOWBALL_PRICING.layer_initial_close_price(
             new_price=price,
             prev_layer=prev_layer,
             direction=direction,
             pip_size=self.pip_size,
-            m_pips=self.trend_take_profit_pips(),
+            m_pips=trend_tp_pips,
         )
         close_price = close_plan.close_price
         formula = close_plan.formula
 
-        effective_close_price = close_price + (market_price - price)
-        if close_plan.bound is not None:
-            effective_close_price = close_plan.bound.apply(effective_close_price)
+        effective_close_price = self._projected_layer_initial_close_after_fill(
+            close_price=close_price,
+            planned_entry_price=price,
+            fill_price=market_price,
+            bound=close_plan.bound,
+        )
+        if not self._planned_exit_on_profit_side(
+            direction=direction,
+            entry_price=market_price,
+            planned_exit_price=effective_close_price,
+        ):
+            repaired_close_price = self._repair_layer_initial_take_profit_for_fill(
+                direction=direction,
+                fill_price=market_price,
+                distance=trend_tp_pips * self.pip_size,
+                bound=close_plan.bound,
+            )
+            if repaired_close_price is None:
+                logger.info(
+                    "Skipping layer initial L%d/R0: planned exit %.5f would not remain "
+                    "on the profit side after fill price %.5f",
+                    layer.layer_number,
+                    effective_close_price,
+                    market_price,
+                )
+                cycle.grid.layers.remove(layer)
+                return []
+            logger.info(
+                "Adjusted layer initial TP to stay on profit side after fill: "
+                "L%d/R0, fill=%.5f, old_projected=%.5f, repaired_projected=%.5f, "
+                "planned_entry=%.5f",
+                layer.layer_number,
+                market_price,
+                effective_close_price,
+                repaired_close_price,
+                price,
+            )
+            close_price = self._pre_fill_planned_exit_price(
+                planned_entry_price=price,
+                fill_price=market_price,
+                projected_close_price=repaired_close_price,
+            )
+            formula = self._layer_initial_fill_repair_formula(
+                direction=direction,
+                planned_entry_price=price,
+                tp_pips=trend_tp_pips,
+            )
+            effective_close_price = repaired_close_price
+
         if not self._planned_exit_on_profit_side(
             direction=direction,
             entry_price=market_price,
@@ -1151,6 +1198,65 @@ class SnowballStrategy(Strategy):
         if direction == Direction.LONG:
             return planned_exit_price > entry_price
         return planned_exit_price < entry_price
+
+    @staticmethod
+    def _projected_layer_initial_close_after_fill(
+        *,
+        close_price: Decimal,
+        planned_entry_price: Decimal,
+        fill_price: Decimal,
+        bound: PlannedExitPriceBound | None,
+    ) -> Decimal:
+        projected = close_price + (fill_price - planned_entry_price)
+        if bound is not None:
+            return bound.apply(projected)
+        return projected
+
+    def _repair_layer_initial_take_profit_for_fill(
+        self,
+        *,
+        direction: Direction,
+        fill_price: Decimal,
+        distance: Decimal,
+        bound: PlannedExitPriceBound | None,
+    ) -> Decimal | None:
+        if distance <= 0:
+            return None
+
+        if direction == Direction.LONG:
+            projected = fill_price + distance
+        else:
+            projected = fill_price - distance
+
+        if bound is not None:
+            projected = bound.apply(projected)
+
+        if not self._planned_exit_on_profit_side(
+            direction=direction,
+            entry_price=fill_price,
+            planned_exit_price=projected,
+        ):
+            return None
+        return projected
+
+    @staticmethod
+    def _pre_fill_planned_exit_price(
+        *,
+        planned_entry_price: Decimal,
+        fill_price: Decimal,
+        projected_close_price: Decimal,
+    ) -> Decimal:
+        return projected_close_price - (fill_price - planned_entry_price)
+
+    def _layer_initial_fill_repair_formula(
+        self,
+        *,
+        direction: Direction,
+        planned_entry_price: Decimal,
+        tp_pips: Decimal,
+    ) -> str:
+        operator = "+" if direction == Direction.LONG else "-"
+        return f"fill_repair({planned_entry_price} {operator} {tp_pips} * {self.pip_size})"
 
     # ------------------------------------------------------------------
     # Stop-loss protection
