@@ -716,7 +716,7 @@ class StopLossRebuildPricePlanner:
         pending: StopLossClosedEntry,
         trigger_price: Decimal,
     ) -> tuple[Decimal, PlannedExitPriceBound | None]:
-        """Return adjusted and clamped rebuild take-profit price with hard bound."""
+        """Return adjusted and clamped rebuild take-profit price with grid bound."""
         close_price = SNOWBALL_PRICING.rebuild_take_profit_price(
             pending=pending,
             entry_price=trigger_price,
@@ -841,17 +841,17 @@ class StopLossRebuildPricePlanner:
         adjusted_close_price: Decimal,
     ) -> tuple[Decimal, PlannedExitPriceBound | None]:
         """Clamp rebuild TP against preceding occupied or pending slots."""
-        hard_bound, _soft_bound = self.grid_policy.tp_bounds(cycle, layer, slot.index)
-        if hard_bound is None:
+        neighbor_bound = self.grid_policy.upper_neighbor_tp_bound(cycle, layer, slot.index)
+        if neighbor_bound is None:
             return adjusted_close_price, None
         bound = PlannedExitPriceBound(
             mode="min" if pending.direction == Direction.LONG else "max",
-            price=hard_bound,
+            price=neighbor_bound,
         )
-        if pending.direction == Direction.LONG and adjusted_close_price > hard_bound:
-            return self._clamped_take_profit(pending, adjusted_close_price, hard_bound), bound
-        if pending.direction == Direction.SHORT and adjusted_close_price < hard_bound:
-            return self._clamped_take_profit(pending, adjusted_close_price, hard_bound), bound
+        if pending.direction == Direction.LONG and adjusted_close_price > neighbor_bound:
+            return self._clamped_take_profit(pending, adjusted_close_price, neighbor_bound), bound
+        if pending.direction == Direction.SHORT and adjusted_close_price < neighbor_bound:
+            return self._clamped_take_profit(pending, adjusted_close_price, neighbor_bound), bound
         return adjusted_close_price, bound
 
     def propagate_take_profit(
@@ -901,7 +901,7 @@ class StopLossRebuildPricePlanner:
         self,
         pending: StopLossClosedEntry,
         adjusted_close_price: Decimal,
-        hard_bound: Decimal,
+        neighbor_bound: Decimal,
     ) -> Decimal:
         self.logger.info(
             "Rebuild TP clamped to upper neighbor: "
@@ -910,9 +910,9 @@ class StopLossRebuildPricePlanner:
             pending.retracement_count,
             pending.close_price,
             adjusted_close_price,
-            hard_bound,
+            neighbor_bound,
         )
-        return hard_bound
+        return neighbor_bound
 
 
 class StopLossRebuildEntryFactory:

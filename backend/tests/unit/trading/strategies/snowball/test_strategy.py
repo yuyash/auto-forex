@@ -1935,6 +1935,82 @@ class TestSnowballRebuildTakeProfitModes:
         assert plan is not None
         assert plan.close_price == Decimal("130.33000")
 
+    def test_rebuild_soft_tp_bound_survives_short_fill_shift(self):
+        """A pending predecessor TP must still bound the post-fill rebuilt TP."""
+        strategy = _strategy(
+            {
+                "stop_loss_enabled": True,
+                "rebuild_enabled": True,
+                "rebuild_take_profit_mode": "same_pips",
+            }
+        )
+        previous_pending = StopLossClosedEntry(
+            entry_price=Decimal("127.97000"),
+            close_price=Decimal("128.0361428571428571428571429"),
+            units=12000,
+            direction=Direction.SHORT,
+            role="counter",
+            layer_number=1,
+            retracement_count=3,
+            step=4,
+            cycle_id=1,
+        )
+        rebuilding_pending = StopLossClosedEntry(
+            entry_price=Decimal("128.12600"),
+            close_price=Decimal("128.0601428571428571428571429"),
+            units=3000,
+            direction=Direction.SHORT,
+            role="layer_initial",
+            layer_number=2,
+            retracement_count=0,
+            step=1,
+            cycle_id=1,
+        )
+        l1 = Layer(layer_number=1, slots=[Slot(index=3, pending_rebuild=previous_pending)])
+        slot = Slot(index=0, pending_rebuild=rebuilding_pending)
+        l2 = Layer(layer_number=2, slots=[slot])
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.SHORT)
+        cycle.grid.layers.extend([l1, l2])
+        planner = StopLossRebuildPricePlanner()
+
+        plan = planner.plan(
+            strategy=strategy,
+            tick=_make_tick(datetime(2026, 1, 1, tzinfo=UTC), "128.09800", "128.12600"),
+            cycle=cycle,
+            layer=l2,
+            slot=slot,
+            pending=rebuilding_pending,
+        )
+
+        assert plan is not None
+        assert plan.close_price == Decimal("128.0601428571428571428571429")
+        assert plan.planned_exit_price_bound == Decimal("128.0361428571428571428571429")
+        assert plan.planned_exit_price_bound_mode == "max"
+
+        entry = Entry(
+            entry_id=99,
+            step=1,
+            direction=Direction.SHORT,
+            entry_price=plan.trigger_price,
+            close_price=plan.close_price,
+            units=3000,
+            opened_at=datetime(2026, 1, 1, tzinfo=UTC),
+            role="layer_initial",
+            layer_number=2,
+            retracement_count=0,
+            is_rebuild=True,
+        )
+        SNOWBALL_PRICING.sync_entry_fill_price(
+            entry=entry,
+            layer=None,
+            fill_price=Decimal("128.09800"),
+            counter_tp_mode=strategy.config.counter_tp_mode,
+            planned_exit_price_bound=plan.planned_exit_price_bound,
+            planned_exit_price_bound_mode=plan.planned_exit_price_bound_mode,
+        )
+
+        assert entry.close_price == Decimal("128.0361428571428571428571429")
+
     def test_cycle_rebuild_guard_blocks_negative_cycle_after_repeated_stops(self):
         strategy = _strategy(
             {
@@ -2135,6 +2211,42 @@ class TestSnowballRebuildTakeProfitModes:
 
         assert s._grid_order_violation is not None
         assert "tp_ok=False" in s._grid_order_violation
+
+    def test_validation_repairs_layer_initial_pending_tp_against_pending_neighbor(self):
+        s = _strategy({"stop_loss_enabled": True, "rebuild_enabled": True})
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.SHORT)
+        l1 = Layer(layer_number=1, slots=[Slot(index=3)])
+        l1.slot_at(3).pending_rebuild = StopLossClosedEntry(
+            entry_price=Decimal("127.97000"),
+            close_price=Decimal("128.0361428571428571428571429"),
+            units=12000,
+            direction=Direction.SHORT,
+            role="counter",
+            layer_number=1,
+            retracement_count=3,
+            step=4,
+            cycle_id=1,
+        )
+        l2 = Layer(layer_number=2, slots=[Slot(index=0)])
+        l2.slot_at(0).pending_rebuild = StopLossClosedEntry(
+            entry_price=Decimal("128.12600"),
+            close_price=Decimal("128.0321428571428571428571429"),
+            units=3000,
+            direction=Direction.SHORT,
+            role="layer_initial",
+            layer_number=2,
+            retracement_count=0,
+            step=1,
+            cycle_id=1,
+        )
+        cycle.grid.layers.extend([l1, l2])
+
+        s._validate_grid_ordering(cycle)
+
+        repaired = l2.slot_at(0).pending_rebuild
+        assert repaired is not None
+        assert repaired.close_price == Decimal("128.0361428571428571428571429")
+        assert s._grid_order_violation is None
 
 
 class TestSnowballPricingHelpers:

@@ -2178,7 +2178,7 @@ class TestGridOrderingValidation:
         assert persisted_cycle.completed is False
         assert len(persisted_cycle.grid.all_entries()) == 2
 
-    def test_grid_violation_skips_new_counter_adds_until_order_recovers(self, caplog):
+    def test_grid_violation_allows_new_counter_adds_while_recording_violation(self, caplog):
         s = _strategy(
             counter_tp_mode="fixed",
             counter_tp_pips="25",
@@ -2229,13 +2229,16 @@ class TestGridOrderingValidation:
             )
 
         assert result.should_stop is False
-        assert _open_events(result) == []
+        opens = _open_events(result)
+        assert len(opens) == 1
+        assert opens[0].retracement_count == 2
         persisted = SnowballStrategyState.from_strategy_state(state.strategy_state)
         persisted_cycle = persisted.find_cycle(9)
         assert persisted_cycle is not None
-        assert persisted_cycle.grid.layers[0].slot_at(2).entry is None
+        assert persisted_cycle.grid.layers[0].slot_at(2).entry is not None
         assert any(
-            "Skipping Snowball counter adds while grid ordering is violated" in record.getMessage()
+            "Continuing Snowball counter adds despite grid ordering violation"
+            in record.getMessage()
             for record in caplog.records
         )
         assert not any(record.levelno >= logging.WARNING for record in caplog.records)

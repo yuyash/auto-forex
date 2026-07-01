@@ -228,7 +228,7 @@ class SnowballProductionScenarioFactory:
         )
 
     def cross_layer_pending_rebuild(self) -> SnowballRebuildScenario:
-        """Pending predecessor TP is adjusted so cross-layer rebuild stays ordered."""
+        """Pending predecessor TP bounds cross-layer rebuilds so ordering stays intact."""
         strategy = self.strategy(stop_loss_enabled=True)
         l1 = Layer(layer_number=1, slots=[], base_units=1000, refill_up_to=3)
         l2 = Layer(layer_number=2, slots=[], base_units=1000, refill_up_to=3)

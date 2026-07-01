@@ -41,7 +41,7 @@ class TestSnowballProductionScenarios:
         detected_logs = [
             record
             for record in caplog.records
-            if "Grid ordering violation detected; pausing counter adds" in record.getMessage()
+            if "Grid ordering violation detected; continuing counter adds" in record.getMessage()
         ]
         assert len(detected_logs) == 1
         assert not any(record.levelno >= logging.WARNING for record in caplog.records)
@@ -57,11 +57,11 @@ class TestSnowballProductionScenarios:
 
         l1 = scenario.cycle.layers[0]
         l2 = scenario.cycle.layers[1]
-        expected_l2r0_tp = Decimal("130.64392")
+        expected_l2r0_tp = Decimal("130.644")
         assert l2.slots[0].entry is not None
         assert l2.slots[0].entry.close_price == expected_l2r0_tp
         assert l1.slots[7].pending_rebuild is not None
-        assert l1.slots[7].pending_rebuild.close_price == expected_l2r0_tp
+        assert l1.slots[7].pending_rebuild.close_price == Decimal("130.644")
 
         scenario.strategy._grid_order_violation = None
         scenario.strategy._validate_grid_ordering(scenario.cycle)
