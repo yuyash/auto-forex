@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.15](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.14...backend-v2.12.15) (2026-07-09)
+
+
+### Bug Fixes
+
+* **strategy:** freeze weighted counter take profit ([#859](https://github.com/yuyash/auto-forex-web-service/issues/859)) ([abbabdb](https://github.com/yuyash/auto-forex-web-service/commit/abbabdbbfbe2853cc0701edbc8ef5fe602e5dfd5))
+
 ## [2.12.14](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.13...backend-v2.12.14) (2026-07-01)
 
 
