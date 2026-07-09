@@ -2352,7 +2352,7 @@ class TestSnowballPricingHelpers:
                 counter_tp_mode="weighted_avg",
             )
 
-    def test_weighted_average_sync_updates_all_counter_take_profits(self):
+    def test_weighted_average_current_price_does_not_mutate_open_counter_take_profits(self):
         layer = Layer.create(1, 3, 1000)
         layer.slot_at(0).fill(
             Entry(
@@ -2393,14 +2393,82 @@ class TestSnowballPricingHelpers:
             )
         )
 
-        close_price = SNOWBALL_PRICING.sync_weighted_average_counter_take_profits(layer)
+        weighted = SNOWBALL_PRICING.current_weighted_avg_close_price(layer)
 
-        assert close_price == Decimal("149.600")
+        assert weighted is not None
+        assert weighted[0] == Decimal("149.600")
         assert layer.slot_at(0).entry.close_price == Decimal("150.50")
-        assert layer.slot_at(1).entry.close_price == Decimal("149.600")
-        assert layer.slot_at(2).entry.close_price == Decimal("149.600")
+        assert layer.slot_at(1).entry.close_price == Decimal("150.00")
+        assert layer.slot_at(2).entry.close_price == Decimal("149.80")
 
-    def test_weighted_average_sync_updates_pending_counter_take_profits(self):
+    def test_weighted_average_counter_open_preserves_existing_open_counter_take_profit(self):
+        strategy = _strategy({"counter_tp_mode": "weighted_avg"})
+        state = SnowballStrategyState()
+        cycle = SnowballCycle(cycle_id=1, direction=Direction.LONG)
+        layer = Layer.create(1, 7, 1000)
+        cycle.add_layer(layer)
+        r0_slot = layer.slot_at(0)
+        r1_slot = layer.slot_at(1)
+        r2_slot = layer.slot_at(2)
+        assert r0_slot is not None
+        assert r1_slot is not None
+        assert r2_slot is not None
+        r0_slot.fill(
+            Entry(
+                entry_id=1,
+                step=1,
+                direction=Direction.LONG,
+                entry_price=Decimal("150.00"),
+                close_price=Decimal("150.50"),
+                units=1000,
+                opened_at=datetime(2026, 1, 1, tzinfo=UTC),
+                role="initial",
+                layer_number=1,
+                retracement_count=0,
+                root_entry_id=1,
+            )
+        )
+        r1_slot.fill(
+            Entry(
+                entry_id=2,
+                step=2,
+                direction=Direction.LONG,
+                entry_price=Decimal("149.70"),
+                close_price=Decimal("150.00"),
+                units=2000,
+                opened_at=datetime(2026, 1, 1, tzinfo=UTC),
+                role="counter",
+                layer_number=1,
+                retracement_count=1,
+                root_entry_id=1,
+                parent_entry_id=1,
+            )
+        )
+
+        events = CounterEntryFactory().open_counter_entry(
+            strategy,
+            state,
+            _make_tick(datetime(2026, 1, 1, tzinfo=UTC), "149.38", "149.40"),
+            cycle,
+            layer,
+            r2_slot,
+            CounterAdverseInterval(adverse=Decimal("30"), interval=Decimal("30")),
+            CounterHeadContext(
+                entry=r0_slot.entry,
+                entry_price=Decimal("150.00"),
+                entry_id=1,
+                direction=Direction.LONG,
+            ),
+            assign_configured_stop_loss=lambda _entry, _slot_number: None,
+        )
+
+        assert getattr(events[0], "planned_exit_price") == Decimal("149.600")
+        assert r1_slot.entry is not None
+        assert r2_slot.entry is not None
+        assert r1_slot.entry.close_price == Decimal("150.00")
+        assert r2_slot.entry.close_price == Decimal("149.600")
+
+    def test_weighted_average_current_price_does_not_mutate_pending_counter_take_profits(self):
         cycle = SnowballCycle(cycle_id=85, direction=Direction.SHORT)
         layer = Layer.create(1, 7, 1000)
         cycle.add_layer(layer)
@@ -2461,20 +2529,21 @@ class TestSnowballPricingHelpers:
         )
         assert "tp_ok=False" in (SNOWBALL_GRID_POLICY.validate_ordering(cycle) or "")
 
-        close_price = SNOWBALL_PRICING.sync_weighted_average_counter_take_profits(layer)
+        weighted = SNOWBALL_PRICING.current_weighted_avg_close_price(layer)
 
-        assert close_price == Decimal("130.7555")
+        assert weighted is not None
+        assert weighted[0] == Decimal("130.7555")
         assert r0_slot.pending_rebuild is not None
         assert r5_slot.pending_rebuild is not None
         assert r6_slot.pending_rebuild is not None
         assert r7_slot.entry is not None
         assert r0_slot.pending_rebuild.close_price == Decimal("129.496")
-        assert r5_slot.pending_rebuild.close_price == close_price
-        assert r6_slot.pending_rebuild.close_price == close_price
-        assert r7_slot.entry.close_price == close_price
-        assert SNOWBALL_GRID_POLICY.validate_ordering(cycle) is None
+        assert r5_slot.pending_rebuild.close_price == Decimal("130.5521388888888888888888889")
+        assert r6_slot.pending_rebuild.close_price == Decimal("130.5536944444444444444444444")
+        assert r7_slot.entry.close_price == Decimal("130.5521388888888888888888889")
+        assert "tp_ok=False" in (SNOWBALL_GRID_POLICY.validate_ordering(cycle) or "")
 
-    def test_weighted_average_counter_open_syncs_pending_counter_take_profits(self):
+    def test_weighted_average_counter_open_preserves_pending_counter_take_profit(self):
         strategy = _strategy({"counter_tp_mode": "weighted_avg"})
         state = SnowballStrategyState()
         cycle = SnowballCycle(cycle_id=85, direction=Direction.SHORT)
@@ -2530,9 +2599,9 @@ class TestSnowballPricingHelpers:
         assert getattr(events[0], "planned_exit_price") == close_price
         assert r6_slot.pending_rebuild is not None
         assert r7_slot.entry is not None
-        assert r6_slot.pending_rebuild.close_price == close_price
+        assert r6_slot.pending_rebuild.close_price == Decimal("130.79000")
         assert r7_slot.entry.close_price == close_price
-        assert SNOWBALL_GRID_POLICY.validate_ordering(cycle) is None
+        assert "tp_ok=False" in (SNOWBALL_GRID_POLICY.validate_ordering(cycle) or "")
 
 
 class TestSnowballReconciliation:
