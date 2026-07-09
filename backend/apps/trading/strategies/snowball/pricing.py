@@ -207,20 +207,6 @@ class SnowballPricingService:
 
         return LayerInitialClosePrice(close_price=close_price, formula=formula, bound=bound)
 
-    def sync_weighted_average_counter_take_profits(self, layer: Layer) -> Decimal | None:
-        """Recompute weighted-average TP and apply it to all present counters in a layer."""
-        weighted = self.current_weighted_avg_close_price(layer)
-        if weighted is None:
-            return None
-
-        close_price = weighted[0]
-        for slot in layer.slots:
-            if slot.entry is not None and slot.entry.role == "counter":
-                slot.entry.close_price = close_price
-            elif slot.pending_rebuild is not None and slot.pending_rebuild.role == "counter":
-                slot.pending_rebuild.close_price = close_price
-        return close_price
-
     def sync_entry_fill_price(
         self,
         *,
@@ -231,7 +217,7 @@ class SnowballPricingService:
         planned_exit_price_bound: Decimal | str | None = None,
         planned_exit_price_bound_mode: str | None = None,
     ) -> None:
-        """Align entry pricing with a broker fill price and refresh dependent exits."""
+        """Align entry pricing with a broker fill price."""
         if fill_price is None:
             return
 
@@ -242,10 +228,13 @@ class SnowballPricingService:
         fill_price = Decimal(str(fill_price))
         original_entry_price = entry.entry_price
         original_stop_loss_price = entry.stop_loss_price
+        weighted_layer = (
+            layer
+            if layer is not None and entry.role == "counter" and counter_tp_mode == "weighted_avg"
+            else None
+        )
         delta = fill_price - original_entry_price
         if delta == 0:
-            if layer is not None and entry.role == "counter" and counter_tp_mode == "weighted_avg":
-                self.sync_weighted_average_counter_take_profits(layer)
             if bound is not None:
                 entry.close_price = bound.apply(entry.close_price)
             return
@@ -262,8 +251,10 @@ class SnowballPricingService:
                 source_stop_loss_price=original_stop_loss_price,
             )
 
-        if layer is not None and entry.role == "counter" and counter_tp_mode == "weighted_avg":
-            self.sync_weighted_average_counter_take_profits(layer)
+        if weighted_layer is not None:
+            weighted = self.current_weighted_avg_close_price(weighted_layer)
+            if weighted is not None:
+                entry.close_price = weighted[0]
             if bound is not None:
                 entry.close_price = bound.apply(entry.close_price)
             return
