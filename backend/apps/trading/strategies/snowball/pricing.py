@@ -228,11 +228,6 @@ class SnowballPricingService:
         fill_price = Decimal(str(fill_price))
         original_entry_price = entry.entry_price
         original_stop_loss_price = entry.stop_loss_price
-        weighted_layer = (
-            layer
-            if layer is not None and entry.role == "counter" and counter_tp_mode == "weighted_avg"
-            else None
-        )
         delta = fill_price - original_entry_price
         if delta == 0:
             if bound is not None:
@@ -250,14 +245,6 @@ class SnowballPricingService:
                 source_entry_price=original_entry_price,
                 source_stop_loss_price=original_stop_loss_price,
             )
-
-        if weighted_layer is not None:
-            weighted = self.current_weighted_avg_close_price(weighted_layer)
-            if weighted is not None:
-                entry.close_price = weighted[0]
-            if bound is not None:
-                entry.close_price = bound.apply(entry.close_price)
-            return
 
         entry.close_price += delta
         if bound is not None:
