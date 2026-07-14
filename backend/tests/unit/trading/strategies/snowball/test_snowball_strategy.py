@@ -1661,7 +1661,7 @@ class TestExecutionFillSync:
         assert counter is not None
         assert counter.position_id == "6adf8955-1836-4db1-aac9-ea3fbd8a67cb"
         assert counter.entry_price == Decimal("158.681")
-        assert counter.close_price == Decimal("158.746")
+        assert counter.close_price == Decimal("158.781")
 
         result = s.on_tick(
             tick=_tick(T0 + timedelta(minutes=2), "158.681", "158.701"),

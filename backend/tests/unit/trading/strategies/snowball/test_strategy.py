@@ -2352,6 +2352,46 @@ class TestSnowballPricingHelpers:
                 counter_tp_mode="weighted_avg",
             )
 
+    def test_sync_entry_fill_price_shifts_weighted_counter_take_profit_by_fill_delta(self):
+        layer = Layer.create(1, 7, 1000)
+        head = Entry(
+            entry_id=1,
+            step=1,
+            direction=Direction.LONG,
+            entry_price=Decimal("150.00"),
+            close_price=Decimal("150.50"),
+            units=1000,
+            opened_at=datetime(2026, 1, 1, tzinfo=UTC),
+            role="initial",
+            layer_number=1,
+            retracement_count=0,
+        )
+        counter = Entry(
+            entry_id=2,
+            step=2,
+            direction=Direction.LONG,
+            entry_price=Decimal("149.70"),
+            close_price=Decimal("149.90"),
+            units=2000,
+            opened_at=datetime(2026, 1, 1, tzinfo=UTC),
+            role="counter",
+            layer_number=1,
+            retracement_count=1,
+        )
+        layer.slot_at(0).fill(head)
+        layer.slot_at(1).fill(counter)
+
+        SNOWBALL_PRICING.sync_entry_fill_price(
+            entry=counter,
+            layer=layer,
+            fill_price=Decimal("149.72"),
+            counter_tp_mode="weighted_avg",
+        )
+
+        assert head.close_price == Decimal("150.50")
+        assert counter.entry_price == Decimal("149.72")
+        assert counter.close_price == Decimal("149.92")
+
     def test_weighted_average_current_price_does_not_mutate_open_counter_take_profits(self):
         layer = Layer.create(1, 3, 1000)
         layer.slot_at(0).fill(
