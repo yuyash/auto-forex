@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.16](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.15...backend-v2.12.16) (2026-07-14)
+
+
+### Bug Fixes
+
+* **strategy:** shift weighted tp by fill delta ([#862](https://github.com/yuyash/auto-forex-web-service/issues/862)) ([ecaa9eb](https://github.com/yuyash/auto-forex-web-service/commit/ecaa9eba1b498ef4a0a54443c69d2ba03e7e98c8))
+
 ## [2.12.15](https://github.com/yuyash/auto-forex-web-service/compare/backend-v2.12.14...backend-v2.12.15) (2026-07-09)
 
 
