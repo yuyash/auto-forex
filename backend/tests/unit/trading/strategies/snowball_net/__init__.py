@@ -1,1 +1,0 @@
-"""SnowballNet strategy unit tests."""
