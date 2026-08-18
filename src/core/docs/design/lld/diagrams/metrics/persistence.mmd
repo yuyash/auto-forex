@@ -1,0 +1,31 @@
+sequenceDiagram
+    title Profit Metrics - Persist Metric
+    autonumber
+
+    participant Recorder as TaskResultRecorder
+    participant Collector as ProfitMetricCollector
+    participant Writer as ResultRecorderWriter
+    participant Memory as InMemoryResultStore
+    participant Flusher as ResultFlushCoordinator
+    participant Buffer as ResultBatchBuffer
+    participant Store as External ResultStore
+    participant MetricStore as ProfitMetricStore
+
+    Recorder->>Writer: metric(metric)
+    Writer->>Memory: save_metric(metric)
+    Writer->>Flusher: queue_metric(metric)
+    loop each external result store buffer
+        Flusher->>Buffer: add_metric(metric)
+    end
+    Flusher->>Flusher: flush_if_due()
+    opt pending_count reaches flush_every
+        loop each non-empty external store buffer
+            Flusher->>Buffer: batch()
+            Flusher->>Store: save_batch(ResultBatch with queued records)
+            Flusher->>Buffer: clear()
+        end
+    end
+    loop each dedicated metric store
+        Writer->>MetricStore: save_metric(metric)
+    end
+    Recorder->>Collector: mark_emitted(task.id, tick.timestamp)

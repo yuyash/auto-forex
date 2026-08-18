@@ -1,0 +1,20 @@
+sequenceDiagram
+    title Task Execution - Profiling Finalization
+    autonumber
+
+    participant Future as Future[Task]
+    participant Profiler as TaskProfiler
+    participant Runner as BacktestRunner / TradingRunner
+    participant Output as Profile Output Files
+
+    Future->>Profiler: run(runner.run, control)
+    Profiler->>Runner: run(control)
+    Runner-->>Profiler: terminal, paused, or failed task
+    opt cProfile enabled
+        Profiler->>Output: write cProfile output
+    end
+    opt pyinstrument enabled
+        Profiler->>Output: write pyinstrument output
+    end
+    Note over Profiler,Output: Outputs are written in finally
+    Profiler-->>Future: final task

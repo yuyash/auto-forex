@@ -1,0 +1,126 @@
+name: Publish Python packages
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-python-packages
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.14"
+  UV_VERSION: "0.11.24"
+
+jobs:
+  build:
+    name: Build and validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - name: Install Python
+        run: uv python install "$PYTHON_VERSION"
+
+      - name: Build public packages without workspace sources
+        run: |
+          for directory in core protobuf snowball aws oanda server
+          do
+            uv build \
+              --package "auto-forex-${directory}" \
+              --no-sources \
+              --out-dir "dist/${directory}"
+          done
+
+      - name: Validate package metadata
+        run: uvx --from twine twine check dist/*/*
+
+      - name: Verify isolated wheel installations
+        run: |
+          mkdir combined-dist
+          cp dist/*/*.whl combined-dist/
+          python3 scripts/verify_distributions.py combined-dist --python "$PYTHON_VERSION"
+
+  publish:
+    name: Publish to PyPI
+    if: ${{ vars.ENABLE_PYPI_PUBLISHING == 'true' }}
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - name: Install Python
+        run: uv python install "$PYTHON_VERSION"
+
+      - name: Build public packages without workspace sources
+        run: |
+          for directory in core protobuf snowball aws oanda server
+          do
+            uv build \
+              --package "auto-forex-${directory}" \
+              --no-sources \
+              --out-dir "dist/${directory}"
+          done
+
+      - name: Publish versions not already present on PyPI
+        run: |
+          for directory in core protobuf snowball aws oanda server
+          do
+            pyproject="src/${directory}/pyproject.toml"
+            readarray -t metadata < <(
+              python3 -c '
+          import sys, tomllib
+          with open(sys.argv[1], "rb") as file:
+              project = tomllib.load(file)["project"]
+          print(project["name"])
+          print(project["version"])
+          ' "$pyproject"
+            )
+            name="${metadata[0]}"
+            version="${metadata[1]}"
+            status="$(
+              curl \
+                --location \
+                --retry 3 \
+                --silent \
+                --output /dev/null \
+                --write-out "%{http_code}" \
+                "https://pypi.org/pypi/${name}/${version}/json"
+            )"
+
+            case "$status" in
+              200)
+                echo "${name} ${version} already exists; skipping."
+                ;;
+              404)
+                uv publish \
+                  --trusted-publishing always \
+                  "dist/${directory}"/*
+                ;;
+              *)
+                echo "::error::PyPI returned HTTP ${status} for ${name} ${version}."
+                exit 1
+                ;;
+            esac
+          done

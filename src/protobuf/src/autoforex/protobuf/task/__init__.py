@@ -1,0 +1,1 @@
+"""AutoForex task contracts."""

@@ -1,0 +1,20 @@
+sequenceDiagram
+    title Task Creation - Start Backtest
+    autonumber
+
+    actor App
+    participant Manager as TaskManager
+    participant Factory as TaskRunnerFactory
+    participant Task as ExecutableTask
+    participant Registry as TaskRegistry
+    participant Launch as TaskLaunchService
+
+    App->>Manager: start_backtest(definition, data_source, strategy, broker?, profiling?)
+    Manager->>Factory: clock_for_definition(definition)
+    Factory-->>Manager: ManualClock(definition.start_at)
+    Manager->>Task: from_definition(definition, clock)
+    Task-->>Manager: CREATED task with empty strategy state
+    Manager->>Task: start(clock)
+    Task-->>Manager: RUNNING task
+    Manager->>Registry: save(started task)
+    Manager->>Launch: launch(started task, type=backtest, dependencies)

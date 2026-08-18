@@ -1,0 +1,68 @@
+# AutoForex Server configuration
+#
+# Process environment variables override matching settings in this file.
+# Values may also reference environment variables using ${NAME} or
+# ${NAME:-fallback}. References are resolved from the selected .env file first,
+# then from the process environment.
+
+host: "127.0.0.1"
+port: 50051
+grpc_workers: 8
+task_workers: 4
+shutdown_grace_seconds: 10.0
+
+heartbeat_interval_seconds: 5.0
+lease_duration_seconds: 30.0
+lease_renewal_seconds: 10.0
+reconciliation_interval_seconds: 1.0
+
+# Service discovery is opt-in. With PostgreSQL or DynamoDB, "persistence"
+# shares registrations across every server using the same backend.
+service_discovery_enabled: false
+service_discovery_backend: "persistence"
+service_discovery_advertised_host: null
+service_discovery_heartbeat_interval_seconds: 5.0
+service_discovery_ttl_seconds: 20.0
+service_discovery_capabilities:
+  - "task-service-v1"
+service_discovery_metadata: {}
+
+# Required only when service_discovery_backend is "aws_cloud_map".
+cloud_map_service_id: null
+cloud_map_namespace_name: null
+cloud_map_service_name: null
+cloud_map_region_name: null
+cloud_map_endpoint_url: null
+
+transport_security: "plaintext"
+tls_certificate_path: null
+tls_private_key_path: null
+tls_client_ca_path: null
+allow_plaintext_non_loopback: false
+authorization_rules: {}
+
+persistence_backend: "sqlite"
+# For PostgreSQL, a secret can remain outside this file:
+# database_url: "postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@${DB_HOST:-localhost}/autoforex"
+database_url: "${AUTO_FOREX_SERVER_DATABASE_URL:-sqlite:///auto-forex-server.db}"
+database_echo: false
+
+dynamodb_table_name: "auto-forex-server"
+dynamodb_region_name: null
+dynamodb_endpoint_url: null
+dynamodb_consistent_reads: true
+dynamodb_enable_point_in_time_recovery: true
+
+enable_oanda: false
+oanda_provider_name: "oanda"
+enable_athena: false
+athena_data_source_name: "athena"
+
+# Example:
+# csv_data_sources:
+#   history:
+#     tick_paths:
+#       - "${MARKET_DATA_ROOT}/USDJPY.csv"
+#     candle_paths: []
+#     encoding: "utf-8"
+csv_data_sources: {}

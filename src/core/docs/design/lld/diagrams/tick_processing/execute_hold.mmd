@@ -1,0 +1,13 @@
+sequenceDiagram
+    title Tick Processing - Execute HOLD
+    autonumber
+
+    participant Bus as EventBus
+    participant EventHandler as StrategyEventHandler
+    participant Handler as EventHandler
+
+    Bus->>EventHandler: handle(HOLD request)
+    loop each HOLD request
+        EventHandler-->>Bus: no response
+    end
+    Bus->>Handler: publish StrategyEvent(request only)

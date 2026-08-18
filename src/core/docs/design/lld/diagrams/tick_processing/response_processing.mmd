@@ -1,0 +1,38 @@
+sequenceDiagram
+    title Tick Processing - Execution Response Processing
+    autonumber
+
+    participant EventHandler as StrategyEventHandler
+    participant ResponseHandler as StrategyResponseHandler
+    participant Bus as EventBus
+    participant Handler as EventHandler
+    participant StrategyExec as StrategyExecutor
+    participant Registry as TaskRegistry
+    participant ContextStore
+    participant Balance as AccountBalance
+    participant Strategy as Strategy
+
+    EventHandler->>ResponseHandler: handle(StrategyExecutionResponse...)
+    loop each StrategyExecutionResponse
+        ResponseHandler->>Bus: publish(response)
+        Bus->>Bus: pop pending request or use response.event fallback
+        Bus->>Handler: publish response to matching handlers
+        Bus->>StrategyExec: handle(response)
+        StrategyExec->>Registry: apply_execution_response(response)
+        Registry->>ContextStore: apply_execution_response(response)
+        ContextStore->>Balance: apply(context.account_balance, response)
+        Balance-->>ContextStore: updated balance
+        ContextStore->>ContextStore: replace stored StrategyContext
+        StrategyExec->>Registry: current_context(task_id)
+        Registry->>ContextStore: current(task_id)
+        ContextStore-->>Registry: context with updated balance
+        Registry-->>StrategyExec: context with updated balance
+        StrategyExec->>Strategy: on_execution_reports((response,), context)
+        Strategy-->>StrategyExec: StrategyState
+        StrategyExec->>Registry: save_context(updated context)
+        Registry->>ContextStore: save(updated context)
+        opt strategy state changed
+            ContextStore->>Registry: save(task.with_strategy_state(context.state))
+        end
+        Bus->>Handler: publish StrategyEvent(request, response)
+    end

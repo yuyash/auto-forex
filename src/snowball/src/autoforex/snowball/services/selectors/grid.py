@@ -1,0 +1,76 @@
+"""Grid selection policies for Snowball flows."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from autoforex.core import Money
+
+from autoforex.snowball.models.entries import FilledEntry
+from autoforex.snowball.models.grid import Layer, Slot
+from autoforex.snowball.models.state import Cycle
+
+
+@dataclass(frozen=True, slots=True)
+class SnowballGridSelector:
+    """Select grid references and candidate slots for strategy flows."""
+
+    def effective_head(self, cycle: Cycle) -> FilledEntry | None:
+        """Return the live or pending head used for averaging decisions."""
+        head = cycle.head()
+        if head is not None:
+            return head
+        for _layer, slot in cycle.grid.query.iter_requested_stop_loss_slots():
+            if slot.requested_stop_loss_entry is not None:
+                return slot.requested_stop_loss_entry.original_entry
+        for _layer, slot in cycle.grid.query.iter_filled_stop_loss_slots():
+            if slot.filled_stop_loss_entry is not None:
+                return slot.filled_stop_loss_entry.original_entry
+        return None
+
+    def next_available_counter_slot(
+        self,
+        *,
+        layer: Layer,
+        max_refillable_retracement: int,
+    ) -> Slot | None:
+        """Return the next R1+ slot that can receive a counter entry."""
+        highest_present_slot_number = layer.query.highest_present_slot_number()
+        for retracement_count, slot in layer.iter_slot_items():
+            if retracement_count <= 0:
+                continue
+            if slot.is_sealed:
+                return None
+            if slot.entry is not None:
+                continue
+            if retracement_count > max_refillable_retracement and layer.build_number(slot) > 0:
+                return None
+            higher_present = (
+                highest_present_slot_number is not None
+                and highest_present_slot_number > retracement_count
+            )
+            if higher_present and layer.build_number(slot) > 0:
+                continue
+            return slot
+        return None
+
+    def counter_reference_price(
+        self,
+        *,
+        layer: Layer,
+        retracement_count: int,
+    ) -> Money | None:
+        """Return the nearest preceding reference entry price for a counter slot."""
+        for index in range(retracement_count - 1, -1, -1):
+            reference = layer.slot(index).reference_entry_price()
+            if reference is not None:
+                return reference
+        return None
+
+    def shrink_front_entry(self, cycle: Cycle) -> FilledEntry | None:
+        """Return the lowest L/R live entry eligible as a shrink candidate."""
+        for layer in cycle.grid.iter_layers():
+            for slot in layer.iter_slots():
+                if slot.filled_entry is not None:
+                    return slot.filled_entry
+        return None

@@ -1,0 +1,66 @@
+[project]
+name = "auto-forex-protobuf"
+version = "0.1.2"
+description = "gRPC protobuf contracts for AutoForexV2."
+readme = "README.md"
+requires-python = ">=3.14"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Yuya Shinde" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
+]
+dependencies = [
+    "grpcio>=1.81.1",
+    "protobuf>=6.33.5,<7",
+]
+
+[project.urls]
+Repository = "https://github.com/yuyash/auto-forex-v2"
+Issues = "https://github.com/yuyash/auto-forex-v2/issues"
+
+[build-system]
+requires = ["uv_build>=0.11.24,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "autoforex.protobuf"
+
+[dependency-groups]
+dev = [
+    "grpcio-tools>=1.81.1",
+    "ruff>=0.15.20",
+    "ty>=0.0.55",
+]
+
+[tool.ruff]
+extend-exclude = [
+    "src/autoforex/protobuf/task/v1/task_service_pb2.py",
+    "src/autoforex/protobuf/task/v1/task_service_pb2.pyi",
+    "src/autoforex/protobuf/task/v1/task_service_pb2_grpc.py",
+]
+line-length = 100
+src = ["src"]
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "RUF", "UP"]
+
+[tool.ruff.format]
+indent-style = "space"
+line-ending = "lf"
+quote-style = "double"
+
+[tool.ty.environment]
+python-version = "3.14"
+
+[tool.ty.src]
+exclude = [
+    "src/autoforex/protobuf/task/v1/task_service_pb2.py",
+    "src/autoforex/protobuf/task/v1/task_service_pb2.pyi",
+    "src/autoforex/protobuf/task/v1/task_service_pb2_grpc.py",
+]

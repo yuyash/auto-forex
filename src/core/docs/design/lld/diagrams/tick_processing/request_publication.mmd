@@ -1,0 +1,22 @@
+sequenceDiagram
+    title Tick Processing - Strategy Event Request Publication
+    autonumber
+
+    participant Publisher as StrategyPublisher
+    participant Bus as EventBus
+    participant EventHandler as StrategyEventHandler
+    participant Handler as EventHandler
+
+    Publisher->>Bus: publish_many(StrategyEventRequest...)
+    loop each StrategyEventRequest
+        alt request.requires_broker
+            Bus->>Bus: store pending request by event.id
+            Bus->>Handler: publish request to matching handlers
+            Bus->>EventHandler: handle(request)
+        else HOLD or other request without broker execution
+            Bus->>Handler: publish request to matching handlers
+            Bus->>EventHandler: handle(request)
+            EventHandler-->>Bus: no execution response
+            Bus->>Handler: publish StrategyEvent(request only)
+        end
+    end

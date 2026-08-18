@@ -1,0 +1,18 @@
+[Unit]
+Description=AutoForex task server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-{{ environment_file }}
+ExecStart={{ executable }} --config {{ configuration_file }} --env-file {{ environment_file }}
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

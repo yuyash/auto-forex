@@ -1,0 +1,24 @@
+sequenceDiagram
+    title Tick Processing - Execute OPEN_TRADE
+    autonumber
+
+    participant Bus as EventBus
+    participant EventHandler as StrategyEventHandler
+    participant ResponseHandler as StrategyResponseHandler
+    participant Broker as Broker
+
+    Bus->>EventHandler: handle(OPEN_TRADE request)
+    loop each OPEN_TRADE request
+        EventHandler->>EventHandler: build Order with logical_trade_id metadata
+        alt dry_run
+            EventHandler->>EventHandler: synthesize FILLED Order
+            EventHandler->>ResponseHandler: handle successful StrategyExecutionResponse
+        else broker configured
+            EventHandler->>Broker: place_order(order)
+            Broker-->>EventHandler: Order
+            EventHandler->>ResponseHandler: handle StrategyExecutionResponse
+        else broker missing
+            EventHandler->>ResponseHandler: handle StrategyExecutionResponse(execution_error)
+        end
+        ResponseHandler->>Bus: publish(response)
+    end

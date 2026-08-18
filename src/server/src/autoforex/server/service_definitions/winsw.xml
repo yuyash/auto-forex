@@ -1,0 +1,10 @@
+<service>
+  <id>auto-forex-server</id>
+  <name>AutoForex Server</name>
+  <description>AutoForex durable task server</description>
+  <executable>{{ executable }}</executable>
+  <arguments>--config "{{ configuration_file }}" --env-file "{{ environment_file }}"</arguments>
+  <startmode>Automatic</startmode>
+  <onfailure action="restart" delay="5 sec"/>
+  <stoptimeout>30 sec</stoptimeout>
+</service>

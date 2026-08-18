@@ -1,0 +1,23 @@
+sequenceDiagram
+    title Tick Processing - Execute CLOSE_TRADE by Position
+    autonumber
+
+    participant Bus as EventBus
+    participant EventHandler as StrategyEventHandler
+    participant ResponseHandler as StrategyResponseHandler
+    participant Broker as Broker
+
+    Bus->>EventHandler: handle(CLOSE_TRADE request)
+    EventHandler->>Broker: positions(instrument)
+    Broker-->>EventHandler: Position records
+    EventHandler->>EventHandler: select requested open position side
+    alt matching position sides found
+        loop each matching position side
+            EventHandler->>Broker: close_position(position, side, units?)
+            Broker-->>EventHandler: Order
+        end
+        EventHandler->>ResponseHandler: handle ordered StrategyExecutionResponse values
+    else no matching position
+        EventHandler->>ResponseHandler: handle StrategyExecutionResponse(execution_error)
+    end
+    ResponseHandler->>Bus: publish each response

@@ -1,0 +1,23 @@
+sequenceDiagram
+    title Task Execution - Pause Requested
+    autonumber
+
+    participant Runner as BacktestRunner / TradingRunner
+    participant Executor as StrategyExecutor
+    participant Lifecycle as TaskLifecycle
+    participant Registry as TaskRegistry
+    participant Bus as EventBus
+    participant Profiler as TaskProfiler
+
+    Runner->>Executor: tick(task, tick, control)
+    Executor->>Bus: expire_pending_strategy_requests(task_id, tick.timestamp)
+    Executor->>Lifecycle: pause_current()
+    Lifecycle->>Registry: get(task_id)
+    alt pause transition is still allowed
+        Lifecycle->>Registry: save(task.pause(clock))
+        Lifecycle->>Bus: publish(TASK_PAUSED)
+    else already transitioned by TaskControlService
+        Lifecycle-->>Executor: current paused task
+    end
+    Executor-->>Runner: terminal paused task, finish_terminal=false
+    Runner-->>Profiler: paused task without finish notification

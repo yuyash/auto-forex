@@ -1,7 +1,0 @@
-{
-  "display_name": "Custom Strategy",
-  "type": "object",
-  "description": "No-op strategy skeleton for custom implementations.",
-  "properties": {},
-  "additionalProperties": false
-}

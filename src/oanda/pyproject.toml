@@ -1,0 +1,63 @@
+[project]
+name = "auto-forex-oanda"
+version = "0.1.4"
+description = "OANDA v20 adapter package for AutoForexV2."
+readme = "README.md"
+requires-python = ">=3.14"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Yuya Shinde" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
+]
+dependencies = [
+    "auto-forex-core>=0.1,<0.2",
+    "pydantic-settings>=2.14.2",
+    "pyyaml>=6.0.3",
+    "requests>=2.34.2",
+    "tenacity>=9.1.4",
+]
+
+[project.urls]
+Repository = "https://github.com/yuyash/auto-forex-v2"
+Issues = "https://github.com/yuyash/auto-forex-v2/issues"
+
+[build-system]
+requires = ["uv_build>=0.11.24,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "autoforex.oanda"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.15.20",
+    "ty>=0.0.55",
+]
+
+[tool.ruff]
+line-length = 100
+src = ["src"]
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "RUF", "UP"]
+
+[tool.ruff.format]
+indent-style = "space"
+line-ending = "lf"
+quote-style = "double"
+
+[tool.coverage.run]
+source = ["src"]
+
+[tool.ty.environment]
+python-version = "3.14"
+
+[tool.uv.sources]
+auto-forex-core = { workspace = true }

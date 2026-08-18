@@ -1,0 +1,20 @@
+sequenceDiagram
+    title Task Execution - Strategy Request Timeout Monitor
+    autonumber
+
+    participant Monitor as StrategyRequestTimeoutMonitor
+    participant Runtimes as TaskRuntimeRegistry
+    participant Registry as TaskRegistry
+    participant Bus as EventBus
+
+    opt effective check interval is configured
+        loop every effective check interval
+            Monitor->>Runtimes: items()
+            loop each unfinished trading runtime
+                Monitor->>Registry: get(task_id)
+                opt task status is active
+                    Monitor->>Bus: expire_pending_strategy_requests(task_id, wall_clock_now)
+                end
+            end
+        end
+    end

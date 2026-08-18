@@ -1,0 +1,47 @@
+sequenceDiagram
+    title Tick Processing - Strategy Returns No Events
+    autonumber
+
+    participant Runner as BacktestRunner / TradingRunner
+    participant Clock as ManualClock
+    participant Executor as StrategyExecutor
+    participant Bus as EventBus
+    participant Control as TaskExecutionControl
+    participant Strategy as Strategy
+    participant Publisher as StrategyPublisher
+    participant Registry as TaskRegistry
+    participant ContextStore
+    participant Observer as ObserverNotifier
+
+    opt backtest runner
+        Runner->>Clock: set(tick.timestamp)
+    end
+    Runner->>Executor: tick(task, tick, control)
+    Executor->>Bus: expire_pending_strategy_requests(task_id, tick.timestamp)
+    Executor->>Control: read pause_requested and stop_requested
+    Control-->>Executor: continue
+    Executor->>Registry: current_context(task.id)
+    Registry->>ContextStore: current(task.id)
+    ContextStore-->>Registry: context
+    Registry-->>Executor: context
+    Executor->>Strategy: on_tick(tick, context)
+    Strategy-->>Executor: StrategyResult(events=(), state?)
+    alt result.state is present
+        Executor->>Registry: stage_context(context.with_state(result.state))
+    else
+        Executor->>Registry: stage_context(context)
+    end
+    Registry->>ContextStore: stage(context)
+    Executor->>Publisher: publish(result)
+    Note over Publisher,Bus: No event is published
+    Executor->>Registry: save_context(context)
+    Registry->>ContextStore: save(context)
+    ContextStore->>Registry: get(task_id)
+    alt strategy state changed
+        ContextStore->>Registry: save(task.with_strategy_state(context.state))
+    else state unchanged
+        ContextStore-->>Registry: current task without save
+    end
+    Registry-->>Executor: current task
+    Executor->>Observer: tick(current task, tick)
+    Executor-->>Runner: updated task

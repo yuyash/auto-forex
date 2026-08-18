@@ -1,0 +1,40 @@
+sequenceDiagram
+    title Task Creation - Launch Runner
+    autonumber
+
+    actor App
+    participant Manager as TaskManager
+    participant Launch as TaskLaunchService
+    participant Runtimes as TaskRuntimeRegistry
+    participant Registry as TaskRegistry
+    participant Launcher as TaskLauncher
+    participant Control as TaskExecutionControl
+    participant Profiler as TaskProfiler
+    participant Factory as TaskRunnerFactory
+    participant Runner as BacktestRunner / TradingRunner
+    participant Pool as ThreadPoolExecutor
+    participant Run as TaskRun
+
+    Manager->>Launch: launch(started task, runtime dependencies)
+    Launch->>Runtimes: current(task.id)
+    loop each unfinished runtime
+        Launch->>Registry: get(runtime task id)
+    end
+    Launch->>Runtimes: active_strategy_task_id(strategy, active snapshots)
+    alt task or strategy already has an active runner
+        Launch-->>Manager: TaskAlreadyRunningError or StrategyAlreadyRunningError
+    else launch is allowed
+        Launch->>Launcher: launch(task, type, dependencies, profiling)
+        Launcher->>Control: create()
+        Launcher->>Profiler: create(task metadata, effective profiling config)
+        Launcher->>Factory: runner(task, type, dependencies, clock, profiler)
+        Factory->>Runner: create concrete runner with observers
+        Runner-->>Launcher: runner
+        Launcher->>Pool: submit(profiler.run, runner.run, control)
+        Pool-->>Launcher: Future[Task]
+        Launcher-->>Launch: TaskRuntime(dependencies, control, profiler, future)
+        Launch->>Runtimes: save(task.id, runtime)
+        Launch-->>Manager: runtime registered
+        Manager-->>Run: TaskRun(started task, manager)
+        Run-->>App: started run handle
+    end

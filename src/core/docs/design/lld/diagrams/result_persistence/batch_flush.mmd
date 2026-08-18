@@ -1,0 +1,39 @@
+sequenceDiagram
+    title Result Persistence - Flush Buffered Results
+    autonumber
+
+    participant Writer as ResultRecorderWriter
+    participant Flusher as ResultFlushCoordinator
+    participant Buffer as ResultBatchBuffer
+    participant Store as External ResultStore
+
+    Writer->>Flusher: queue_event/trade/cycle/task/metric(record)
+    alt no external result stores
+        Flusher-->>Writer: return without incrementing pending_count
+    else external result stores configured
+        loop each external result store buffer
+            Flusher->>Buffer: add matching record
+        end
+        Flusher->>Flusher: increment pending_count
+        Flusher->>Flusher: flush_if_due()
+        opt pending_count reaches flush_every
+            Flusher->>Flusher: flush()
+            loop stores and their independent buffers in order
+                Flusher->>Buffer: batch()
+                Buffer-->>Flusher: ResultBatch
+                alt batch is empty
+                    Flusher->>Flusher: skip store
+                else store succeeds
+                    Flusher->>Store: save_batch(batch)
+                    Store-->>Flusher: success
+                    Flusher->>Buffer: clear()
+                else store raises
+                    Store-->>Flusher: exception
+                    Note over Flusher,Buffer: Failing and later buffers remain while earlier successful buffers stay cleared
+                end
+            end
+            opt every buffer is empty
+                Flusher->>Flusher: pending_count = 0
+            end
+        end
+    end

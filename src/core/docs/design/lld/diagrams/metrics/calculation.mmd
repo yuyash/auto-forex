@@ -1,0 +1,22 @@
+sequenceDiagram
+    title Profit Metrics - Calculate Metric
+    autonumber
+
+    participant Recorder as TaskResultRecorder
+    participant Ledger as TradeLedger
+    participant Collector as ProfitMetricCollector
+    participant State as TradeState
+    participant Metric as ProfitMetric
+
+    Recorder->>Ledger: trade_states(task.id)
+    Ledger-->>Recorder: mutable open and closed trade states
+    Recorder->>Collector: metric(task, tick, trade_states)
+    loop states with closed_at
+        Collector->>Collector: sum realized_pl in quote currency
+    end
+    loop states without closed_at
+        Collector->>State: unrealized_pl(tick)
+        State-->>Collector: Money in quote currency
+    end
+    Collector->>Metric: construct(realized, unrealized, total, counts, interval)
+    Metric-->>Recorder: ProfitMetric

@@ -1,0 +1,37 @@
+sequenceDiagram
+    title Task Execution - Tick Continues
+    autonumber
+
+    participant Runner as BacktestRunner / TradingRunner
+    participant Clock as ManualClock
+    participant Executor as StrategyExecutor
+    participant Bus as EventBus
+    participant Strategy as Strategy
+    participant Publisher as StrategyPublisher
+    participant Registry as TaskRegistry
+    participant ContextStore
+    participant Observer as ObserverNotifier
+
+    opt backtest runner
+        Runner->>Clock: set(tick.timestamp)
+    end
+    Runner->>Executor: tick(task, tick, control)
+    Executor->>Bus: expire_pending_strategy_requests(task_id, tick.timestamp)
+    Executor->>Registry: current_context(task.id)
+    Registry->>ContextStore: current(task.id)
+    ContextStore-->>Registry: context
+    Registry-->>Executor: context
+    Executor->>Strategy: on_tick(tick, context)
+    Strategy-->>Executor: StrategyResult(events, state?)
+    Executor->>Registry: stage_context(context with result state)
+    Registry->>ContextStore: stage(context)
+    Executor->>Publisher: publish(tick_result)
+    Note over Executor,Publisher: Event cases are detailed under ../tick_processing/
+    Executor->>Registry: save_context(context)
+    Registry->>ContextStore: save(context)
+    ContextStore->>Registry: get(task_id)
+    opt strategy state changed during tick
+        ContextStore->>Registry: save(task.with_strategy_state(context.state))
+    end
+    Executor->>Observer: tick(current task, tick)
+    Executor-->>Runner: updated task

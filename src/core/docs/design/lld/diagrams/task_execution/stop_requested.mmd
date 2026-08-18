@@ -1,0 +1,26 @@
+sequenceDiagram
+    title Task Execution - Stop Requested
+    autonumber
+
+    participant Runner as BacktestRunner / TradingRunner
+    participant Executor as StrategyExecutor
+    participant Lifecycle as TaskLifecycle
+    participant Registry as TaskRegistry
+    participant Bus as EventBus
+    participant Observer as ObserverNotifier
+    participant Profiler as TaskProfiler
+
+    Runner->>Executor: tick(task, tick, control)
+    Executor->>Bus: expire_pending_strategy_requests(task_id, tick.timestamp)
+    Executor->>Lifecycle: stop_current()
+    Lifecycle->>Registry: get(task_id)
+    alt stop transition is still allowed
+        Lifecycle->>Registry: save(task.stop(clock))
+        Lifecycle->>Bus: publish(TASK_STOPPED)
+    else already transitioned by TaskControlService
+        Lifecycle-->>Executor: current stopped task
+    end
+    Executor-->>Runner: terminal stopped task, finish_terminal=true
+    Runner->>Bus: clear_pending_strategy_requests(task_id, reason)
+    Runner->>Observer: finished(stopped task)
+    Runner-->>Profiler: stopped task

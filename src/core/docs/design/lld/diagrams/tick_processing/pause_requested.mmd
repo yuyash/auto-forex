@@ -1,0 +1,23 @@
+sequenceDiagram
+    title Tick Processing - Pause Requested
+    autonumber
+
+    participant Runner as BacktestRunner / TradingRunner
+    participant Clock as ManualClock
+    participant Executor as StrategyExecutor
+    participant Bus as EventBus
+    participant Control as TaskExecutionControl
+    participant Lifecycle as TaskLifecycle
+    participant Observer as ObserverNotifier
+
+    opt backtest runner
+        Runner->>Clock: set(tick.timestamp)
+    end
+    Runner->>Executor: tick(task, tick, control)
+    Executor->>Bus: expire_pending_strategy_requests(task_id, tick.timestamp)
+    Executor->>Control: read pause_requested and stop_requested
+    Control-->>Executor: pause_requested = true
+    Executor->>Lifecycle: pause_current()
+    Lifecycle-->>Executor: paused terminal task
+    Executor-->>Runner: TaskTickStep(finish_terminal=false)
+    Note over Runner,Observer: No strategy callback, tick observer, pending clear, or finish observer

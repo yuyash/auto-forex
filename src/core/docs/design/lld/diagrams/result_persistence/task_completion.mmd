@@ -1,0 +1,44 @@
+sequenceDiagram
+    title Result Persistence - Finalize Terminal Task
+    autonumber
+
+    participant Runner as ObserverNotifier
+    participant Recorder as TaskResultRecorder
+    participant Ledger as TradeLedger
+    participant Writer as ResultRecorderWriter
+    participant Memory as InMemoryResultStore
+    participant Flusher as ResultFlushCoordinator
+    participant Store as External ResultStore
+    participant Buffer as ResultBatchBuffer
+
+    Runner->>Recorder: on_task_finished(terminal task)
+    Recorder->>Ledger: summaries(memory summaries, task_id)
+    Ledger-->>Recorder: latest open and closed trade summaries
+    loop each latest trade summary
+        Recorder->>Writer: trade(summary)
+        Writer->>Memory: save_trade(summary)
+        Writer->>Flusher: queue_trade(summary)
+    end
+    Recorder->>Ledger: cycle_summaries(memory summaries, task_id)
+    Ledger-->>Recorder: latest cycle summaries
+    loop each latest cycle summary
+        Recorder->>Writer: cycle(summary)
+        Writer->>Memory: save_cycle(summary)
+        Writer->>Flusher: queue_cycle(summary)
+    end
+    Recorder->>Ledger: task_summary(task, trade summaries)
+    Ledger-->>Recorder: TaskSummary
+    Recorder->>Writer: task(summary)
+    Writer->>Memory: save_task(summary)
+    Writer->>Flusher: queue_task(summary)
+    Recorder->>Writer: flush()
+    Writer->>Flusher: flush()
+    loop each non-empty external store buffer
+        Flusher->>Buffer: batch()
+        Flusher->>Store: save_batch(final batch)
+        Flusher->>Buffer: clear()
+    end
+    opt cleanup_finished_tasks enabled
+        Recorder->>Ledger: cleanup_task(task.id)
+        Recorder->>Recorder: clear metric due state and task bookkeeping
+    end

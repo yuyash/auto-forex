@@ -1,0 +1,18 @@
+sequenceDiagram
+    title Tick Processing - Strategy Event Execution Error
+    autonumber
+
+    participant Bus as EventBus
+    participant EventHandler as StrategyEventHandler
+    participant ResponseHandler as StrategyResponseHandler
+
+    Bus->>EventHandler: handle(request)
+    alt unsupported action such as CANCEL_ORDER
+        EventHandler->>ResponseHandler: handle StrategyExecutionResponse(execution_error)
+    else broker execution raises
+        EventHandler->>ResponseHandler: handle StrategyExecutionResponse(execution_error)
+    else no matching close target
+        EventHandler->>ResponseHandler: handle StrategyExecutionResponse(execution_error)
+    end
+    ResponseHandler->>Bus: publish(response)
+    Note over Bus,ResponseHandler: Execution errors are normalized into response events

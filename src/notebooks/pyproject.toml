@@ -1,0 +1,57 @@
+[project]
+name = "auto-forex-notebooks"
+version = "0.1.2"
+description = "Jupyter notebooks for AutoForexV2 exploration and analysis."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "auto-forex-aws",
+    "auto-forex-core",
+    "auto-forex-server",
+    "auto-forex-snowball",
+    "auto-forex-oanda",
+    "ipykernel>=6.30.1",
+    "ipywidgets>=8.1.7",
+    "jupyterlab>=4.6.2",
+    "matplotlib>=3.10.7",
+    "tqdm>=4.67.1",
+    "pyinstrument>=5.1.2",
+    "snakeviz>=2.2.2",
+    "tuna>=0.5.15",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.24,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "notebooks"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.20",
+    "ty>=0.0.55",
+]
+
+[tool.uv.sources]
+auto-forex-aws = { workspace = true }
+auto-forex-core = { workspace = true }
+auto-forex-server = { workspace = true }
+auto-forex-snowball = { workspace = true }
+auto-forex-oanda = { workspace = true }
+
+[tool.ruff]
+line-length = 100
+src = ["src"]
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "RUF", "UP"]
+
+[tool.ruff.format]
+indent-style = "space"
+line-ending = "lf"
+quote-style = "double"
+
+[tool.ty.environment]
+python-version = "3.14"

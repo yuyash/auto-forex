@@ -1,0 +1,46 @@
+sequenceDiagram
+    title Task Execution - Runner Start
+    autonumber
+
+    participant Future as Future[Task]
+    participant Profiler as TaskProfiler
+    participant Runner as BacktestRunner / TradingRunner
+    participant Lifecycle as TaskLifecycle
+    participant Registry as TaskRegistry
+    participant ContextStore
+    participant Balance as AccountBalance
+    participant Bus as EventBus
+    participant Executor as StrategyExecutor
+    participant Publisher as StrategyPublisher
+    participant Strategy as Strategy
+    participant Source as DataSource
+
+    Future->>Profiler: run(runner.run, control)
+    Profiler->>Runner: run(control)
+    Runner->>Lifecycle: ensure_running()
+    Lifecycle->>Registry: get(task_id)
+    opt task is not RUNNING
+        Lifecycle->>Registry: save(task.start(clock))
+    end
+    Lifecycle->>Bus: publish(TASK_STARTED)
+    Runner->>Executor: start(task)
+    Executor->>Registry: initialize_context(task, strategy_name)
+    Registry->>ContextStore: initialize(task, strategy_name)
+    ContextStore->>Balance: initial(task)
+    Balance-->>ContextStore: initial account balance
+    ContextStore-->>Registry: context
+    Registry-->>Executor: context
+    Executor->>Strategy: on_start(context)
+    Strategy-->>Executor: StrategyResult(events, state?)
+    Executor->>Registry: stage_context(context with result state)
+    Registry->>ContextStore: stage(context)
+    Executor->>Publisher: publish(start_result)
+    Executor->>Registry: save_context(context)
+    Registry->>ContextStore: save(context)
+    ContextStore->>Registry: get(task_id)
+    opt strategy state changed during on_start
+        ContextStore->>Registry: save(task.with_strategy_state(context.state))
+    end
+    Executor-->>Runner: current task
+    Runner->>Source: ticks(instrument, start_at?, end_at?)
+    Source-->>Runner: iterable tick stream

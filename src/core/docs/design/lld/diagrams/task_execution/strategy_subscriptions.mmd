@@ -1,0 +1,22 @@
+sequenceDiagram
+    title Task Execution - Strategy Subscriber Lifecycle
+    autonumber
+
+    participant Runner as BacktestRunner / TradingRunner
+    participant Executor as StrategyExecutor
+    participant Bus as EventBus
+    participant EventHandler as StrategyEventHandler
+    participant ResponseHandler as StrategyResponseHandler
+
+    Runner->>Executor: open()
+    Executor->>Bus: subscribe(EventHandler, StrategyEventRequest, task_id)
+    Executor->>Bus: subscribe(Executor, StrategyExecutionResponse, task_id)
+    Note over Bus,Executor: Subscribers only receive events for the current task
+    Note over EventHandler,ResponseHandler: ResponseHandler publishes execution responses to Bus
+
+    Runner->>Runner: execute task
+
+    Runner->>Executor: close() in context-manager exit
+    Executor->>Bus: unsubscribe(Executor response subscription)
+    Executor->>Bus: unsubscribe(EventHandler)
+    Note over Runner,Executor: Cleanup runs after completion, stop, pause, or failure

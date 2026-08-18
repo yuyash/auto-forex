@@ -1,0 +1,24 @@
+sequenceDiagram
+    title Result Persistence - Store Backend Semantics
+    autonumber
+
+    participant Flusher as ResultFlushCoordinator
+    participant Store as ResultStore
+    participant Csv as CsvResultStore
+    participant Sql as SqlResultStore
+
+    Flusher->>Store: save_batch(ResultBatch)
+    alt CsvResultStore
+        Store->>Csv: append unique event and metric rows by event_id / metric_id
+        Store->>Csv: append trade, cycle, and task snapshots
+        Note over Csv: Readers select the latest snapshot for each logical key
+    else SqlResultStore
+        Store->>Sql: begin one transaction for the batch
+        loop each record
+            Sql->>Sql: delete existing row by primary key
+            Sql->>Sql: insert replacement row
+        end
+        Sql-->>Store: commit transaction
+    else custom ResultStore
+        Store->>Store: persist ResultBatch using store-defined semantics
+    end

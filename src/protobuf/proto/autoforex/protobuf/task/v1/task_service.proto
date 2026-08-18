@@ -1,0 +1,210 @@
+syntax = "proto3";
+
+package autoforex.task.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+service TaskService {
+  rpc GetHealth(GetHealthRequest) returns (GetHealthResponse);
+  rpc ListServerInstances(ListServerInstancesRequest) returns (ListServerInstancesResponse);
+  rpc StartBacktest(StartBacktestRequest) returns (TaskResponse);
+  rpc StartTrading(StartTradingRequest) returns (TaskResponse);
+  rpc GetTask(GetTaskRequest) returns (TaskResponse);
+  rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
+  rpc PauseTask(PauseTaskRequest) returns (TaskResponse);
+  rpc ResumeTask(ResumeTaskRequest) returns (TaskResponse);
+  rpc StopTask(StopTaskRequest) returns (TaskResponse);
+  rpc RestartTask(RestartTaskRequest) returns (TaskResponse);
+  rpc RecoverTask(RecoverTaskRequest) returns (TaskResponse);
+}
+
+enum ServiceInstanceStatus {
+  SERVICE_INSTANCE_STATUS_UNSPECIFIED = 0;
+  SERVICE_INSTANCE_STATUS_SERVING = 1;
+  SERVICE_INSTANCE_STATUS_DRAINING = 2;
+}
+
+enum TaskType {
+  TASK_TYPE_UNSPECIFIED = 0;
+  TASK_TYPE_BACKTEST = 1;
+  TASK_TYPE_TRADING = 2;
+}
+
+enum TaskStatus {
+  TASK_STATUS_UNSPECIFIED = 0;
+  TASK_STATUS_CREATED = 1;
+  TASK_STATUS_STARTING = 2;
+  TASK_STATUS_RUNNING = 3;
+  TASK_STATUS_PAUSED = 4;
+  TASK_STATUS_IDLE = 5;
+  TASK_STATUS_DRAINING = 6;
+  TASK_STATUS_STOPPING = 7;
+  TASK_STATUS_STOPPED = 8;
+  TASK_STATUS_COMPLETED = 9;
+  TASK_STATUS_FAILED = 10;
+}
+
+enum TaskExecutionDisposition {
+  TASK_EXECUTION_DISPOSITION_UNSPECIFIED = 0;
+  TASK_EXECUTION_DISPOSITION_RUNNING = 1;
+  TASK_EXECUTION_DISPOSITION_PAUSED = 2;
+  TASK_EXECUTION_DISPOSITION_STOPPED = 3;
+  TASK_EXECUTION_DISPOSITION_COMPLETED = 4;
+  TASK_EXECUTION_DISPOSITION_FAILED = 5;
+  TASK_EXECUTION_DISPOSITION_RECOVERY_REQUIRED = 6;
+}
+
+message CurrencyPair {
+  string base = 1;
+  string quote = 2;
+}
+
+message StrategyReference {
+  string name = 1;
+  google.protobuf.Struct parameters = 2;
+}
+
+message DataSourceReference {
+  string name = 1;
+}
+
+message ProviderReference {
+  string name = 1;
+}
+
+message AccountReference {
+  string id = 1;
+  ProviderReference provider = 2;
+}
+
+message BacktestDefinition {
+  google.protobuf.Timestamp start_at = 1;
+  google.protobuf.Timestamp end_at = 2;
+  DataSourceReference data_source = 3;
+  ProviderReference broker_provider = 4;
+}
+
+message TradingDefinition {
+  AccountReference account = 1;
+  ProviderReference provider = 2;
+  bool dry_run = 3;
+}
+
+message TaskFailure {
+  string message = 1;
+  string code = 2;
+  string category = 3;
+  string where = 4;
+  string cause_type = 5;
+  string traceback = 6;
+  google.protobuf.Timestamp occurred_at = 7;
+}
+
+message Task {
+  string id = 1;
+  string definition_id = 2;
+  string name = 3;
+  TaskType type = 4;
+  TaskStatus status = 5;
+  CurrencyPair instrument = 6;
+  StrategyReference strategy = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp started_at = 9;
+  google.protobuf.Timestamp paused_at = 10;
+  google.protobuf.Timestamp stopped_at = 11;
+  google.protobuf.Timestamp completed_at = 12;
+  uint32 run_count = 13;
+  TaskFailure failure = 14;
+  google.protobuf.Timestamp last_processed_at = 15;
+  TaskExecutionDisposition execution_disposition = 16;
+
+  oneof definition {
+    BacktestDefinition backtest = 20;
+    TradingDefinition trading = 21;
+  }
+}
+
+message GetHealthRequest {}
+
+message GetHealthResponse {
+  string status = 1;
+}
+
+message ListServerInstancesRequest {}
+
+message ServerInstance {
+  string instance_id = 1;
+  string host = 2;
+  uint32 port = 3;
+  string transport_security = 4;
+  ServiceInstanceStatus status = 5;
+  string version = 6;
+  google.protobuf.Timestamp started_at = 7;
+  google.protobuf.Timestamp heartbeat_at = 8;
+  google.protobuf.Timestamp expires_at = 9;
+  repeated string capabilities = 10;
+  map<string, string> metadata = 11;
+}
+
+message ListServerInstancesResponse {
+  repeated ServerInstance instances = 1;
+}
+
+message StartBacktestRequest {
+  string request_id = 8;
+  string name = 1;
+  CurrencyPair instrument = 2;
+  StrategyReference strategy = 3;
+  google.protobuf.Timestamp start_at = 4;
+  google.protobuf.Timestamp end_at = 5;
+  DataSourceReference data_source = 6;
+  ProviderReference broker_provider = 7;
+}
+
+message StartTradingRequest {
+  string request_id = 7;
+  string name = 1;
+  CurrencyPair instrument = 2;
+  StrategyReference strategy = 3;
+  AccountReference account = 4;
+  ProviderReference provider = 5;
+  bool dry_run = 6;
+}
+
+message GetTaskRequest {
+  string task_id = 1;
+}
+
+message ListTasksRequest {
+  bool filter_by_status = 1;
+  TaskStatus status = 2;
+}
+
+message PauseTaskRequest {
+  string task_id = 1;
+}
+
+message StopTaskRequest {
+  string task_id = 1;
+}
+
+message ResumeTaskRequest {
+  string task_id = 1;
+}
+
+message RestartTaskRequest {
+  string task_id = 1;
+}
+
+message RecoverTaskRequest {
+  string task_id = 1;
+}
+
+message TaskResponse {
+  Task task = 1;
+}
+
+message ListTasksResponse {
+  repeated Task tasks = 1;
+}

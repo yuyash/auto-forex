@@ -1,0 +1,33 @@
+sequenceDiagram
+    title Task Creation - Manager Initialization
+    autonumber
+
+    actor App
+    participant Manager as TaskManager
+    participant Registry as TaskRegistry
+    participant Bus as EventBus
+    participant Factory as TaskRunnerFactory
+    participant Monitor as StrategyRequestTimeoutMonitor
+
+    App->>Manager: __init__(registry?, event_bus?, observers?, event_handlers?, timeout?, check_interval?)
+    alt registry omitted
+        Manager->>Registry: create InMemoryTaskRegistry
+    end
+    alt event_bus omitted
+        Manager->>Bus: create(strategy_request_timeout)
+    else supplied bus and timeout
+        Manager->>Bus: set strategy_request_timeout
+    end
+    loop each explicit event_handler
+        Manager->>Bus: subscribe(handler)
+        Bus->>Bus: register subscription
+    end
+    Note over Manager,Factory: Observers are passed to runners and are not subscribed as event handlers
+    Manager->>Factory: create(event_bus, registry, observers)
+    Manager->>Monitor: interval_for(check_interval, bus timeout)
+    Manager->>Monitor: create(event_bus, registry, runtimes, interval)
+    alt effective interval is configured
+        Monitor->>Monitor: start daemon polling thread
+    else no effective interval
+        Monitor-->>Manager: no monitor thread
+    end

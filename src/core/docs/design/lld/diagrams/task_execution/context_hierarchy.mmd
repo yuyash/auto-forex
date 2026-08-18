@@ -1,0 +1,41 @@
+classDiagram
+    direction LR
+
+    class TaskRegistry {
+        -ContextStore context_store
+        +get(task_id) Task
+        +save(task) Task
+        +initialize_context(task, strategy_name) StrategyContext
+        +current_context(task_id) StrategyContext
+        +stage_context(context) StrategyContext
+        +save_context(context) Task
+        +apply_execution_response(response)
+    }
+
+    class ContextStore {
+        +AccountBalance account_balance
+        +initialize(task, strategy_name) StrategyContext
+        +current(task_id) StrategyContext
+        +stage(context) StrategyContext
+        +save(context) Task
+        +apply_execution_response(response)
+    }
+
+    class AccountBalance {
+        +initial(task) Money
+        +apply(balance, response) Money
+        +reset(task_id)
+    }
+
+    class StrategyContext {
+        +task_id
+        +task_type
+        +instrument
+        +account_balance
+        +state
+        +metadata
+    }
+
+    TaskRegistry *-- ContextStore : encapsulates
+    ContextStore *-- AccountBalance : owns
+    ContextStore o-- StrategyContext : stores per task run

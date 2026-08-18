@@ -1,0 +1,207 @@
+name: Test and prepare package versions
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-version-bump-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_BRANCH: automation/package-version-bumps
+  UV_VERSION: "0.11.24"
+
+jobs:
+  tests:
+    if: >-
+      ${{ !contains(
+        github.event.head_commit.message,
+        'chore(release): bump changed package versions'
+      ) }}
+    uses: ./.github/workflows/package-tests.yml
+    secrets: inherit
+
+  bump:
+    name: Prepare changed package versions
+    needs: tests
+    if: ${{ needs.tests.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - name: Prepare version branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git ls-remote --exit-code --heads origin "$RELEASE_BRANCH"; then
+            git fetch origin \
+              "refs/heads/${RELEASE_BRANCH}:refs/remotes/origin/${RELEASE_BRANCH}"
+            git checkout -b "$RELEASE_BRANCH" "origin/$RELEASE_BRANCH"
+            git rebase "$GITHUB_SHA"
+          else
+            git checkout -b "$RELEASE_BRANCH" "$GITHUB_SHA"
+          fi
+
+      - name: Resolve comparison base
+        id: base
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
+            base_sha="$(git hash-object -t tree /dev/null)"
+          else
+            if ! git cat-file -e "${BEFORE_SHA}^{commit}"; then
+              git fetch --no-tags origin "$BEFORE_SHA"
+            fi
+            base_sha="$BEFORE_SHA"
+          fi
+          echo "sha=$base_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Bump changed packages
+        id: bump
+        env:
+          BASE_SHA: ${{ steps.base.outputs.sha }}
+        run: |
+          python3 scripts/bump_changed_packages.py \
+            --base "$BASE_SHA" \
+            --head "$GITHUB_SHA" | tee version-bump.txt
+          cat version-bump.txt >> "$GITHUB_STEP_SUMMARY"
+
+          if git diff --quiet -- src uv.lock; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push version updates
+        id: version_commit
+        if: steps.bump.outputs.changed == 'true'
+        run: |
+          git add uv.lock src/*/pyproject.toml
+          git commit -m "chore(release): bump changed package versions [skip ci]"
+          git push --force-with-lease --set-upstream origin \
+            "HEAD:${RELEASE_BRANCH}"
+          echo "head_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update version pull request
+        id: pull_request
+        if: steps.bump.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pull_request_number="$(
+            gh pr list \
+              --base "$GITHUB_REF_NAME" \
+              --head "$RELEASE_BRANCH" \
+              --state open \
+              --json number \
+              --jq '.[0].number'
+          )"
+
+          if [[ -z "$pull_request_number" ]]; then
+            gh pr create \
+              --base "$GITHUB_REF_NAME" \
+              --head "$RELEASE_BRANCH" \
+              --title "chore(release): bump changed package versions" \
+              --body "Automated patch version updates for packages changed on main."
+            pull_request_number="$(
+              gh pr list \
+                --base "$GITHUB_REF_NAME" \
+                --head "$RELEASE_BRANCH" \
+                --state open \
+                --json number \
+                --jq '.[0].number'
+            )"
+          else
+            echo "Updated pull request #${pull_request_number}."
+          fi
+
+          if [[ -z "$pull_request_number" ]]; then
+            echo "::error::The package version pull request could not be resolved."
+            exit 1
+          fi
+
+          echo "number=$pull_request_number" >> "$GITHUB_OUTPUT"
+
+      - name: Run package tests for version pull request
+        if: steps.bump.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.version_commit.outputs.head_sha }}
+        run: |
+          gh workflow run package-tests.yml --ref "$RELEASE_BRANCH"
+
+          run_id=""
+          for attempt in {1..30}; do
+            run_id="$(
+              gh run list \
+                --repo "$GITHUB_REPOSITORY" \
+                --workflow package-tests.yml \
+                --branch "$RELEASE_BRANCH" \
+                --event workflow_dispatch \
+                --limit 20 \
+                --json databaseId,headSha \
+                --jq ".[] | select(.headSha == \"$HEAD_SHA\") | .databaseId" \
+                | head -n 1
+            )"
+
+            if [[ -n "$run_id" ]]; then
+              break
+            fi
+
+            if [[ "$attempt" -eq 30 ]]; then
+              echo "::error::The package test workflow run was not created."
+              exit 1
+            fi
+
+            echo "Waiting for the package test workflow run."
+            sleep 5
+          done
+
+          echo "Waiting for package test run ${run_id}."
+          gh run watch "$run_id" \
+            --repo "$GITHUB_REPOSITORY" \
+            --exit-status
+
+      - name: Merge version pull request
+        if: steps.bump.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.version_commit.outputs.head_sha }}
+          PULL_REQUEST_NUMBER: ${{ steps.pull_request.outputs.number }}
+        run: |
+          for attempt in {1..30}; do
+            if gh pr merge "$PULL_REQUEST_NUMBER" \
+              --repo "$GITHUB_REPOSITORY" \
+              --squash \
+              --match-head-commit "$HEAD_SHA"; then
+              exit 0
+            fi
+
+            if [[ "$attempt" -eq 30 ]]; then
+              echo "::error::Package version pull request could not be merged."
+              exit 1
+            fi
+
+            echo "Merge requirements are not ready; retrying in 10 seconds."
+            sleep 10
+          done

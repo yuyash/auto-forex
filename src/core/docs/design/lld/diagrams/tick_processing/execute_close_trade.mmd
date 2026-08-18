@@ -1,0 +1,29 @@
+sequenceDiagram
+    title Tick Processing - Execute CLOSE_TRADE by Logical Trade ID
+    autonumber
+
+    participant Bus as EventBus
+    participant EventHandler as StrategyEventHandler
+    participant ResponseHandler as StrategyResponseHandler
+    participant Broker as Broker
+
+    Bus->>EventHandler: handle(CLOSE_TRADE request)
+    alt dry_run
+        EventHandler->>EventHandler: build synthetic close Order
+        EventHandler->>EventHandler: mark Order FILLED
+        EventHandler->>ResponseHandler: handle successful StrategyExecutionResponse
+    else live execution with logical trade id
+        EventHandler->>Broker: open_trades(instrument)
+        Broker-->>EventHandler: open Trade records
+        EventHandler->>EventHandler: filter by position side and trade id metadata
+        alt matching trades found
+            loop each matching trade
+                EventHandler->>Broker: close_trade(trade, units?)
+                Broker-->>EventHandler: Order
+            end
+            EventHandler->>ResponseHandler: handle ordered StrategyExecutionResponse values
+        else no matching trade
+            EventHandler->>ResponseHandler: handle StrategyExecutionResponse(execution_error)
+        end
+    end
+    ResponseHandler->>Bus: publish each response

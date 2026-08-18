@@ -1,0 +1,23 @@
+sequenceDiagram
+    title Task Execution - Wait Without Progress Reporting
+    autonumber
+
+    actor App
+    participant Run as TaskRun
+    participant Manager as TaskManager
+    participant Runtimes as TaskRuntimeRegistry
+    participant Waiter as TaskWaiter
+    participant Future as Future[Task]
+    participant Registry as TaskRegistry
+
+    App->>Run: wait(timeout?)
+    Run->>Manager: wait(task_id, timeout, progress=None)
+    Manager->>Runtimes: get(task_id)
+    Runtimes-->>Manager: TaskRuntime
+    Manager->>Waiter: wait(task_id, runtime, timeout, progress=None)
+    Waiter->>Future: result(timeout)
+    Waiter->>Registry: get(task_id)
+    Registry-->>Waiter: latest task
+    Waiter-->>Manager: latest task
+    Manager-->>Run: latest task
+    Run-->>App: latest task

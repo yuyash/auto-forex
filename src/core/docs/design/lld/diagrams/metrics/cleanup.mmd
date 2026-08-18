@@ -1,0 +1,15 @@
+sequenceDiagram
+    title Profit Metrics - Clean Up Finished Task
+    autonumber
+
+    participant Observer as ObserverNotifier
+    participant Recorder as TaskResultRecorder
+    participant Collector as ProfitMetricCollector
+
+    Observer->>Recorder: on_task_finished(terminal task)
+    alt cleanup_finished_tasks enabled
+        Recorder->>Collector: cleanup_task(task.id)
+        Collector->>Collector: remove last_metric_at entry
+    else cleanup disabled
+        Recorder-->>Observer: retain metric due state
+    end

@@ -1,0 +1,21 @@
+sequenceDiagram
+    title Profit Metrics - Check Whether a Metric Is Due
+    autonumber
+
+    participant Observer as ObserverNotifier
+    participant Recorder as TaskResultRecorder
+    participant Collector as ProfitMetricCollector
+
+    Observer->>Recorder: on_tick(current task, tick)
+    Recorder->>Collector: due(task.id, tick.timestamp)
+    alt metric_interval is None
+        Collector-->>Recorder: false
+        Recorder-->>Observer: return without metric
+    else first metric for task
+        Collector-->>Recorder: true
+    else elapsed time is less than interval
+        Collector-->>Recorder: false
+        Recorder-->>Observer: return without metric
+    else interval elapsed
+        Collector-->>Recorder: true
+    end

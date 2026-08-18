@@ -1,0 +1,357 @@
+name: Package tests
+
+on:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    secrets:
+      OANDA_ACCOUNT_ID:
+        required: false
+      OANDA_ACCOUNT_NAME:
+        required: false
+      OANDA_ACCESS_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.14"
+  UV_VERSION: "0.11.24"
+
+jobs:
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - name: Install Python
+        run: uv python install "$PYTHON_VERSION"
+
+      - name: Install workspace dependencies
+        run: uv sync --locked --all-packages
+
+      - name: Run tests with coverage
+        run: >-
+          uv run --locked --all-packages --no-sync
+          pytest
+          src/aws/tests
+          src/core/tests
+          src/oanda/tests/unit
+          src/oanda/tests/integration
+          src/server/tests
+          src/snowball/tests
+          scripts/tests
+          --import-mode=importlib
+          --cov=autoforex.aws
+          --cov=autoforex.core
+          --cov=autoforex.oanda
+          --cov=autoforex.server
+          --cov=autoforex.snowball
+          --cov-fail-under=80
+          --cov-report=term
+          --cov-report=xml:coverage.xml
+
+      - name: Upload coverage report artifact
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: coverage-report
+          path: coverage.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+  distributions:
+    name: Build and install distributions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - name: Install Python
+        run: uv python install "$PYTHON_VERSION"
+
+      - name: Build public packages without workspace sources
+        run: |
+          for package in \
+            auto-forex-core \
+            auto-forex-protobuf \
+            auto-forex-snowball \
+            auto-forex-aws \
+            auto-forex-oanda \
+            auto-forex-server
+          do
+            uv build --package "$package" --no-sources --out-dir dist
+          done
+
+      - name: Validate package metadata
+        run: uvx --from twine twine check dist/*
+
+      - name: Verify isolated wheel installations
+        run: python3 scripts/verify_distributions.py dist --python "$PYTHON_VERSION"
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: python-distributions
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  unit:
+    name: Unit - ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: aws
+            tests: tests/unit
+          - package: core
+            tests: tests/unit
+          - package: oanda
+            tests: tests/unit
+          - package: server
+            tests: tests/unit
+          - package: snowball
+            tests: tests
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - name: Install Python
+        run: uv python install "$PYTHON_VERSION"
+
+      - name: Install package dependencies
+        run: uv sync --locked --directory "src/${{ matrix.package }}"
+
+      - name: Run unit tests
+        run: >-
+          uv run --locked --no-sync
+          --directory "src/${{ matrix.package }}"
+          pytest "${{ matrix.tests }}"
+
+  integration:
+    name: Integration - ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - aws
+          - core
+          - oanda
+          - server
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - name: Install Python
+        run: uv python install "$PYTHON_VERSION"
+
+      - name: Install package dependencies
+        run: uv sync --locked --directory "src/${{ matrix.package }}"
+
+      - name: Run integration tests
+        run: >-
+          uv run --locked --no-sync
+          --directory "src/${{ matrix.package }}"
+          pytest tests/integration
+
+  server-backends:
+    name: Server backends - PostgreSQL and DynamoDB
+    runs-on: ubuntu-latest
+    services:
+      postgresql:
+        image: postgres:17
+        env:
+          POSTGRES_DB: autoforex
+          POSTGRES_USER: autoforex
+          POSTGRES_PASSWORD: autoforex
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U autoforex -d autoforex"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      dynamodb:
+        image: amazon/dynamodb-local:2.6.1
+        ports:
+          - 8000:8000
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - name: Install Python
+        run: uv python install "$PYTHON_VERSION"
+
+      - name: Install server backend dependencies
+        run: uv sync --locked --directory src/server --extra aws --extra postgresql
+
+      - name: Wait for DynamoDB Local
+        run: |
+          for attempt in {1..30}; do
+            if curl --silent --output /dev/null http://127.0.0.1:8000; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::DynamoDB Local did not become ready."
+          docker ps --all
+          exit 1
+
+      - name: Run real backend contracts and restart scenarios
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: us-west-2
+          AUTO_FOREX_TEST_POSTGRESQL_URL: >-
+            postgresql+psycopg://autoforex:autoforex@127.0.0.1:5432/autoforex
+          AUTO_FOREX_TEST_DYNAMODB_ENDPOINT_URL: http://127.0.0.1:8000
+        run: >-
+          uv run --locked --no-sync --directory src/server
+          pytest
+          tests/integration/test_persistence_contract.py
+          tests/e2e/test_backend_restart.py
+          --junitxml="${RUNNER_TEMP}/server-backends.xml"
+
+      - name: Run AWS DynamoDB store integration tests
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: us-west-2
+          AUTO_FOREX_TEST_DYNAMODB_TABLE: auto-forex-aws-integration
+          AUTO_FOREX_TEST_DYNAMODB_ENDPOINT_URL: http://127.0.0.1:8000
+        run: >-
+          uv run --locked --no-sync --directory src/server
+          pytest
+          ../aws/tests/integration/test_dynamodb_live.py
+          --junitxml="${RUNNER_TEMP}/aws-dynamodb.xml"
+
+      - name: Upload backend test report
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: server-backend-test-report
+          path: |
+            ${{ runner.temp }}/server-backends.xml
+            ${{ runner.temp }}/aws-dynamodb.xml
+          if-no-files-found: error
+          retention-days: 14
+
+  e2e:
+    name: E2E - ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - core
+          - oanda
+          - server
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - name: Install Python
+        run: uv python install "$PYTHON_VERSION"
+
+      - name: Install package dependencies
+        run: uv sync --locked --directory "src/${{ matrix.package }}"
+
+      - name: Validate OANDA E2E configuration
+        if: matrix.package == 'oanda'
+        env:
+          OANDA_ACCESS_TOKEN: ${{ secrets.OANDA_ACCESS_TOKEN }}
+          OANDA_ACCOUNT_ID: ${{ secrets.OANDA_ACCOUNT_ID }}
+          OANDA_ACCOUNT_NAME: ${{ secrets.OANDA_ACCOUNT_NAME }}
+          OANDA_ENVIRONMENT: ${{ vars.OANDA_ENVIRONMENT || 'practice' }}
+        run: |
+          if [[ -z "$OANDA_ACCESS_TOKEN" ]]; then
+            echo "::error::OANDA_ACCESS_TOKEN secret is required."
+            exit 1
+          fi
+          if [[ -z "${OANDA_ACCOUNT_ID}${OANDA_ACCOUNT_NAME}" ]]; then
+            echo "::error::OANDA_ACCOUNT_ID or OANDA_ACCOUNT_NAME secret is required."
+            exit 1
+          fi
+          if [[ "${OANDA_ENVIRONMENT,,}" != "practice" ]]; then
+            echo "::error::Mutating OANDA E2E tests require OANDA_ENVIRONMENT=practice."
+            exit 1
+          fi
+
+      - name: Run E2E tests
+        id: e2e_tests
+        env:
+          OANDA_ACCESS_TOKEN: ${{ secrets.OANDA_ACCESS_TOKEN }}
+          OANDA_ACCOUNT_ID: ${{ secrets.OANDA_ACCOUNT_ID }}
+          OANDA_ACCOUNT_NAME: ${{ secrets.OANDA_ACCOUNT_NAME }}
+          OANDA_ENABLE_MUTATING_E2E: "1"
+          OANDA_ENVIRONMENT: ${{ vars.OANDA_ENVIRONMENT || 'practice' }}
+          OANDA_MUTATING_E2E_UNITS: ${{ vars.OANDA_MUTATING_E2E_UNITS || '1' }}
+        run: >-
+          uv run --locked --no-sync
+          --directory "src/${{ matrix.package }}"
+          pytest tests/e2e
+          --junitxml="${RUNNER_TEMP}/${{ matrix.package }}-e2e.xml"
+
+      - name: Annotate E2E test failures
+        if: failure() && steps.e2e_tests.outcome == 'failure'
+        run: >-
+          uv run --locked --no-sync
+          python scripts/annotate_junit_failures.py
+          "${RUNNER_TEMP}/${{ matrix.package }}-e2e.xml"
+          --prefix "src/${{ matrix.package }}"
+
+      - name: Publish E2E test summary
+        if: always() && steps.e2e_tests.outcome != 'skipped'
+        run: >-
+          uv run --locked --no-sync
+          python scripts/render_junit_summary.py
+          "${RUNNER_TEMP}/${{ matrix.package }}-e2e.xml"
+          --output "$GITHUB_STEP_SUMMARY"
+          --title "${{ matrix.package }} E2E tests"
+
+      - name: Upload E2E test report
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: e2e-report-${{ matrix.package }}
+          path: ${{ runner.temp }}/${{ matrix.package }}-e2e.xml
+          if-no-files-found: warn
+          retention-days: 14

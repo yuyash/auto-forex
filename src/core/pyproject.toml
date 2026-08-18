@@ -1,0 +1,71 @@
+[project]
+name = "auto-forex-core"
+version = "0.1.2"
+description = "A Python package for automating forex trading strategies."
+readme = "README.md"
+requires-python = ">=3.14"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Yuya Shinde" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
+]
+dependencies = [
+    "numpy>=2.5.0",
+    "pandas>=3.0.3",
+    "pycountry>=26.2.16",
+    "pydantic>=2.13.4",
+    "sqlalchemy>=2.0.0",
+    "tqdm>=4.67.1",
+]
+
+[project.optional-dependencies]
+profiling = [
+    "pyinstrument>=5.1.1",
+]
+
+[project.urls]
+Repository = "https://github.com/yuyash/auto-forex-v2"
+Issues = "https://github.com/yuyash/auto-forex-v2/issues"
+
+[build-system]
+requires = ["uv_build>=0.11.24,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "autoforex.core"
+
+[dependency-groups]
+dev = ["pytest>=9.1.1", "ruff>=0.15.20", "ty>=0.0.55"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "RUF", "UP"]
+
+[tool.ruff.format]
+indent-style = "space"
+line-ending = "lf"
+quote-style = "double"
+
+[tool.pytest.ini_options]
+addopts = [
+    "-ra",
+    "--strict-config",
+    "--strict-markers",
+    "--import-mode=importlib",
+]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["src"]
+
+[tool.ty.environment]
+python-version = "3.14"

@@ -1,0 +1,62 @@
+sequenceDiagram
+    title Tick Processing - Strategy Returns Events
+    autonumber
+
+    participant Runner as BacktestRunner / TradingRunner
+    participant StrategyExec as StrategyExecutor
+    participant Strategy as Strategy
+    participant Publisher as StrategyPublisher
+    participant Bus as EventBus
+    participant EventHandler as StrategyEventHandler
+    participant ResponseHandler as StrategyResponseHandler
+    participant Registry as TaskRegistry
+    participant ContextStore
+    participant Balance as AccountBalance
+    participant Observer as ObserverNotifier
+
+    Runner->>StrategyExec: tick(task, tick, control)
+    StrategyExec->>Registry: current_context(task.id)
+    Registry->>ContextStore: current(task.id)
+    ContextStore-->>Registry: context
+    Registry-->>StrategyExec: context
+    StrategyExec->>Strategy: on_tick(tick, context)
+    Strategy-->>StrategyExec: StrategyResult(events, state?)
+    alt result.state is present
+        StrategyExec->>Registry: stage_context(context.with_state(result.state))
+    else
+        StrategyExec->>Registry: stage_context(context)
+    end
+    Registry->>ContextStore: stage(context)
+    StrategyExec->>Publisher: publish(result)
+    Publisher->>Bus: publish_many(StrategyEventRequest...)
+    Bus->>EventHandler: handle(StrategyEventRequest)
+    EventHandler->>EventHandler: execute_many((request,))
+    EventHandler->>ResponseHandler: handle(StrategyExecutionResponse...)
+    ResponseHandler->>Bus: publish(response)
+    Bus->>StrategyExec: handle(response)
+    StrategyExec->>Registry: apply_execution_response(response)
+    Registry->>ContextStore: apply_execution_response(response)
+    ContextStore->>Balance: apply(context.account_balance, response)
+    Balance-->>ContextStore: updated balance
+    ContextStore->>ContextStore: replace stored StrategyContext
+    StrategyExec->>Registry: current_context(task_id)
+    Registry->>ContextStore: current(task_id)
+    ContextStore-->>Registry: context with latest account balance
+    Registry-->>StrategyExec: context with latest account balance
+    StrategyExec->>Strategy: on_execution_reports((response,), context)
+    Strategy-->>StrategyExec: StrategyState
+    StrategyExec->>Registry: save_context(context with response state)
+    Publisher-->>StrategyExec: publication complete
+    StrategyExec->>Registry: current_context(task_id)
+    Registry-->>StrategyExec: current context
+    StrategyExec->>Registry: save_context(context)
+    Registry->>ContextStore: save(context)
+    ContextStore->>Registry: get(task_id)
+    alt strategy state changed
+        ContextStore->>Registry: save(task.with_strategy_state(context.state))
+    else state unchanged
+        ContextStore-->>Registry: current task without save
+    end
+    Registry-->>StrategyExec: current task
+    StrategyExec->>Observer: tick(current task, tick)
+    StrategyExec-->>Runner: updated task

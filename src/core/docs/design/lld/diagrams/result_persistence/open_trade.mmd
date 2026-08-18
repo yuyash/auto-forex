@@ -1,0 +1,13 @@
+sequenceDiagram
+    title Result Persistence - Record Filled OPEN_TRADE
+    autonumber
+
+    participant Recorder as TaskResultRecorder
+    participant Ledger as TradeLedger
+    participant State as TradeState
+
+    Recorder->>Ledger: record_open(record)
+    Ledger->>State: from_open(record)
+    State-->>Ledger: mutable open trade state
+    Ledger->>Ledger: cache by (task_id, trade_id)
+    Note over Recorder,Ledger: Trade summary is emitted later on close or task finish

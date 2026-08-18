@@ -1,0 +1,31 @@
+sequenceDiagram
+    title Result Persistence - Record Strategy Event
+    autonumber
+
+    participant Bus as EventBus
+    participant Recorder as TaskResultRecorder
+    participant Mapper as StrategyEventRecordMapper
+    participant Writer as ResultRecorderWriter
+    participant Memory as InMemoryResultStore
+    participant Flusher as ResultFlushCoordinator
+
+    Bus->>Recorder: handle(event)
+    alt event is not StrategyEvent
+        Recorder-->>Bus: ignore
+    else StrategyEvent
+        Recorder->>Mapper: from_event(event)
+        Mapper-->>Recorder: StrategyEventRecord
+        Recorder->>Writer: event(record)
+        Writer->>Memory: save_event(record)
+        Writer->>Flusher: queue_event(record)
+        Flusher->>Flusher: flush_if_due()
+        alt HOLD, request-only, or unfilled response
+            Recorder-->>Bus: event record only
+        else filled OPEN_TRADE
+            Note over Recorder,Writer: Continue with open_trade.mmd
+        else filled CLOSE_TRADE
+            Note over Recorder,Writer: Continue with close_trade.mmd
+        else other filled action
+            Recorder-->>Bus: event record only
+        end
+    end

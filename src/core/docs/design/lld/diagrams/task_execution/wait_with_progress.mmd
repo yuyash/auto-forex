@@ -1,0 +1,42 @@
+sequenceDiagram
+    title Task Execution - Wait With Progress Reporting
+    autonumber
+
+    actor App
+    participant Run as TaskRun
+    participant Manager as TaskManager
+    participant Runtimes as TaskRuntimeRegistry
+    participant Waiter as TaskWaiter
+    participant Future as Future[Task]
+    participant Progress as TaskProgressReporter
+    participant Registry as TaskRegistry
+
+    App->>Run: wait(timeout?, progress)
+    Run->>Manager: wait(task_id, timeout, progress)
+    Manager->>Runtimes: get(task_id)
+    Runtimes-->>Manager: TaskRuntime
+    Manager->>Waiter: wait(task_id, runtime, timeout, progress)
+    Waiter->>Progress: on_start(progress snapshot)
+    loop until future completes
+        alt future is already done
+            Waiter->>Future: result(timeout=0)
+        else future still running
+            Waiter->>Future: result(timeout=poll_seconds)
+            opt poll timeout
+                Waiter->>Progress: on_update(progress snapshot)
+            end
+        end
+    end
+    alt future completed successfully
+        Waiter->>Registry: get(task_id)
+        Registry-->>Waiter: latest task
+        Waiter->>Progress: on_finish(progress snapshot)
+        Waiter-->>Manager: latest task
+        Manager-->>Run: latest task
+        Run-->>App: latest task
+    else wait timed out or future raised
+        Waiter->>Progress: close()
+        Waiter-->>Manager: propagate exception
+        Manager-->>Run: propagate exception
+        Run-->>App: propagate exception
+    end
