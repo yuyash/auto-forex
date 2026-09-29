@@ -1,0 +1,21 @@
+# Non-secret configuration. AUTO_FOREX_* variables override these values.
+# Strings may also reference ${VARIABLE} or ${VARIABLE:-default}.
+# Quote account IDs and version numbers to preserve leading zeros.
+region: us-west-2
+
+accounts:
+  dev:
+    accountId: "${AUTO_FOREX_ACCOUNT_DEV:-571846855296}"
+  prod:
+    accountId: "${AUTO_FOREX_ACCOUNT_PROD:-956112821771}"
+  pipeline:
+    accountId: "${AUTO_FOREX_ACCOUNT_PIPELINE:-786888028645}"
+
+bootstrap:
+  enabled: true
+  executionPolicyArn: arn:aws:iam::aws:policy/AdministratorAccess
+
+github:
+  owner: yuyash
+  repo: auto-forex
+  branch: main

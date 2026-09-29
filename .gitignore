@@ -1,0 +1,72 @@
+# Node.js, TypeScript, and AWS CDK
+node_modules/
+dist/
+cdk.out/
+.cdk.staging/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Python environments and generated packages
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.eggs/
+build/
+pip-wheel-metadata/
+
+# Python tooling, tests, and coverage
+.uv-cache/
+.pytest_cache/
+.ruff_cache/
+.ty_cache/
+.mypy_cache/
+.tox/
+.nox/
+.hypothesis/
+.ipynb_checkpoints/
+.coverage
+.coverage.*
+coverage/
+coverage.xml
+htmlcov/
+
+# OS metadata
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100/
+.Trashes/
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# IDE settings and editor temporary files
+.idea/
+.vscode/
+.vs/
+.history/
+*.iml
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# Local environment settings and credentials
+.env
+.env.*
+!.env.example
+!.env.*.example
+.aws/
+*.pem
+*.key
+infrastructure/config/*.local.yaml
+infrastructure/config/*.local.yml
+
+# Keep package-lock.json, uv.lock, .python-version, and cdk.context.json tracked.
