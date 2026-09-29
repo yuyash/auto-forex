@@ -1,0 +1,10 @@
+{
+  "app": "npx --no-install tsx bin/auto-forex.ts",
+  "output": "cdk.out",
+  "versionReporting": false,
+  "context": {
+    "@aws-cdk/core:enablePartitionLiterals": true,
+    "@aws-cdk/core:defaultCrossStackReferences": "strong",
+    "@aws-cdk/core:checkSecretUsage": true
+  }
+}
