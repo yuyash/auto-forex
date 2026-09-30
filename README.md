@@ -1,8 +1,8 @@
 # Auto Forex
 
-auto-forex is an AWS-based platform for algorithmic foreign exchange trading across broker accounts. Its planned services ingest market prices, execute trades asynchronously, and expose APIs for accounts, users, market data, and trading results.
+auto-forex is an AWS-based platform for algorithmic foreign exchange trading across broker accounts. Its first implemented application path ingests OANDA prices continuously, queues them, and stores price history by symbol and timestamp.
 
-The infrastructure provisions a GitHub-connected CDK Pipeline that deploys alpha and beta to the development AWS account and prod to the production AWS account. Python service modules are still scaffolds. Application stacks currently publish deployment-environment metadata; trading and HTTP API resources are not implemented yet.
+The infrastructure provisions a GitHub-connected CDK Pipeline that deploys alpha and beta to the development AWS account and prod to the production AWS account. Each application environment includes ARM Fargate, AppConfig, Cognito, SQS FIFO, a Lambda consumer, and DynamoDB `Users` and `Prices`. User-specific OANDA settings are stored in `Users`, while credentials remain in per-user Secrets Manager secrets. Trading and HTTP API resources are not implemented yet.
 
 ## Repository
 

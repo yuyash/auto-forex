@@ -11,6 +11,16 @@ if (!['pipeline'].includes(target)) {
 }
 Tags.of(app).add('Project', PROJECT_NAME);
 
+// Keep synthesis deterministic in CodeBuild, where context lookups are disabled.
+for (const account of [configuration.accounts.dev.accountId, configuration.accounts.prod.accountId]) {
+  if (account !== null) {
+    app.node.setContext(
+      `availability-zones:account=${account}:region=${configuration.region}`,
+      [`${configuration.region}a`, `${configuration.region}b`],
+    );
+  }
+}
+
 new PipelineStack(app, 'AutoForexPipeline', {
   configuration,
   env: pipelineAccountEnvironment(configuration),

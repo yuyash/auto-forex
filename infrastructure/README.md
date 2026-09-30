@@ -97,4 +97,4 @@ CI receives the resolved account IDs, region, GitHub coordinates, and bootstrap 
 | `lib/stacks/application-stack.ts` | Deployment metadata and future application resources |
 | `test/` | Configuration and synthesized-template checks |
 
-Application stacks currently publish `/auto-forex/deployment/environment` to SSM Parameter Store so they can be deployed while application resources are developed. This is deployment metadata; broker settings storage is a separate design decision. Python Lambda source lives in `../backend/src/auto_forex/`, and Lambda asset packaging remains to be implemented.
+Application stacks deploy an ARM64 Fargate OANDA stream consumer, global AppConfig settings, a Cognito user pool, SQS FIFO with a DLQ, an ARM64 Lambda consumer, and DynamoDB `Users` and `Prices`. The Fargate task runs in public subnets with a public IPv4 address and no NAT Gateway. `Users` contains per-user stream settings keyed by Cognito `sub`; per-user OANDA tokens remain in Secrets Manager. AppConfig is initially disabled; use the backend setup helper after deployment to configure a user and enable ingestion.
