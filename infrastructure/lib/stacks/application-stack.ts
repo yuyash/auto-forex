@@ -6,6 +6,9 @@ import {
   CfnEnvironment,
   CfnHostedConfigurationVersion,
 } from 'aws-cdk-lib/aws-appconfig';
+import { HttpApi, HttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
+import { HttpJwtAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
+import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import { ClientAttributes, UserPool, UserPoolOperation } from 'aws-cdk-lib/aws-cognito';
 import { AttributeType, BillingMode, ProjectionType, Table, type ITable } from 'aws-cdk-lib/aws-dynamodb';
 import { Platform } from 'aws-cdk-lib/aws-ecr-assets';
@@ -124,6 +127,7 @@ export class ApplicationStack extends Stack {
     const userPool = new UserPool(this, 'UserPool', {
       userPoolName: `auto-forex-${environmentName}-users`,
       selfSignUpEnabled: true,
+      autoVerify: { email: true },
       signInAliases: { email: true },
       standardAttributes: { email: { required: true, mutable: true } },
       removalPolicy: RemovalPolicy.RETAIN,
@@ -132,11 +136,12 @@ export class ApplicationStack extends Stack {
       email: true,
       emailVerified: true,
     });
-    userPool.addClient('ApplicationClient', {
+    const userPoolClient = userPool.addClient('ApplicationClient', {
       userPoolClientName: `auto-forex-${environmentName}`,
       generateSecret: false,
       disableOAuth: true,
-      authFlows: { userSrp: true },
+      authFlows: { userPassword: true, userSrp: true },
+      preventUserExistenceErrors: true,
       readAttributes: clientAttributes,
       writeAttributes: new ClientAttributes().withStandardAttributes({ email: true }),
     });
@@ -161,6 +166,81 @@ export class ApplicationStack extends Stack {
     });
     usersTable.grantWriteData(userRegistration);
     userPool.addTrigger(UserPoolOperation.POST_CONFIRMATION, userRegistration);
+
+    const api = new HttpApi(this, 'Api', {
+      apiName: `auto-forex-${environmentName}`,
+      createDefaultStage: true,
+    });
+    const jwtAuthorizer = new HttpJwtAuthorizer(
+      'JwtAuthorizer',
+      userPool.userPoolProviderUrl,
+      { jwtAudience: [userPoolClient.userPoolClientId] },
+    );
+    const apiFunction = (id: string, handler: string): Function => new Function(this, id, {
+      functionName: `auto-forex-${environmentName}-${id.toLowerCase()}`,
+      runtime: Runtime.PYTHON_3_11,
+      architecture: Architecture.ARM_64,
+      handler,
+      code: Code.fromAsset(resolve(backendDirectory, 'src')),
+      memorySize: 128,
+      timeout: Duration.seconds(10),
+      environment: {
+        USER_POOL_CLIENT_ID: userPoolClient.userPoolClientId,
+        USERS_TABLE_NAME: usersTable.tableName,
+        DEPLOYMENT_ENVIRONMENT: environmentName,
+      },
+      logGroup: new LogGroup(this, `${id}Logs`, {
+        logGroupName: `/aws/lambda/auto-forex-${environmentName}-${id.toLowerCase()}`,
+        retention: RetentionDays.ONE_WEEK,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }),
+    });
+
+    const signUp = apiFunction('SignUp', 'autoforex.handlers.api.users.signup.handler');
+    const login = apiFunction('Login', 'autoforex.handlers.api.auth.login.handler');
+    const getCurrentUser = apiFunction('GetCurrentUser', 'autoforex.handlers.api.users.me.handler');
+    const registerOandaToken = apiFunction(
+      'RegisterOandaToken',
+      'autoforex.handlers.api.users.oanda_token.handler',
+    );
+    usersTable.grantReadData(getCurrentUser);
+    usersTable.grantReadWriteData(registerOandaToken);
+    registerOandaToken.addToRolePolicy(new PolicyStatement({
+      actions: [
+        'secretsmanager:CreateSecret',
+        'secretsmanager:PutSecretValue',
+        'secretsmanager:TagResource',
+      ],
+      resources: [this.formatArn({
+        service: 'secretsmanager',
+        resource: 'secret',
+        resourceName: `auto-forex/${environmentName}/oanda/*`,
+        arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+      })],
+    }));
+
+    api.addRoutes({
+      path: '/users/signup',
+      methods: [HttpMethod.POST],
+      integration: new HttpLambdaIntegration('SignUpIntegration', signUp),
+    });
+    api.addRoutes({
+      path: '/auth/login',
+      methods: [HttpMethod.POST],
+      integration: new HttpLambdaIntegration('LoginIntegration', login),
+    });
+    api.addRoutes({
+      path: '/users/me',
+      methods: [HttpMethod.GET],
+      integration: new HttpLambdaIntegration('GetCurrentUserIntegration', getCurrentUser),
+      authorizer: jwtAuthorizer,
+    });
+    api.addRoutes({
+      path: '/users/me/oanda-token',
+      methods: [HttpMethod.PUT],
+      integration: new HttpLambdaIntegration('RegisterOandaTokenIntegration', registerOandaToken),
+      authorizer: jwtAuthorizer,
+    });
 
     const appConfigApplication = new CfnApplication(this, 'StreamConfigApplication', {
       name: `auto-forex-${environmentName}`,
@@ -287,6 +367,8 @@ export class ApplicationStack extends Stack {
     });
 
     new CfnOutput(this, 'UserPoolId', { value: userPool.userPoolId });
+    new CfnOutput(this, 'UserPoolClientId', { value: userPoolClient.userPoolClientId });
+    new CfnOutput(this, 'ApiUrl', { value: api.apiEndpoint });
     new CfnOutput(this, 'PriceQueueUrl', { value: priceQueue.queueUrl });
     new CfnOutput(this, 'PricesTableName', { value: pricesTable.tableName });
     new CfnOutput(this, 'UsersTableName', { value: usersTable.tableName });

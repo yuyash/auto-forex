@@ -94,7 +94,7 @@ CI receives the resolved account IDs, region, GitHub coordinates, and bootstrap 
 | `lib/stacks/pipeline-stack.ts` | GitHub connection, CodeBuild, self-updating pipeline, and application stages |
 | `scripts/bootstrap-targets.ts` | Assume target roles and run the pinned CDK bootstrap CLI |
 | `lib/stages/application-stage.ts` | Shared alpha/beta/prod deployment structure |
-| `lib/stacks/application-stack.ts` | Deployment metadata and future application resources |
+| `lib/stacks/application-stack.ts` | HTTP API, identity, price ingestion, storage, and deployment metadata |
 | `test/` | Configuration and synthesized-template checks |
 
-Application stacks deploy an ARM64 Fargate OANDA stream consumer, global AppConfig settings, a Cognito user pool, SQS FIFO with a DLQ, an ARM64 Lambda consumer, and DynamoDB `Users` and `Prices`. The Fargate task runs in public subnets with a public IPv4 address and no NAT Gateway. `Users` contains per-user stream settings keyed by Cognito `sub`; per-user OANDA tokens remain in Secrets Manager. AppConfig is initially disabled; use the backend setup helper after deployment to configure a user and enable ingestion.
+Application stacks deploy an API Gateway HTTP API, Cognito user pool, JWT-protected user operations, an ARM64 Fargate OANDA stream consumer, global AppConfig settings, SQS FIFO with a DLQ, Lambda functions, and DynamoDB `Users` and `Prices`. The Fargate task runs in public subnets with a public IPv4 address and no NAT Gateway. `Users` contains per-user stream settings keyed by Cognito `sub`; per-user OANDA tokens remain in Secrets Manager. AppConfig is initially deployed with ingestion disabled.

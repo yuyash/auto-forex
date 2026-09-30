@@ -2,7 +2,7 @@
 
 `auto-forex` version `0.0.1` combines TypeScript AWS CDK infrastructure with Python 3.11 application code in one repository. Python dependencies and environments use uv; type checking uses ty.
 
-The infrastructure provisions a GitHub-connected CDK delivery pipeline that deploys alpha and beta to the development account and prod to the production account. Each application stack currently creates only an SSM parameter identifying its environment. Python Lambda handlers, API Gateway integrations, trading logic, queues, user pools, and application data stores remain scaffolds. The [deployment guide](deployment.md) is the canonical setup walkthrough.
+The infrastructure provisions a GitHub-connected CDK delivery pipeline that deploys alpha and beta to the development account and prod to the production account. Each application stack includes price ingestion, user identity, and an API Gateway HTTP API. Trading execution and the remaining account, market-data, and result APIs remain scaffolds. The [deployment guide](deployment.md) is the canonical setup walkthrough.
 
 ## Accounts and deployment boundaries
 
@@ -21,7 +21,7 @@ The default region is `us-west-2`. The accounts already exist. Standard CDK boot
 | Bootstrap script | Bootstraps pipeline, dev, and prod using their local profiles; dev and prod trust the pipeline account. |
 | `PipelineStack` | Creates a GitHub.com CodeConnections connection and a CDK Pipeline triggered by pushes to the configured branch, defaulting to `main`. |
 | `ApplicationStage` | Instantiates a separate application stack for alpha, beta, and prod. |
-| `ApplicationStack` | Creates `/auto-forex/<environment>/deployment/environment` in SSM Parameter Store. Application resources are added here later. |
+| `ApplicationStack` | Creates the Cognito-authenticated HTTP API, price-ingestion resources, user and price tables, AppConfig configuration, and `/auto-forex/<environment>/deployment/environment` in SSM Parameter Store. |
 
 The repository does not provision AWS accounts. Account IDs use environment variables with YAML fallbacks. Local profile names use environment variables with code defaults and are not sent to CodeBuild. The default bootstrap execution policy is `AdministratorAccess` and can be replaced with a narrower policy before initial bootstrap.
 
@@ -86,7 +86,7 @@ This diagram describes the application to be implemented. The current SSM enviro
 | Topic | Constraint and decision |
 | --- | --- |
 | Settings in AWS Config | AWS Config is the current integration boundary. It tracks resource configuration, changes, and compliance; AWS AppConfig serves application configuration management. Define the resource representation and read/write mechanism for Config, or select another storage service. No settings store is implemented. See [AWS Config](https://docs.aws.amazon.com/config/latest/developerguide/WhatIsConfig.html) and [AWS AppConfig](https://docs.aws.amazon.com/appconfig/latest/userguide/what-is-appconfig.html). |
-| Credentials and Cognito | Cognito is the user identity boundary; broker credential storage remains unresolved. Readable user attributes can appear in ID tokens, so credential values must not be exposed as ordinary readable attributes. One option is Secrets Manager for secret values with identity associations or references managed separately. Neither credential storage approach is implemented. See [Cognito attribute permissions](https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-settings-attributes.html) and [Secrets Manager](https://docs.aws.amazon.com/secretsmanager/latest/userguide/intro.html). |
+| Credentials and Cognito | Cognito is the user identity boundary. API Gateway verifies Cognito JWTs, and handlers use the immutable `sub` claim for ownership. OANDA tokens are stored in Secrets Manager under a SHA-256-derived per-user name; DynamoDB stores only the secret identifier. Tokens are never stored in Cognito or returned by the API. See [Cognito attribute permissions](https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-settings-attributes.html) and [Secrets Manager](https://docs.aws.amazon.com/secretsmanager/latest/userguide/intro.html). |
 | Stream continuity in Lambda | A standard Lambda invocation runs for at most 900 seconds. Continuous ingestion needs bounded sessions, handover, reconnection, concurrency control, and defined behavior during gaps. See [Lambda timeout](https://docs.aws.amazon.com/lambda/latest/dg/configuration-timeout.html). |
 | Receiving frequency | OANDA's price stream publishes at most four prices per second per instrument and does not deliver every price change. Its public parameters do not provide an arbitrary delivery interval. Define application sampling and aggregation separately from connection or restart cadence. See [Pricing Stream](https://developer.oanda.com/rest-live-v20/pricing-ep/). |
 | Historical ticks | The public v20 Pricing API provides current prices and a live stream. An API for arbitrary historical tick ranges is not established by that specification. Choose a historical data service or archive received prices. The current-price `since` parameter is not historical tick replay. See [Pricing API](https://developer.oanda.com/rest-live-v20/pricing-ep/). |
