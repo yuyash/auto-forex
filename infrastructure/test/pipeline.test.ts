@@ -40,7 +40,9 @@ test('GitHub connection triggers main and deploys dev stages before production',
   const spec = JSON.parse(synth.Properties.Source.BuildSpec);
   assert.equal(spec.artifacts['base-directory'], 'infrastructure/cdk.out');
   assert.equal(spec.phases.install['runtime-versions'].nodejs, 22);
+  assert.equal(spec.phases.install['runtime-versions'].python, 3.11);
   const commands: string[] = spec.phases.build.commands;
+  assert.ok(commands.includes('uv run python -m unittest discover -s tests -v'));
   assert.ok(commands.includes('cd "$CODEBUILD_SRC_DIR/infrastructure"'));
   assert.ok(commands.some((command) => command.includes('-c bootstrapComplete=true')));
   assert.ok(synth.Properties.Environment.EnvironmentVariables.some((entry: { Name: string; Value: string }) => entry.Name === 'AUTO_FOREX_ACCOUNT_DEV' && entry.Value === '111111111111'));

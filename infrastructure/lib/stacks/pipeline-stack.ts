@@ -66,9 +66,18 @@ export class PipelineStack extends Stack {
       projectName: 'auto-forex-synth',
       env: variables,
       buildEnvironment: { buildImage: LinuxBuildImage.STANDARD_7_0 },
-      partialBuildSpec: BuildSpec.fromObject({ phases: { install: { 'runtime-versions': { nodejs: 22 } } } }),
-      installCommands: ['cd "$CODEBUILD_SRC_DIR/infrastructure"', 'npm ci'],
+      partialBuildSpec: BuildSpec.fromObject({ phases: { install: { 'runtime-versions': { nodejs: 22, python: 3.11 } } } }),
+      installCommands: [
+        'python -m pip install uv==0.12.5',
+        'cd "$CODEBUILD_SRC_DIR/backend" && uv sync --locked',
+        'cd "$CODEBUILD_SRC_DIR/infrastructure" && npm ci',
+      ],
       commands: [
+        'cd "$CODEBUILD_SRC_DIR/backend"',
+        'uv run ty check',
+        'uv run ruff check src tests scripts',
+        'uv run ruff format --check src tests scripts',
+        'uv run python -m unittest discover -s tests -v',
         'cd "$CODEBUILD_SRC_DIR/infrastructure"',
         'npm run typecheck',
         'npm test',
@@ -87,7 +96,7 @@ export class PipelineStack extends Stack {
       enableKeyRotation: true,
       codeBuildDefaults: {
         buildEnvironment: { buildImage: LinuxBuildImage.STANDARD_7_0 },
-        partialBuildSpec: BuildSpec.fromObject({ phases: { install: { 'runtime-versions': { nodejs: 22 } } } }),
+        partialBuildSpec: BuildSpec.fromObject({ phases: { install: { 'runtime-versions': { nodejs: 22, python: 3.11 } } } }),
       },
     });
     // On first installation the target CDK roles do not exist yet. Add their

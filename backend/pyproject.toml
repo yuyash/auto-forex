@@ -4,7 +4,10 @@ version = "0.0.1"
 description = "Provider-neutral trading services for AWS Lambda"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
-dependencies = []
+dependencies = [
+    "boto3>=1.40,<2",
+    "httpx>=0.28,<1",
+]
 
 [dependency-groups]
 dev = [
@@ -17,7 +20,7 @@ requires = ["hatchling==1.32.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/auto_forex"]
+packages = ["src/autoforex"]
 
 [tool.hatch.build.targets.sdist]
 include = [
