@@ -87,3 +87,41 @@ test('beta imports the shared dev Prices and Users tables instead of creating du
   value.resourceCountIs('AWS::DynamoDB::Table', 0);
   assert.ok(JSON.stringify(value.toJSON()).includes('table/Users/index/stream_status-index'));
 });
+
+test('HTTP API exposes public auth routes and JWT-protected user routes', () => {
+  const value = template();
+  value.resourceCountIs('AWS::ApiGatewayV2::Api', 1);
+  value.resourceCountIs('AWS::ApiGatewayV2::Authorizer', 1);
+  value.hasResourceProperties('AWS::ApiGatewayV2::Authorizer', {
+    AuthorizerType: 'JWT',
+    IdentitySource: ['$request.header.Authorization'],
+    JwtConfiguration: {
+      Audience: Match.anyValue(),
+      Issuer: Match.anyValue(),
+    },
+  });
+  value.hasResourceProperties('AWS::ApiGatewayV2::Route', {
+    RouteKey: 'POST /users/signup',
+    AuthorizationType: 'NONE',
+  });
+  value.hasResourceProperties('AWS::ApiGatewayV2::Route', {
+    RouteKey: 'POST /auth/login',
+    AuthorizationType: 'NONE',
+  });
+  value.hasResourceProperties('AWS::ApiGatewayV2::Route', {
+    RouteKey: 'GET /users/me',
+    AuthorizationType: 'JWT',
+  });
+  value.hasResourceProperties('AWS::ApiGatewayV2::Route', {
+    RouteKey: 'PUT /users/me/oanda-token',
+    AuthorizationType: 'JWT',
+  });
+  for (const handler of [
+    'autoforex.handlers.api.users.signup.handler',
+    'autoforex.handlers.api.auth.login.handler',
+    'autoforex.handlers.api.users.me.handler',
+    'autoforex.handlers.api.users.oanda_token.handler',
+  ]) {
+    value.hasResourceProperties('AWS::Lambda::Function', { Handler: handler });
+  }
+});

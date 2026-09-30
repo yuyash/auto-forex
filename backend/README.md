@@ -46,25 +46,19 @@ For example, implementing the result-detail endpoint starts in `handlers/api/res
 
 ## Configuring the price stream
 
-The deployed AppConfig configuration starts with `ingestion_enabled: false` and contains only environment-wide operational settings. Per-user stream settings live in DynamoDB `Users`, keyed by the immutable Cognito `sub`. The OANDA token is stored in a per-user Secrets Manager secret; Cognito stores no broker credentials or secret references.
-
-Use the stack outputs and run the administrative setup helper. The token is prompted securely and is not accepted as a command-line argument:
-
-```sh
-uv run python scripts/configure.py \
-  --profile auto-forex-dev \
-  --environment alpha \
-  --user-pool-id '<UserPoolId output>' \
-  --users-table-name '<UsersTableName output>' \
-  --appconfig-application-id '<AppConfigApplicationId output>' \
-  --appconfig-environment-id '<AppConfigEnvironmentId output>' \
-  --appconfig-profile-id '<AppConfigProfileId output>' \
-  --username '<existing Cognito username>' \
-  --account-id '<OANDA account ID>' \
-  --symbols USD_JPY EUR_USD \
-  --oanda-environment practice
-```
-
-Cognito Post Confirmation creates the initial disabled `Users` record. The helper then resolves the Cognito `sub`, creates or updates the per-user secret, writes the user's OANDA account and symbols to `Users`, and enables ingestion through AppConfig. Secret names use a SHA-256 digest of `sub`, not a username or email address.
+The deployed AppConfig configuration starts with `ingestion_enabled: false` and contains only environment-wide operational settings. Per-user stream settings live in DynamoDB `Users`, keyed by the immutable Cognito `sub`. Cognito Post Confirmation creates the initial disabled `Users` record. The OANDA token registration API creates or updates a per-user Secrets Manager secret whose name uses a SHA-256 digest of `sub`; Cognito stores no broker credentials or secret references.
 
 The `Users` schema uses `user_id` (Cognito `sub`) as its partition key and `stream_status-index` to discover enabled streams. The `Prices` schema uses `symbol` as its partition key and `created_at` as its sort key. Alpha and beta share both development tables; prod has separate tables with the same names.
+
+## User API
+
+Each application environment exposes these API Gateway HTTP API routes:
+
+| Route | Authentication | Request body |
+| --- | --- | --- |
+| `POST /users/signup` | Public | `{"email":"...","password":"..."}` |
+| `POST /auth/login` | Public | `{"email":"...","password":"..."}` |
+| `GET /users/me` | Cognito access JWT | None |
+| `PUT /users/me/oanda-token` | Cognito access JWT | `{"token":"..."}` |
+
+Cognito sends an email confirmation code after signup. The user must complete Cognito's standard `ConfirmSignUp` flow before login. Send the access token returned by login as `Authorization: Bearer <access_token>` for protected routes. OANDA token values are stored only in Secrets Manager and are never returned by the user API.

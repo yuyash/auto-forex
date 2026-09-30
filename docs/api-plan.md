@@ -1,6 +1,17 @@
 # API plan
 
-The HTTP API will expose one Python Lambda function per operation through API Gateway. Route integration, authentication, authorization, AWS SDK calls, and broker calls are not implemented yet. Public paths and operation names use provider-neutral terms.
+The HTTP API exposes one Python Lambda function per implemented operation through API Gateway. Cognito issues JWTs, and API Gateway validates the issuer and user-pool client audience before invoking protected routes. Public paths and operation names use provider-neutral terms.
+
+## Implemented routes
+
+| Method and path | Authorization | Behavior |
+| --- | --- | --- |
+| `POST /users/signup` | Public | Registers an email and password with Cognito. Cognito sends an email confirmation code; login remains disabled until the standard Cognito confirmation flow completes. |
+| `POST /auth/login` | Public | Authenticates an email and password and returns Cognito access, ID, and refresh JWTs. |
+| `GET /users/me` | Cognito JWT | Returns the `Users` record selected by the authenticated JWT `sub`. Secret identifiers and values are excluded. |
+| `PUT /users/me/oanda-token` | Cognito JWT | Creates or replaces the caller's OANDA token in Secrets Manager and stores only its secret identifier in `Users`. |
+
+Clients send the access token to protected routes as `Authorization: Bearer <access_token>`. Registration confirmation uses Cognito's standard `ConfirmSignUp` operation; an API Gateway confirmation route is not currently exposed.
 
 In these routes, `accountId` identifies a broker account registered with the application, not an AWS account. Administrative permissions, account ownership checks, and the scope of self-service operations must be defined before implementation.
 
@@ -8,7 +19,6 @@ In these routes, `accountId` identifies a broker account registered with the app
 
 | HTTP method and proposed path | Operation | Purpose and main inputs | Data source and open decisions |
 | --- | --- | --- | --- |
-| `POST /users/signup` | `sign_up_user` | User self-registration | Cognito. Registration confirmation and verification flows remain to be defined. |
 | `POST /users` | `create_user` | Administrative user creation | Cognito. Requires defined administrative permissions. |
 | `GET /users` | `list_users` | List users with pagination | Cognito. Administrative visibility and returned attributes remain to be defined. |
 | `DELETE /users/{userId}` | `delete_user` | Delete a user | Cognito. Handling of associated account registrations, settings, and credentials is unresolved. |
@@ -25,7 +35,7 @@ In these routes, `accountId` identifies a broker account registered with the app
 | `GET /results` | `list_results` | List persisted execution results with filtering and pagination | DynamoDB. Ownership checks, keys, and supported queries remain to be defined. |
 | `GET /results/{resultId}` | `get_result` | Retrieve one persisted execution result | DynamoDB. Requires an ownership check. |
 
-Broker account registration associates an account that already exists at a broker with an application user. Whether credentials are accepted during user signup or broker account registration, and which information belongs in Cognito, remains unresolved. See [Open application decisions](architecture.md#open-application-decisions) for storage boundaries and alternatives.
+Broker account registration associates an account that already exists at a broker with an application user. OANDA token storage is implemented separately from account registration: the token is written to Secrets Manager and never returned by the API. Account metadata and stream settings remain in the `Users` table. See [Open application decisions](architecture.md#open-application-decisions) for the remaining boundaries and alternatives.
 
 ## Market-data semantics
 
